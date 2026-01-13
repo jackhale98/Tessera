@@ -970,7 +970,8 @@ fn check_feature_values(
 
     // Compute expected torsor bounds if we have geometry_class
     let torsor_result = if check_torsor && feat.geometry_class.is_some() {
-        let result = compute_torsor_bounds(&feat, None);
+        // Note: Feature lookup not available in this context, use None
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Check if stored bounds match computed bounds
         if let Some(stale_msg) = check_stale_bounds(&feat.torsor_bounds, &result.bounds, 1e-6) {

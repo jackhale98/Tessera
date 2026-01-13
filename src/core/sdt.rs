@@ -368,6 +368,35 @@ pub fn build_projection_jacobian(functional_direction: [f64; 3]) -> Vector6<f64>
     Vector6::new(dx, dy, dz, 0.0, 0.0, 0.0)
 }
 
+/// Length tolerance information for cross-term variance calculation
+///
+/// When angular bounds are derived from linear tolerance over a length
+/// (e.g., perpendicularity, parallelism), and the length itself has
+/// tolerance, there's an additional cross-term variance:
+///
+/// σ²(angular) = [σ(t)/L]² + [t/L²]² × σ²(L)
+///
+/// This struct stores the info needed to calculate the second term.
+#[derive(Debug, Clone)]
+pub struct LengthToleranceInfo {
+    /// Nominal length (mm)
+    pub nominal_length: f64,
+    /// The GD&T tolerance value used to compute angular bounds (mm)
+    pub linear_tolerance: f64,
+    /// Length variance σ²(L) from the length dimension
+    pub length_variance: f64,
+}
+
+impl LengthToleranceInfo {
+    /// Calculate the cross-term variance contribution for angular DOFs
+    ///
+    /// Cross-term = (t/L²)² × σ²(L)
+    pub fn cross_term_variance(&self) -> f64 {
+        let t_over_l_sq = self.linear_tolerance / (self.nominal_length * self.nominal_length);
+        t_over_l_sq * t_over_l_sq * self.length_variance
+    }
+}
+
 /// Contributor data for 3D chain analysis
 #[derive(Debug, Clone)]
 pub struct ChainContributor3D {
@@ -383,6 +412,9 @@ pub struct ChainContributor3D {
     /// Position in assembly coordinates
     pub position: [f64; 3],
 
+    /// Axis/orientation vector (unit vector)
+    pub axis: [f64; 3],
+
     /// Torsor bounds from tolerances
     pub bounds: TorsorBounds,
 
@@ -391,6 +423,10 @@ pub struct ChainContributor3D {
 
     /// Sigma level for variance calculation
     pub sigma_level: f64,
+
+    /// Optional length tolerance info for cross-term variance in angular DOFs
+    /// Only applicable when angular bounds are derived from linear tolerance over a length
+    pub length_info: Option<LengthToleranceInfo>,
 }
 
 /// Result of 3D chain propagation
@@ -471,6 +507,11 @@ pub fn propagate_worst_case(contributors: &[ChainContributor3D]) -> TorsorBounds
 /// σ²[j] = Σ J[j,k]² * σ²[k]
 /// ```
 /// where σ[k] = (bounds[k].max - bounds[k].min) / sigma_level
+///
+/// For angular DOFs (alpha, beta) when length_info is provided, adds cross-term variance:
+/// ```text
+/// σ²(angular)_cross = (t/L²)² × σ²(L)
+/// ```
 pub fn propagate_rss(contributors: &[ChainContributor3D]) -> (ResultTorsor, Vec<[f64; 6]>) {
     let mut mean = [0.0f64; 6];
     let mut variance = [0.0f64; 6];
@@ -504,6 +545,24 @@ pub fn propagate_rss(contributors: &[ChainContributor3D]) -> (ResultTorsor, Vec<
                 let var_contrib = j_val * j_val * sigma * sigma;
                 variance[out_dof] += var_contrib;
                 contrib_variance[out_dof] += var_contrib;
+            }
+        }
+
+        // Add cross-term variance for angular DOFs when length tolerance is present
+        // This accounts for the additional variance from length variation:
+        // σ²(angular)_cross = (t/L²)² × σ²(L)
+        if let Some(ref len_info) = contrib.length_info {
+            let cross_term = len_info.cross_term_variance();
+            if cross_term > 0.0 {
+                // Apply cross-term through Jacobian for alpha and beta DOFs
+                for angular_in_dof in [DOF_ALPHA, DOF_BETA] {
+                    for out_dof in 0..6 {
+                        let j_val = j[(out_dof, angular_in_dof)];
+                        let var_contrib = j_val * j_val * cross_term;
+                        variance[out_dof] += var_contrib;
+                        contrib_variance[out_dof] += var_contrib;
+                    }
+                }
             }
         }
 
@@ -857,6 +916,7 @@ mod tests {
             feature_id: None,
             geometry_class: GeometryClass::Plane,
             position: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
             bounds: TorsorBounds {
                 u: Some([-0.1, 0.1]),
                 v: Some([-0.1, 0.1]),
@@ -867,6 +927,7 @@ mod tests {
             },
             distribution: Distribution::Normal,
             sigma_level: 6.0,
+            length_info: None,
         };
 
         let result = propagate_worst_case(&[contrib]);
@@ -883,6 +944,7 @@ mod tests {
             feature_id: None,
             geometry_class: GeometryClass::Plane,
             position: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
             bounds: TorsorBounds {
                 u: Some([-0.1, 0.1]),
                 v: None,
@@ -893,6 +955,7 @@ mod tests {
             },
             distribution: Distribution::Normal,
             sigma_level: 6.0,
+            length_info: None,
         };
 
         let (result, sensitivity) = propagate_rss(&[contrib]);
@@ -936,5 +999,77 @@ mod tests {
         let expected = 1.0 / 2.0_f64.sqrt();
         assert!((proj[0] - expected).abs() < 1e-10);
         assert!((proj[1] - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_length_tolerance_info_cross_term() {
+        // Test cross-term calculation:
+        // Cross-term = (t/L²)² × σ²(L)
+        let info = LengthToleranceInfo {
+            nominal_length: 100.0,        // 100mm
+            linear_tolerance: 0.1,         // 0.1mm GD&T tolerance
+            length_variance: 0.01,         // σ²(L) = 0.01 (σ = 0.1mm)
+        };
+
+        let cross = info.cross_term_variance();
+        // (0.1 / 10000)² × 0.01 = (1e-5)² × 0.01 = 1e-10 × 0.01 = 1e-12
+        assert!((cross - 1e-12).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_propagate_rss_with_length_tolerance() {
+        // Test that cross-term variance is added for angular DOFs
+        let contrib_no_length = ChainContributor3D {
+            name: "NoLength".to_string(),
+            feature_id: None,
+            geometry_class: GeometryClass::Cylinder,
+            position: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            bounds: TorsorBounds {
+                u: None,
+                v: None,
+                w: None,
+                alpha: Some([-0.01, 0.01]),
+                beta: Some([-0.01, 0.01]),
+                gamma: None,
+            },
+            distribution: Distribution::Normal,
+            sigma_level: 6.0,
+            length_info: None,
+        };
+
+        let contrib_with_length = ChainContributor3D {
+            name: "WithLength".to_string(),
+            feature_id: None,
+            geometry_class: GeometryClass::Cylinder,
+            position: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            bounds: TorsorBounds {
+                u: None,
+                v: None,
+                w: None,
+                alpha: Some([-0.01, 0.01]),
+                beta: Some([-0.01, 0.01]),
+                gamma: None,
+            },
+            distribution: Distribution::Normal,
+            sigma_level: 6.0,
+            length_info: Some(LengthToleranceInfo {
+                nominal_length: 50.0,
+                linear_tolerance: 0.1,
+                length_variance: 0.01, // Significant length variance
+            }),
+        };
+
+        let (result_no_len, _) = propagate_rss(&[contrib_no_length]);
+        let (result_with_len, _) = propagate_rss(&[contrib_with_length]);
+
+        // With length tolerance, the alpha 3-sigma should be larger
+        assert!(
+            result_with_len.alpha.rss_3sigma >= result_no_len.alpha.rss_3sigma,
+            "With length tolerance should have >= 3sigma: {} vs {}",
+            result_with_len.alpha.rss_3sigma,
+            result_no_len.alpha.rss_3sigma
+        );
     }
 }

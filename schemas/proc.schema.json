@@ -166,6 +166,11 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "IDs of other related entities"
+        },
+        "modified_by_capa": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "CAPA IDs that resulted in modifications to this process"
         }
       }
     },

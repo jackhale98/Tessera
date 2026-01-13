@@ -1089,7 +1089,8 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
     }
 
     // Compute bounds
-    let result = compute_torsor_bounds(&feat, args.actual_size);
+    // Note: Feature lookup not available in this context, use None
+    let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, args.actual_size, None);
 
     // Handle output
     let short_id = short_ids

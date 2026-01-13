@@ -10,8 +10,8 @@
 //! - Datum references establish the reference frame
 
 use crate::entities::feature::{
-    Dimension, Feature, GdtControl, GdtSymbol, Geometry3D, GeometryClass, MaterialCondition,
-    TorsorBounds,
+    Dimension, DimensionRef, Feature, GdtControl, GdtSymbol, Geometry3D, GeometryClass,
+    MaterialCondition, TorsorBounds,
 };
 
 /// Result of computing torsor bounds from GD&T
@@ -25,15 +25,142 @@ pub struct GdtTorsorResult {
     pub has_bonus: bool,
 }
 
+/// Resolved length with tolerance information for angular bound calculation
+///
+/// When computing angular bounds from linear tolerances, the length of the feature
+/// affects the result. If the length itself has a tolerance, this affects the
+/// angular bounds:
+/// - Shorter length = larger angular deviation for same linear tolerance
+/// - Longer length = smaller angular deviation for same linear tolerance
+#[derive(Debug, Clone)]
+pub struct ResolvedLength {
+    /// Nominal length value (mm)
+    pub nominal: f64,
+    /// Plus tolerance (positive value, mm)
+    pub plus_tol: f64,
+    /// Minus tolerance (positive value, mm)
+    pub minus_tol: f64,
+    /// Source of the length (for diagnostics), e.g., "FEAT-xxx:depth" or "fixed"
+    pub source: String,
+}
+
+impl ResolvedLength {
+    /// Create a ResolvedLength from a fixed nominal value (no tolerance)
+    pub fn fixed(nominal: f64) -> Self {
+        Self {
+            nominal,
+            plus_tol: 0.0,
+            minus_tol: 0.0,
+            source: "fixed".to_string(),
+        }
+    }
+
+    /// Get minimum length (nominal - minus_tol)
+    /// This produces the maximum angular deviation
+    pub fn min_length(&self) -> f64 {
+        (self.nominal - self.minus_tol).max(0.001) // Avoid division by zero
+    }
+
+    /// Get maximum length (nominal + plus_tol)
+    /// This produces the minimum angular deviation
+    pub fn max_length(&self) -> f64 {
+        self.nominal + self.plus_tol
+    }
+
+    /// Check if this length has any tolerance variation
+    pub fn has_tolerance(&self) -> bool {
+        self.plus_tol > 0.0 || self.minus_tol > 0.0
+    }
+
+    /// Get variance for RSS calculation (sigma squared)
+    /// Assumes tolerances represent ±3σ (or specified sigma_level)
+    pub fn variance(&self, sigma_level: f64) -> f64 {
+        let sigma = (self.plus_tol + self.minus_tol) / sigma_level;
+        sigma * sigma
+    }
+}
+
+/// Resolve length with tolerance from geometry_3d, optionally following length_ref
+///
+/// This function resolves the length for angular bound calculations by:
+/// 1. Trying to follow length_ref if present and feature_lookup is provided
+/// 2. Falling back to the cached length value (nominal only)
+/// 3. Using a default value if nothing is available
+///
+/// # Arguments
+/// * `geometry_3d` - The geometry definition with length/length_ref
+/// * `feature_lookup` - Optional function to look up features by ID for length_ref resolution
+///
+/// # Returns
+/// A ResolvedLength with nominal and tolerance values
+pub fn resolve_length_with_tolerance<F>(
+    geometry_3d: &Geometry3D,
+    feature_lookup: Option<&F>,
+) -> ResolvedLength
+where
+    F: Fn(&str) -> Option<Feature>,
+{
+    // First try length_ref if available and we have a lookup function
+    if let Some(ref length_ref_str) = geometry_3d.length_ref {
+        if let Some(dim_ref) = DimensionRef::parse(length_ref_str) {
+            if let Some(lookup) = feature_lookup {
+                if let Some(target_feat) = lookup(&dim_ref.feature_id) {
+                    // Find the dimension by name
+                    if let Some(dim) = target_feat
+                        .dimensions
+                        .iter()
+                        .find(|d| d.name == dim_ref.dimension_name)
+                    {
+                        return ResolvedLength {
+                            nominal: dim.nominal,
+                            plus_tol: dim.plus_tol,
+                            minus_tol: dim.minus_tol,
+                            source: length_ref_str.clone(),
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    // Fall back to cached length (no tolerance info available)
+    let nominal = geometry_3d.length.unwrap_or(10.0); // Default 10mm if not specified
+    ResolvedLength::fixed(nominal)
+}
+
+/// Compute worst-case angular bound considering length tolerance
+///
+/// For a linear tolerance `t` applied over a length `L` with tolerance:
+/// - Max angular deviation = t / L_min (at minimum length)
+/// - Min angular deviation = t / L_max (at maximum length)
+///
+/// Returns the larger (more conservative) bound
+fn compute_angular_bound_with_length_tolerance(
+    linear_tolerance: f64,
+    length: &ResolvedLength,
+) -> f64 {
+    let angular_at_min_length = linear_tolerance / length.min_length();
+    let angular_at_max_length = linear_tolerance / length.max_length();
+    angular_at_min_length.max(angular_at_max_length)
+}
+
 /// Compute torsor bounds from a feature's GD&T controls and geometry
 ///
 /// # Arguments
 /// * `feature` - The feature with GD&T controls and geometry info
 /// * `actual_size` - Optional actual size for bonus tolerance calculation
+/// * `feature_lookup` - Optional function to look up features by ID for length_ref resolution
 ///
 /// # Returns
 /// A `GdtTorsorResult` with computed bounds and any warnings
-pub fn compute_torsor_bounds(feature: &Feature, actual_size: Option<f64>) -> GdtTorsorResult {
+pub fn compute_torsor_bounds<F>(
+    feature: &Feature,
+    actual_size: Option<f64>,
+    feature_lookup: Option<&F>,
+) -> GdtTorsorResult
+where
+    F: Fn(&str) -> Option<Feature>,
+{
     let mut bounds = TorsorBounds::default();
     let mut warnings = Vec::new();
     let mut has_bonus = false;
@@ -47,10 +174,19 @@ pub fn compute_torsor_bounds(feature: &Feature, actual_size: Option<f64>) -> Gdt
     // Get primary dimension for MMC/LMC calculations
     let primary_dim = feature.primary_dimension();
 
+    // Resolve length with tolerance for angular bound calculations
+    let resolved_length = geometry_3d.map(|geo| resolve_length_with_tolerance(geo, feature_lookup));
+
     // Process each GD&T control and accumulate bounds
     for gdt in &feature.gdt {
-        let gdt_bounds =
-            compute_bounds_for_control(gdt, geometry_class, geometry_3d, primary_dim, actual_size);
+        let gdt_bounds = compute_bounds_for_control(
+            gdt,
+            geometry_class,
+            geometry_3d,
+            primary_dim,
+            actual_size,
+            resolved_length.as_ref(),
+        );
 
         // Merge bounds (take worst case - widest bounds)
         bounds = merge_bounds(bounds, gdt_bounds.bounds);
@@ -76,6 +212,16 @@ pub fn compute_torsor_bounds(feature: &Feature, actual_size: Option<f64>) -> Gdt
     let validation_warnings = validate_bounds_for_geometry(&bounds, geometry_class);
     warnings.extend(validation_warnings);
 
+    // Add info about length tolerance if used
+    if let Some(ref len) = resolved_length {
+        if len.has_tolerance() {
+            warnings.push(format!(
+                "Angular bounds include length tolerance from {} ({}mm +{:.3}/-{:.3})",
+                len.source, len.nominal, len.plus_tol, len.minus_tol
+            ));
+        }
+    }
+
     GdtTorsorResult {
         bounds,
         warnings,
@@ -90,6 +236,7 @@ fn compute_bounds_for_control(
     geometry_3d: Option<&Geometry3D>,
     primary_dim: Option<&Dimension>,
     actual_size: Option<f64>,
+    resolved_length: Option<&ResolvedLength>,
 ) -> GdtTorsorResult {
     let mut bounds = TorsorBounds::default();
     let mut warnings = Vec::new();
@@ -164,44 +311,60 @@ fn compute_bounds_for_control(
 
         GdtSymbol::Perpendicularity => {
             // Perpendicularity affects angular DOFs
-            if let Some(geo) = geometry_3d {
-                let length = geo.length.unwrap_or(10.0); // Default to 10mm if not specified
-                                                         // Angular deviation = tolerance / length (small angle approximation)
+            if let Some(length) = resolved_length {
+                // Angular bound computed with length tolerance consideration
+                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                bounds.alpha = Some([-angular_bound, angular_bound]);
+                bounds.beta = Some([-angular_bound, angular_bound]);
+            } else if geometry_3d.is_some() {
+                // Fallback to simple calculation if no resolved length
+                let length = geometry_3d.unwrap().length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else {
-                warnings.push(format!(
+                warnings.push(
                     "Perpendicularity GD&T requires geometry_3d.length for angular bound calculation"
-                ));
+                        .to_string(),
+                );
             }
         }
 
         GdtSymbol::Parallelism => {
             // Parallelism affects angular DOFs (same as perpendicularity calculation)
-            if let Some(geo) = geometry_3d {
-                let length = geo.length.unwrap_or(10.0);
+            if let Some(length) = resolved_length {
+                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                bounds.alpha = Some([-angular_bound, angular_bound]);
+                bounds.beta = Some([-angular_bound, angular_bound]);
+            } else if geometry_3d.is_some() {
+                let length = geometry_3d.unwrap().length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else {
-                warnings.push(format!(
+                warnings.push(
                     "Parallelism GD&T requires geometry_3d.length for angular bound calculation"
-                ));
+                        .to_string(),
+                );
             }
         }
 
         GdtSymbol::Angularity => {
             // Angularity affects angular DOFs
-            if let Some(geo) = geometry_3d {
-                let length = geo.length.unwrap_or(10.0);
+            if let Some(length) = resolved_length {
+                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                bounds.alpha = Some([-angular_bound, angular_bound]);
+                bounds.beta = Some([-angular_bound, angular_bound]);
+            } else if geometry_3d.is_some() {
+                let length = geometry_3d.unwrap().length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else {
-                warnings.push(format!(
+                warnings.push(
                     "Angularity GD&T requires geometry_3d.length for angular bound calculation"
-                ));
+                        .to_string(),
+                );
             }
         }
 
@@ -224,7 +387,11 @@ fn compute_bounds_for_control(
             bounds.u = Some([-bound, bound]);
             bounds.v = Some([-bound, bound]);
             // Also affects angular DOFs for axial features
-            if let Some(geo) = geometry_3d {
+            if let Some(length) = resolved_length {
+                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                bounds.alpha = Some([-angular_bound, angular_bound]);
+                bounds.beta = Some([-angular_bound, angular_bound]);
+            } else if let Some(geo) = geometry_3d {
                 let length = geo.length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
@@ -238,7 +405,11 @@ fn compute_bounds_for_control(
             bounds.u = Some([-bound, bound]);
             bounds.v = Some([-bound, bound]);
             bounds.w = Some([-bound, bound]);
-            if let Some(geo) = geometry_3d {
+            if let Some(length) = resolved_length {
+                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                bounds.alpha = Some([-angular_bound, angular_bound]);
+                bounds.beta = Some([-angular_bound, angular_bound]);
+            } else if let Some(geo) = geometry_3d {
                 let length = geo.length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
@@ -285,7 +456,11 @@ fn compute_bounds_for_control(
             bounds.u = Some([-bound, bound]);
             bounds.v = Some([-bound, bound]);
             // Also affects angular for axial straightness
-            if let Some(geo) = geometry_3d {
+            if let Some(length) = resolved_length {
+                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                bounds.alpha = Some([-angular_bound, angular_bound]);
+                bounds.beta = Some([-angular_bound, angular_bound]);
+            } else if let Some(geo) = geometry_3d {
                 let length = geo.length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
@@ -298,7 +473,12 @@ fn compute_bounds_for_control(
             match geometry_class {
                 GeometryClass::Cylinder | GeometryClass::Line => {
                     // Straightness of axis
-                    if let Some(geo) = geometry_3d {
+                    if let Some(length) = resolved_length {
+                        let angular_bound =
+                            compute_angular_bound_with_length_tolerance(effective_tol, length);
+                        bounds.alpha = Some([-angular_bound, angular_bound]);
+                        bounds.beta = Some([-angular_bound, angular_bound]);
+                    } else if let Some(geo) = geometry_3d {
                         let length = geo.length.unwrap_or(10.0);
                         let angular_bound = effective_tol / length;
                         bounds.alpha = Some([-angular_bound, angular_bound]);
@@ -509,7 +689,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Position 0.25 diameter -> ±0.125 radius
         assert!(result.bounds.u.is_some());
@@ -543,7 +723,7 @@ mod tests {
 
         // At actual size 10.05 (departure from MMC = 0.05)
         // Effective position = 0.25 + 0.05 = 0.30 diameter
-        let result = compute_torsor_bounds(&feat, Some(10.05));
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, Some(10.05), None);
 
         assert!(result.has_bonus);
         let [u_min, u_max] = result.bounds.u.unwrap();
@@ -572,7 +752,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Sphere: u, v, w all constrained
         assert!(result.bounds.u.is_some());
@@ -603,7 +783,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Angular deviation = 0.10 / 20.0 = 0.005 radians
         assert!(result.bounds.alpha.is_some());
@@ -626,7 +806,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         assert!(!result.warnings.is_empty());
         assert!(result
@@ -649,7 +829,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Flatness affects w (out-of-plane)
         assert!(result.bounds.w.is_some());
@@ -672,7 +852,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Concentricity affects u, v (radial offset)
         let [u_min, u_max] = result.bounds.u.unwrap();
@@ -700,7 +880,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Runout affects u, v and angular
         assert!(result.bounds.u.is_some());
@@ -749,7 +929,7 @@ mod tests {
             material_condition: MaterialCondition::Rfs,
         });
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Should have both position (u, v) and perpendicularity (alpha, beta)
         assert!(result.bounds.u.is_some());
@@ -785,7 +965,7 @@ mod tests {
         });
         // No GD&T controls
 
-        let result = compute_torsor_bounds(&feat, None);
+        let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, None, None);
 
         // Should compute from dimensional tolerance
         assert!(result.bounds.u.is_some());
@@ -912,5 +1092,98 @@ mod tests {
 
         let warnings = validate_bounds_for_geometry(&bounds, GeometryClass::Plane);
         assert!(warnings.is_empty());
+    }
+
+    // ===== ResolvedLength Tests =====
+
+    #[test]
+    fn test_resolved_length_fixed() {
+        let len = ResolvedLength::fixed(50.0);
+        assert_eq!(len.nominal, 50.0);
+        assert_eq!(len.plus_tol, 0.0);
+        assert_eq!(len.minus_tol, 0.0);
+        assert_eq!(len.source, "fixed");
+        assert!(!len.has_tolerance());
+    }
+
+    #[test]
+    fn test_resolved_length_with_tolerance() {
+        let len = ResolvedLength {
+            nominal: 50.0,
+            plus_tol: 0.5,
+            minus_tol: 0.3,
+            source: "FEAT@1:depth".to_string(),
+        };
+
+        assert!(len.has_tolerance());
+        assert!((len.min_length() - 49.7).abs() < 1e-10);
+        assert!((len.max_length() - 50.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_resolved_length_min_clamp() {
+        // Test that min_length is clamped to prevent division by zero
+        let len = ResolvedLength {
+            nominal: 0.5,
+            plus_tol: 0.0,
+            minus_tol: 0.5, // Would make min_length = 0
+            source: "test".to_string(),
+        };
+
+        // Should be clamped to 0.001
+        assert!((len.min_length() - 0.001).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_resolved_length_variance() {
+        let len = ResolvedLength {
+            nominal: 50.0,
+            plus_tol: 0.3,  // +0.3
+            minus_tol: 0.3, // -0.3
+            source: "test".to_string(),
+        };
+
+        // σ = (0.3 + 0.3) / 6.0 = 0.1
+        // variance = σ² = 0.01
+        let variance = len.variance(6.0);
+        assert!((variance - 0.01).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_angular_bound_with_length_tolerance() {
+        // With tolerance, angular bound should be larger at min length
+        let len_with_tol = ResolvedLength {
+            nominal: 50.0,
+            plus_tol: 5.0,  // Max length = 55
+            minus_tol: 5.0, // Min length = 45
+            source: "test".to_string(),
+        };
+
+        let linear_tol = 0.1; // 0.1mm perpendicularity
+
+        let angular = compute_angular_bound_with_length_tolerance(linear_tol, &len_with_tol);
+
+        // At min length (45): 0.1/45 = 0.00222...
+        // At max length (55): 0.1/55 = 0.00181...
+        // Should take the max = 0.1/45
+        let expected = linear_tol / 45.0;
+        assert!(
+            (angular - expected).abs() < 1e-10,
+            "Expected {}, got {}",
+            expected,
+            angular
+        );
+    }
+
+    #[test]
+    fn test_angular_bound_fixed_length() {
+        // With no tolerance, should use nominal length
+        let len_fixed = ResolvedLength::fixed(50.0);
+        let linear_tol = 0.1;
+
+        let angular = compute_angular_bound_with_length_tolerance(linear_tol, &len_fixed);
+
+        let expected = linear_tol / 50.0; // 0.002
+        assert!((angular - expected).abs() < 1e-10);
     }
 }

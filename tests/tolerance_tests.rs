@@ -506,10 +506,24 @@ fn test_tol_analyze_accepts_visualize_flag() {
     };
     fs::write(&stackup_path, &updated_content).unwrap();
 
-    // The --visualize flag should be accepted
+    // The --visualize flag should be accepted with a visualization mode
     tdt()
         .current_dir(tmp.path())
-        .args(["tol", "analyze", "TOL@1", "--visualize"])
+        .args(["tol", "analyze", "TOL@1", "--visualize", "terminal"])
+        .assert()
+        .success();
+
+    // Test ascii mode
+    tdt()
+        .current_dir(tmp.path())
+        .args(["tol", "analyze", "TOL@1", "--visualize", "ascii"])
+        .assert()
+        .success();
+
+    // Test svg mode
+    tdt()
+        .current_dir(tmp.path())
+        .args(["tol", "analyze", "TOL@1", "--visualize", "svg"])
         .assert()
         .success();
 }

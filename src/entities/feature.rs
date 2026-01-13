@@ -651,6 +651,68 @@ impl Feature {
 
         Some(base_position + bonus)
     }
+
+    /// Infer geometry class from feature properties when not explicitly set.
+    ///
+    /// Inference rules:
+    /// - Dimension named "diameter", "radius", "bore", "od", "id" → Cylinder
+    /// - Dimension named "width", "height", "depth", "length", "thickness" → Plane
+    /// - GD&T Cylindricity or Circularity → Cylinder
+    /// - GD&T Flatness → Plane
+    /// - GD&T Sphericity → Sphere
+    /// - Otherwise → Complex (requires manual specification)
+    ///
+    /// Returns (inferred_class, was_inferred) tuple.
+    pub fn infer_geometry_class(&self) -> (GeometryClass, bool) {
+        // If already set, use it
+        if let Some(class) = &self.geometry_class {
+            return (*class, false);
+        }
+
+        // Check GD&T symbols first (more specific)
+        for gdt in &self.gdt {
+            match gdt.symbol {
+                GdtSymbol::Cylindricity | GdtSymbol::Circularity => {
+                    return (GeometryClass::Cylinder, true);
+                }
+                GdtSymbol::Flatness => {
+                    return (GeometryClass::Plane, true);
+                }
+                _ => {}
+            }
+        }
+
+        // Check dimension names
+        for dim in &self.dimensions {
+            let name_lower = dim.name.to_lowercase();
+            if name_lower.contains("diameter")
+                || name_lower.contains("radius")
+                || name_lower.contains("bore")
+                || name_lower == "od"
+                || name_lower == "id"
+            {
+                return (GeometryClass::Cylinder, true);
+            }
+            if name_lower.contains("width")
+                || name_lower.contains("height")
+                || name_lower.contains("depth")
+                || name_lower.contains("length")
+                || name_lower.contains("thickness")
+                || name_lower.contains("face")
+            {
+                return (GeometryClass::Plane, true);
+            }
+        }
+
+        // Fallback to Complex - will need manual specification
+        (GeometryClass::Complex, true)
+    }
+
+    /// Get the effective geometry class, using inference if not explicitly set.
+    /// Returns the class and a boolean indicating if it was inferred.
+    pub fn effective_geometry_class(&self) -> (GeometryClass, bool) {
+        self.infer_geometry_class()
+    }
 }
 
 #[cfg(test)]

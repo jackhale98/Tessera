@@ -9,7 +9,7 @@ use std::fs;
 use crate::cli::filters::StatusFilter;
 use crate::cli::helpers::{format_short_id, smart_round, truncate_str};
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
-use crate::cli::viz;
+use crate::cli::viz::{self, SvgConfig};
 use crate::cli::{GlobalOpts, OutputFormat};
 use crate::core::cache::EntityCache;
 use crate::core::entity::Entity;
@@ -25,6 +25,18 @@ use crate::entities::stackup::{
 };
 use crate::schema::template::{TemplateContext, TemplateGenerator};
 use crate::schema::wizard::SchemaWizard;
+
+/// Visualization mode for 3D stackup analysis
+#[derive(Debug, Clone, Copy, ValueEnum, Default, PartialEq)]
+pub enum VisualizationMode {
+    /// Terminal-based ASCII schematic (default)
+    #[default]
+    Terminal,
+    /// ASCII isometric 3D view using braille characters
+    Ascii,
+    /// SVG vector graphics (outputs to file)
+    Svg,
+}
 
 #[derive(Subcommand, Debug)]
 pub enum TolCommands {
@@ -338,10 +350,14 @@ pub struct AnalyzeArgs {
     #[arg(long = "3d", short = '3')]
     pub three_d: bool,
 
-    /// Show braille visualization of tolerance chain
-    /// Renders schematic and deviation ellipses in terminal
+    /// Show visualization of tolerance chain
+    /// Mode: terminal (default), ascii (3D isometric), svg (save to file)
+    #[arg(long, value_enum)]
+    pub visualize: Option<VisualizationMode>,
+
+    /// Path to save SVG output (only used with --visualize svg)
     #[arg(long)]
-    pub visualize: bool,
+    pub svg_output: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -1213,7 +1229,7 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
     stackup.analysis_results.rss = Some(stackup.calculate_rss());
 
     // 3D SDT Analysis (if requested)
-    let _contributors_3d = if args.three_d {
+    let contributors_3d = if args.three_d {
         run_3d_analysis(&mut stackup, &project, args.iterations)?
     } else {
         None
@@ -1496,17 +1512,62 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
         }
 
         // Show visualization if requested
-        if args.visualize {
-            println!();
-            println!("{}:", style("Tolerance Chain Schematic").bold());
-            println!("{}", viz::render_chain_schematic(&stackup));
-
-            // Show deviation ellipse if we have 3D results
-            if let Some(ref results_3d) = stackup.analysis_results_3d {
-                if let Some(ref result_torsor) = results_3d.result_torsor {
+        if let Some(viz_mode) = args.visualize {
+            match viz_mode {
+                VisualizationMode::Terminal => {
                     println!();
-                    println!("{}:", style("UV Deviation Ellipse (3σ)").bold());
-                    println!("{}", viz::render_deviation_ellipse(result_torsor, 32));
+                    println!("{}:", style("Tolerance Chain Schematic").bold());
+                    println!("{}", viz::render_chain_schematic(&stackup));
+
+                    // Show deviation ellipse if we have 3D results
+                    if let Some(ref results_3d) = stackup.analysis_results_3d {
+                        if let Some(ref result_torsor) = results_3d.result_torsor {
+                            println!();
+                            println!("{}:", style("UV Deviation Ellipse (3σ)").bold());
+                            println!("{}", viz::render_deviation_ellipse(result_torsor, 32));
+                        }
+                    }
+                }
+                VisualizationMode::Ascii => {
+                    // ASCII isometric 3D view
+                    if let Some(ref contribs) = contributors_3d {
+                        println!();
+                        println!("{}", viz::render_isometric_ascii(&stackup, contribs));
+                    } else {
+                        eprintln!(
+                            "{} ASCII isometric view requires 3D analysis (use --3d flag)",
+                            style("⚠").yellow()
+                        );
+                        // Fall back to terminal mode
+                        println!();
+                        println!("{}:", style("Tolerance Chain Schematic").bold());
+                        println!("{}", viz::render_chain_schematic(&stackup));
+                    }
+                }
+                VisualizationMode::Svg => {
+                    // SVG output
+                    if let Some(ref contribs) = contributors_3d {
+                        let svg_config = SvgConfig::default();
+                        let svg = viz::render_stackup_svg(&stackup, contribs, &svg_config);
+
+                        // Write to file or print
+                        if let Some(ref path) = args.svg_output {
+                            fs::write(path, &svg).into_diagnostic()?;
+                            eprintln!(
+                                "{} SVG saved to {}",
+                                style("✓").green(),
+                                style(path).cyan()
+                            );
+                        } else {
+                            // Output to stdout
+                            println!("{}", svg);
+                        }
+                    } else {
+                        eprintln!(
+                            "{} SVG visualization requires 3D analysis (use --3d flag)",
+                            style("⚠").yellow()
+                        );
+                    }
                 }
             }
         }
@@ -2103,7 +2164,8 @@ fn run_add(args: AddArgs) -> Result<()> {
             mean_shift: None,
             no_gdt: false,
             three_d: false,
-            visualize: false,
+            visualize: None,
+            svg_output: None,
         })?;
     }
 
@@ -2353,7 +2415,10 @@ fn run_3d_analysis(
 
     // Build 3D contributors from stackup contributors
     let mut contributors_3d: Vec<ChainContributor3D> = Vec::new();
-    let mut missing_geometry = Vec::new();
+    let mut missing_geometry_3d = Vec::new();
+    let mut missing_geometry_class = Vec::new();
+    let mut inferred_geometry_class: Vec<(String, GeometryClass)> = Vec::new();
+    let mut no_feature_link = Vec::new();
     let mut using_gdt_bounds = Vec::new();
     let mut using_derived_bounds = Vec::new();
 
@@ -2364,10 +2429,33 @@ fn run_3d_analysis(
             .as_ref()
             .and_then(|fr| features.get(&fr.id.to_string()));
 
-        // Get geometry class (from feature or default to Complex)
-        let geometry_class = feat_opt
-            .and_then(|f| f.geometry_class.clone())
-            .unwrap_or(GeometryClass::Complex);
+        // Check if contributor has a feature link
+        if contrib.feature.is_some() && feat_opt.is_none() {
+            // Feature reference exists but feature file not found
+            no_feature_link.push(format!(
+                "{} (feature not found)",
+                contrib.name
+            ));
+        } else if contrib.feature.is_none() {
+            no_feature_link.push(contrib.name.clone());
+        }
+
+        // Get geometry class using inference when not explicitly set
+        let (geometry_class, was_inferred) = if let Some(feat) = feat_opt {
+            feat.effective_geometry_class()
+        } else {
+            // No feature - default to Complex
+            (GeometryClass::Complex, true)
+        };
+
+        // Track geometry class issues
+        if was_inferred {
+            if geometry_class == GeometryClass::Complex {
+                missing_geometry_class.push(contrib.name.clone());
+            } else {
+                inferred_geometry_class.push((contrib.name.clone(), geometry_class.clone()));
+            }
+        }
 
         // Get position (from feature geometry_3d or default to origin)
         let position = feat_opt
@@ -2375,9 +2463,15 @@ fn run_3d_analysis(
             .map(|g| g.origin)
             .unwrap_or([0.0, 0.0, 0.0]);
 
-        // Check if we have geometry data
+        // Get axis/orientation (from feature geometry_3d or default to Z-axis)
+        let axis = feat_opt
+            .and_then(|f| f.geometry_3d.as_ref())
+            .map(|g| g.axis)
+            .unwrap_or([0.0, 0.0, 1.0]);
+
+        // Check if we have geometry_3d data
         if feat_opt.is_some() && feat_opt.unwrap().geometry_3d.is_none() {
-            missing_geometry.push(contrib.name.clone());
+            missing_geometry_3d.push(contrib.name.clone());
         }
 
         // Get GD&T datum references if available
@@ -2424,16 +2518,84 @@ fn run_3d_analysis(
             feature_id: contrib.feature.as_ref().map(|f| f.id.to_string()),
             geometry_class,
             position,
+            axis,
             bounds,
             distribution,
             sigma_level: stackup.sigma_level,
+            length_info: None, // TODO: Populate from resolved length for cross-term variance
         });
+    }
+
+    // Report 3D analysis configuration issues
+
+    // Error: geometry_class defaulted to Complex (no DOF bounds)
+    if !missing_geometry_class.is_empty() {
+        eprintln!(
+            "\n{} {} contributor(s) missing geometry_class (3D bounds will be zero):",
+            style("✗").red().bold(),
+            missing_geometry_class.len()
+        );
+        for name in &missing_geometry_class {
+            eprintln!("    • {}", style(name).yellow());
+        }
+        eprintln!(
+            "  {} Add geometry_class to linked feature: plane, cylinder, sphere, cone, point, line",
+            style("→").cyan()
+        );
+        eprintln!(
+            "  {} Or infer from dimension names (diameter→cylinder, depth→plane)",
+            style("→").cyan()
+        );
+    }
+
+    // Warning: geometry_class was inferred
+    if !inferred_geometry_class.is_empty() {
+        eprintln!(
+            "\n{} Inferred geometry_class for {} contributor(s):",
+            style("ℹ").blue(),
+            inferred_geometry_class.len()
+        );
+        for (name, class) in &inferred_geometry_class {
+            eprintln!("    • {} → {}", name, style(class).cyan());
+        }
+    }
+
+    // Warning: no feature link
+    if !no_feature_link.is_empty() {
+        eprintln!(
+            "\n{} {} contributor(s) without feature link (using defaults):",
+            style("⚠").yellow(),
+            no_feature_link.len()
+        );
+        for name in &no_feature_link {
+            eprintln!("    • {}", name);
+        }
+        eprintln!(
+            "  {} Link features for accurate 3D geometry: tdt tol add TOL@N +FEAT@1",
+            style("→").cyan()
+        );
+    }
+
+    // Warning: missing geometry_3d on linked features
+    if !missing_geometry_3d.is_empty() {
+        eprintln!(
+            "\n{} {} linked feature(s) missing geometry_3d (using origin [0,0,0]):",
+            style("⚠").yellow(),
+            missing_geometry_3d.len()
+        );
+        for name in &missing_geometry_3d {
+            eprintln!("    • {}", name);
+        }
+        eprintln!(
+            "  {} Add geometry_3d with origin and axis to feature files",
+            style("→").cyan()
+        );
     }
 
     // Report bounds sources
     if !using_gdt_bounds.is_empty() {
         eprintln!(
-            "{} Using GD&T torsor_bounds: {}",
+            "\n{} Using GD&T torsor_bounds: {}",
             style("✓").green(),
             using_gdt_bounds.join(", ")
         );
@@ -2443,15 +2605,6 @@ fn run_3d_analysis(
             "{} Using derived bounds (no torsor_bounds): {}",
             style("ℹ").blue(),
             using_derived_bounds.join(", ")
-        );
-    }
-
-    // Warn about missing geometry
-    if !missing_geometry.is_empty() {
-        eprintln!(
-            "{} Contributors without 3D geometry (using origin): {}",
-            style("⚠").yellow(),
-            missing_geometry.join(", ")
         );
     }
 
