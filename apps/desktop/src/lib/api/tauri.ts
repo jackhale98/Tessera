@@ -5,11 +5,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
 	ProjectInfo,
-	Requirement,
-	Risk,
-	Component,
-	Test,
-	Result,
+	EntityData,
+	EntityListResult,
 	ListParams,
 	TraceResult,
 	CoverageReport,
@@ -28,113 +25,286 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 	}
 }
 
+// Risk-specific types from backend
+export interface RiskSummary {
+	id: string;
+	title: string;
+	risk_type: string;
+	failure_mode: string;
+	severity?: number;
+	occurrence?: number;
+	detection?: number;
+	rpn?: number;
+	risk_level?: string;
+	status: string;
+	author: string;
+	created: string;
+	tags: string[];
+	mitigation_count: number;
+}
+
+export interface ListRisksResult {
+	items: RiskSummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface RiskStats {
+	total: number;
+	by_level: Record<string, number>;
+	by_type: Record<string, number>;
+	by_status: Record<string, number>;
+	average_rpn?: number;
+	high_priority_count: number;
+	unmitigated_count: number;
+}
+
+// Component-specific types
+export interface ComponentSummary {
+	id: string;
+	title: string;
+	part_number: string;
+	revision?: string;
+	category: string;
+	make_buy: string;
+	unit_cost?: number;
+	mass_kg?: number;
+	status: string;
+	author: string;
+	created: string;
+	tags: string[];
+}
+
+export interface ListComponentsResult {
+	items: ComponentSummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface ComponentStats {
+	total: number;
+	by_category: Record<string, number>;
+	by_status: Record<string, number>;
+	make_count: number;
+	buy_count: number;
+	total_cost?: number;
+	total_mass?: number;
+}
+
+export interface BomCostSummary {
+	total_cost: number;
+	by_category: Record<string, number>;
+	by_make_buy: Record<string, number>;
+	item_count: number;
+}
+
+// Requirement stats
+export interface RequirementStats {
+	total: number;
+	inputs: number;
+	outputs: number;
+	unverified: number;
+	orphaned: number;
+	by_status: StatusCounts;
+}
+
+export interface StatusCounts {
+	draft: number;
+	review: number;
+	approved: number;
+	released: number;
+	obsolete: number;
+}
+
+// Link info
+export interface LinkInfo {
+	source_id: string;
+	target_id: string;
+	link_type: string;
+	target_title?: string;
+	target_status?: string;
+}
+
 /**
  * Project management API
  */
 export const project = {
-	/**
-	 * Open an existing TDT project
-	 */
 	open: (path: string) => call<ProjectInfo>('open_project', { path }),
-
-	/**
-	 * Initialize a new TDT project
-	 */
 	init: (path: string) => call<ProjectInfo>('init_project', { path }),
-
-	/**
-	 * Close the current project
-	 */
 	close: () => call<void>('close_project'),
-
-	/**
-	 * Get information about the current project
-	 */
 	getInfo: () => call<ProjectInfo | null>('get_project_info'),
-
-	/**
-	 * Refresh the project cache
-	 */
 	refresh: () => call<ProjectInfo>('refresh_project')
 };
 
 /**
- * Requirements API
+ * Generic entity API (works with all entity types)
  */
-export const requirements = {
-	list: (params?: ListParams) => call<Requirement[]>('list_requirements', { params }),
-	get: (id: string) => call<Requirement | null>('get_requirement', { id }),
-	create: (input: Partial<Requirement>) => call<Requirement>('create_requirement', { input }),
-	update: (id: string, input: Partial<Requirement>) =>
-		call<Requirement>('update_requirement', { id, input }),
-	delete: (id: string) => call<void>('delete_requirement', { id })
+export const entities = {
+	list: (entityType: string, params?: ListParams) =>
+		call<EntityListResult>('list_entities', {
+			params: { entity_type: entityType, ...params }
+		}),
+	get: (id: string) => call<EntityData | null>('get_entity', { id }),
+	save: (entityType: string, data: Record<string, unknown>) =>
+		call<string>('save_entity', { entity_type: entityType, data }),
+	delete: (id: string) => call<void>('delete_entity', { id }),
+	getCount: (entityType: string) => call<number>('get_entity_count', { entity_type: entityType }),
+	getAllCounts: () => call<Record<string, number>>('get_all_entity_counts')
 };
 
 /**
- * Risks API
+ * Requirements API (stats only - CRUD via entities)
  */
+export const requirements = {
+	getStats: () => call<RequirementStats>('get_requirement_stats')
+};
+
+/**
+ * Risks API (specialized commands + CRUD)
+ */
+export interface ListRisksParams {
+	status?: string[];
+	priority?: string[];
+	risk_type?: string;
+	risk_level?: string;
+	search?: string;
+	tags?: string[];
+	min_rpn?: number;
+	limit?: number;
+	offset?: number;
+	sort_by?: string;
+	sort_desc?: boolean;
+}
+
+export interface CreateRiskInput {
+	title: string;
+	description: string;
+	author: string;
+	risk_type?: string;
+	category?: string;
+	failure_mode?: string;
+	cause?: string;
+	effect?: string;
+	severity?: number;
+	occurrence?: number;
+	detection?: number;
+	tags?: string[];
+}
+
+export interface UpdateRiskInput {
+	title?: string;
+	description?: string;
+	risk_type?: string;
+	status?: string;
+	category?: string;
+	failure_mode?: string;
+	cause?: string;
+	effect?: string;
+	severity?: number;
+	occurrence?: number;
+	detection?: number;
+	tags?: string[];
+}
+
+export interface AddMitigationInput {
+	action: string;
+	mitigation_type?: string;
+	owner?: string;
+	due_date?: string;
+}
+
 export const risks = {
-	list: (params?: ListParams) => call<Risk[]>('list_risks', { params }),
-	get: (id: string) => call<Risk | null>('get_risk', { id }),
-	create: (input: Partial<Risk>) => call<Risk>('create_risk', { input }),
-	update: (id: string, input: Partial<Risk>) => call<Risk>('update_risk', { id, input }),
+	list: (params?: ListRisksParams) => call<ListRisksResult>('list_risks', { params }),
+	get: (id: string) => call<unknown>('get_risk', { id }),
+	create: (input: CreateRiskInput) => call<unknown>('create_risk', { input }),
+	update: (id: string, input: UpdateRiskInput) => call<unknown>('update_risk', { id, input }),
 	delete: (id: string) => call<void>('delete_risk', { id }),
+	addMitigation: (id: string, input: AddMitigationInput) =>
+		call<unknown>('add_risk_mitigation', { id, input }),
+	getStats: () => call<RiskStats>('get_risk_stats'),
 	getMatrix: () => call<RiskMatrix>('get_risk_matrix')
 };
 
 /**
- * Components API
+ * Components API (specialized commands + CRUD)
  */
+export interface ListComponentsParams {
+	status?: string[];
+	category?: string;
+	make_buy?: string;
+	search?: string;
+	tags?: string[];
+	limit?: number;
+	offset?: number;
+	sort_by?: string;
+	sort_desc?: boolean;
+}
+
+export interface CreateComponentInput {
+	title: string;
+	part_number: string;
+	author: string;
+	revision?: string;
+	description?: string;
+	category?: string;
+	make_buy?: string;
+	unit_cost?: number;
+	mass_kg?: number;
+	material?: string;
+	tags?: string[];
+}
+
+export interface UpdateComponentInput {
+	title?: string;
+	part_number?: string;
+	revision?: string;
+	description?: string;
+	category?: string;
+	make_buy?: string;
+	unit_cost?: number;
+	mass_kg?: number;
+	material?: string;
+	status?: string;
+}
+
 export const components = {
-	list: (params?: ListParams) => call<Component[]>('list_components', { params }),
-	get: (id: string) => call<Component | null>('get_component', { id }),
-	create: (input: Partial<Component>) => call<Component>('create_component', { input }),
-	update: (id: string, input: Partial<Component>) =>
-		call<Component>('update_component', { id, input }),
-	delete: (id: string) => call<void>('delete_component', { id })
-};
-
-/**
- * Tests API
- */
-export const tests = {
-	list: (params?: ListParams) => call<Test[]>('list_tests', { params }),
-	get: (id: string) => call<Test | null>('get_test', { id }),
-	create: (input: Partial<Test>) => call<Test>('create_test', { input }),
-	update: (id: string, input: Partial<Test>) => call<Test>('update_test', { id, input }),
-	delete: (id: string) => call<void>('delete_test', { id })
-};
-
-/**
- * Results API
- */
-export const results = {
-	list: (params?: ListParams) => call<Result[]>('list_results', { params }),
-	get: (id: string) => call<Result | null>('get_result', { id }),
-	create: (input: Partial<Result>) => call<Result>('create_result', { input }),
-	update: (id: string, input: Partial<Result>) => call<Result>('update_result', { id, input }),
-	delete: (id: string) => call<void>('delete_result', { id })
+	list: (params?: ListComponentsParams) => call<ListComponentsResult>('list_components', { params }),
+	get: (id: string) => call<unknown>('get_component', { id }),
+	getByPartNumber: (partNumber: string) =>
+		call<unknown>('get_component_by_part_number', { part_number: partNumber }),
+	create: (input: CreateComponentInput) => call<unknown>('create_component', { input }),
+	update: (id: string, input: UpdateComponentInput) =>
+		call<unknown>('update_component', { id, input }),
+	delete: (id: string) => call<void>('delete_component', { id }),
+	getStats: () => call<ComponentStats>('get_component_stats'),
+	getBomCostSummary: () => call<BomCostSummary>('get_bom_cost_summary')
 };
 
 /**
  * Traceability API
  */
+export interface TraceParams {
+	id: string;
+	direction?: string;
+	depth?: number;
+	link_types?: string[];
+}
+
 export const traceability = {
-	/**
-	 * Trace from an entity (find what it links to)
-	 */
-	traceFrom: (id: string, depth?: number) =>
-		call<TraceResult>('trace_from', { id, depth: depth ?? 1 }),
-
-	/**
-	 * Trace to an entity (find what links to it)
-	 */
-	traceTo: (id: string, depth?: number) => call<TraceResult>('trace_to', { id, depth: depth ?? 1 }),
-
-	/**
-	 * Get coverage report
-	 */
-	getCoverage: () => call<CoverageReport>('get_coverage')
+	getLinksFrom: (id: string) => call<LinkInfo[]>('get_links_from', { id }),
+	getLinksTo: (id: string) => call<LinkInfo[]>('get_links_to', { id }),
+	traceFrom: (params: TraceParams) => call<TraceResult>('trace_from', { params }),
+	traceTo: (params: TraceParams) => call<TraceResult>('trace_to', { params }),
+	getCoverage: () => call<CoverageReport>('get_coverage_report'),
+	getDsm: (entityType?: string) => call<unknown>('get_dsm', { entity_type: entityType }),
+	findOrphans: (entityType?: string) => call<string[]>('find_orphans', { entity_type: entityType }),
+	findCycles: (entityType?: string) =>
+		call<string[][]>('find_cycles', { entity_type: entityType }),
+	addLink: (sourceId: string, targetId: string, linkType?: string) =>
+		call<void>('add_link', { source_id: sourceId, target_id: targetId, link_type: linkType }),
+	removeLink: (sourceId: string, targetId: string, linkType?: string) =>
+		call<void>('remove_link', { source_id: sourceId, target_id: targetId, link_type: linkType }),
+	getLinkTypes: () => call<string[]>('get_link_types')
 };
 
 /**
@@ -142,11 +312,10 @@ export const traceability = {
  */
 export const api = {
 	project,
+	entities,
 	requirements,
 	risks,
 	components,
-	tests,
-	results,
 	traceability
 };
 

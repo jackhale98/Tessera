@@ -61,12 +61,12 @@
 			},
 			{
 				label: 'BOM',
-				href: '/bom',
+				href: '/components',
 				icon: Box,
 				count: (counts?.components ?? 0) + (counts?.assemblies ?? 0),
 				children: [
-					{ label: 'Components', href: '/bom/components', icon: Box, count: counts?.components ?? 0 },
-					{ label: 'Assemblies', href: '/bom/assemblies', icon: Layers, count: counts?.assemblies ?? 0 }
+					{ label: 'Components', href: '/components', icon: Box, count: counts?.components ?? 0 },
+					{ label: 'Assemblies', href: '/assemblies', icon: Layers, count: counts?.assemblies ?? 0 }
 				]
 			},
 			{

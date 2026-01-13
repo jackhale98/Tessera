@@ -192,6 +192,24 @@ export interface Result {
 	links: Links;
 }
 
+// Generic entity data from list/get commands
+export interface EntityData {
+	id: string;
+	prefix: string;
+	title: string;
+	status: string;
+	author: string;
+	created: string;
+	tags: string[];
+	data: Record<string, unknown> | null;
+}
+
+// Entity list result
+export interface EntityListResult {
+	items: EntityData[];
+	total_count: number;
+}
+
 // Filter and list params
 export interface ListParams {
 	status?: Status[];

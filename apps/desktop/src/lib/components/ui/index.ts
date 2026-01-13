@@ -14,3 +14,11 @@ export {
 export { Input } from './input/index.js';
 export { Separator } from './separator/index.js';
 export { ScrollArea } from './scroll-area/index.js';
+export {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow
+} from './table/index.js';
