@@ -1,0 +1,55 @@
+[package]
+name = "tdt-core"
+description = "Core library for TDT (Tessera Design Toolkit) - engineering artifact management"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "tdt_core"
+path = "src/lib.rs"
+
+[dependencies]
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+serde_yml.workspace = true
+
+# Schema & Templates
+jsonschema.workspace = true
+tera.workspace = true
+
+# Identity & Time
+ulid.workspace = true
+chrono.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+miette.workspace = true
+
+# File System
+walkdir.workspace = true
+directories.workspace = true
+
+# Utilities
+rust-embed.workspace = true
+rand.workspace = true
+
+# 3D Tolerance Analysis
+nalgebra.workspace = true
+
+# Cache
+rusqlite.workspace = true
+sha2.workspace = true
+csv.workspace = true
+
+# CLI deps temporarily in core (TODO: refactor wizard module to CLI)
+clap.workspace = true
+dialoguer.workspace = true
+console.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+insta.workspace = true

@@ -1,0 +1,63 @@
+[package]
+name = "tdt"
+description = "TDT CLI - Command-line interface for Tessera Design Toolkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["engineering", "requirements", "traceability", "fmea", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "../../README.md"
+exclude = [
+    "docs/*.gif",
+    "docs/*.html",
+    "demos/",
+    "scripts/",
+    ".github/",
+]
+
+[[bin]]
+name = "tdt"
+path = "src/main.rs"
+
+[dependencies]
+# Core library
+tdt-core = { path = "../tdt-core" }
+
+# CLI
+clap.workspace = true
+dialoguer.workspace = true
+console.workspace = true
+tabled.workspace = true
+clap_complete.workspace = true
+drawille.workspace = true
+
+# Serialization (needed for CLI output formatting)
+serde.workspace = true
+serde_json.workspace = true
+serde_yml.workspace = true
+
+# Time (for display)
+chrono.workspace = true
+
+# Error handling
+miette.workspace = true
+thiserror.workspace = true
+
+# File System
+walkdir.workspace = true
+directories.workspace = true
+
+# Utilities
+rand.workspace = true
+csv.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+assert_cmd.workspace = true
+predicates.workspace = true
+insta.workspace = true
+
+[target."cfg(unix)".dependencies]
+libc.workspace = true
