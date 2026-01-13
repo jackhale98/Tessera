@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/tdt-core",
     "crates/tdt-cli",
-    # "apps/desktop/src-tauri",  # Uncomment when Tauri app is added
+    "apps/desktop/src-tauri",
 ]
 
 [workspace.package]

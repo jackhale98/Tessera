@@ -16,6 +16,7 @@
 pub mod core;
 pub mod entities;
 pub mod schema;
+pub mod services;
 pub mod yaml;
 
 // Re-export core types for convenience
