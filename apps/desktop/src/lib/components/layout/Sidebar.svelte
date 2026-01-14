@@ -14,7 +14,21 @@
 		Shield,
 		Link2,
 		Home,
-		FolderOpen
+		FolderOpen,
+		Ruler,
+		CircleDot,
+		Plug,
+		Crosshair,
+		Zap,
+		GitBranch,
+		BarChart3,
+		Grid3X3,
+		ClipboardList,
+		Package,
+		AlertOctagon,
+		FileSpreadsheet,
+		Building2,
+		ShoppingCart
 	} from 'lucide-svelte';
 
 	interface NavItem {
@@ -44,10 +58,16 @@
 				count: counts?.requirements ?? 0
 			},
 			{
-				label: 'Risks',
+				label: 'Safety',
 				href: '/risks',
 				icon: AlertTriangle,
-				count: counts?.risks ?? 0
+				count: (counts?.risks ?? 0) + (counts?.hazards ?? 0),
+				children: [
+					{ label: 'Hazards', href: '/hazards', icon: Zap, count: counts?.hazards ?? 0 },
+					{ label: 'Risks', href: '/risks', icon: AlertTriangle, count: counts?.risks ?? 0 },
+					{ label: 'FMEA Worksheet', href: '/risks/fmea', icon: ClipboardCheck },
+					{ label: 'Analytics', href: '/risks/analytics', icon: BarChart3 }
+				]
 			},
 			{
 				label: 'Verification',
@@ -61,30 +81,67 @@
 			},
 			{
 				label: 'BOM',
-				href: '/components',
-				icon: Box,
+				href: '/assemblies',
+				icon: Layers,
 				count: (counts?.components ?? 0) + (counts?.assemblies ?? 0),
 				children: [
-					{ label: 'Components', href: '/components', icon: Box, count: counts?.components ?? 0 },
-					{ label: 'Assemblies', href: '/assemblies', icon: Layers, count: counts?.assemblies ?? 0 }
+					{ label: 'Assemblies', href: '/assemblies', icon: Layers, count: counts?.assemblies ?? 0 },
+					{ label: 'Components', href: '/components', icon: Box, count: counts?.components ?? 0 }
+				]
+			},
+			{
+				label: 'Tolerances',
+				href: '/tolerances',
+				icon: Ruler,
+				count: (counts?.features ?? 0) + (counts?.mates ?? 0) + (counts?.stackups ?? 0),
+				children: [
+					{ label: 'Features', href: '/features', icon: CircleDot, count: counts?.features ?? 0 },
+					{ label: 'Mates', href: '/mates', icon: Plug, count: counts?.mates ?? 0 },
+					{ label: 'Stackups', href: '/tolerances', icon: Ruler, count: counts?.stackups ?? 0 }
 				]
 			},
 			{
 				label: 'Manufacturing',
 				href: '/manufacturing',
 				icon: Factory,
-				count: (counts?.processes ?? 0) + (counts?.lots ?? 0)
+				count: (counts?.processes ?? 0) + (counts?.controls ?? 0) + (counts?.work_instructions ?? 0) + (counts?.lots ?? 0) + (counts?.deviations ?? 0),
+				children: [
+					{ label: 'Processes', href: '/manufacturing/processes', icon: Factory, count: counts?.processes ?? 0 },
+					{ label: 'Controls', href: '/controls', icon: Crosshair, count: counts?.controls ?? 0 },
+					{ label: 'Work Instructions', href: '/manufacturing/work-instructions', icon: ClipboardList, count: counts?.work_instructions ?? 0 },
+					{ label: 'Lots', href: '/manufacturing/lots', icon: Package, count: counts?.lots ?? 0 },
+					{ label: 'Deviations', href: '/manufacturing/deviations', icon: AlertTriangle, count: counts?.deviations ?? 0 }
+				]
 			},
 			{
 				label: 'Quality',
 				href: '/quality',
 				icon: Shield,
-				count: (counts?.ncrs ?? 0) + (counts?.capas ?? 0)
+				count: (counts?.ncrs ?? 0) + (counts?.capas ?? 0),
+				children: [
+					{ label: 'NCRs', href: '/quality/ncrs', icon: AlertOctagon, count: counts?.ncrs ?? 0 },
+					{ label: 'CAPAs', href: '/quality/capas', icon: Shield, count: counts?.capas ?? 0 }
+				]
+			},
+			{
+				label: 'Procurement',
+				href: '/procurement',
+				icon: ShoppingCart,
+				count: (counts?.quotes ?? 0) + (counts?.suppliers ?? 0),
+				children: [
+					{ label: 'Quotes', href: '/procurement/quotes', icon: FileSpreadsheet, count: counts?.quotes ?? 0 },
+					{ label: 'Suppliers', href: '/procurement/suppliers', icon: Building2, count: counts?.suppliers ?? 0 }
+				]
 			},
 			{
 				label: 'Traceability',
 				href: '/traceability',
-				icon: Link2
+				icon: Link2,
+				children: [
+					{ label: 'Trace Explorer', href: '/traceability', icon: GitBranch },
+					{ label: 'Coverage', href: '/traceability/coverage', icon: BarChart3 },
+					{ label: 'Matrix (DSM)', href: '/traceability/matrix', icon: Grid3X3 }
+				]
 			}
 		];
 	}

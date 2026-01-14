@@ -16,6 +16,13 @@
 	const columns = [
 		{ key: 'id', label: 'ID', sortable: true, class: 'font-mono text-xs w-48' },
 		{ key: 'title', label: 'Title', sortable: true },
+		{
+			key: 'data.type',
+			label: 'Type',
+			sortable: true,
+			class: 'w-20',
+			render: (value: unknown) => (value === 'input' ? 'Input' : value === 'output' ? 'Output' : '-')
+		},
 		{ key: 'status', label: 'Status', sortable: true, class: 'w-24' },
 		{ key: 'author', label: 'Author', sortable: true, class: 'w-32' },
 		{ key: 'tags', label: 'Tags', class: 'w-40' }
@@ -66,7 +73,7 @@
 			<h1 class="text-2xl font-bold">Requirements</h1>
 			<p class="text-muted-foreground">Manage system and stakeholder requirements</p>
 		</div>
-		<Button>New Requirement</Button>
+		<Button onclick={() => goto('/requirements/new')}>New Requirement</Button>
 	</div>
 
 	<!-- Stats cards -->

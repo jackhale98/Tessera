@@ -10,20 +10,31 @@ use std::path::{Path, PathBuf};
 
 /// Load all entities of type T from a directory
 ///
-/// Scans the directory for .yaml files and deserializes them.
+/// Scans the directory recursively for .yaml files and deserializes them.
 /// Files that fail to parse are silently skipped.
 pub fn load_all<T: DeserializeOwned>(dir: &Path) -> Result<Vec<T>> {
     let mut entities = Vec::new();
+    load_all_recursive(dir, &mut entities);
+    Ok(entities)
+}
 
+fn load_all_recursive<T: DeserializeOwned>(dir: &Path, entities: &mut Vec<T>) {
     if !dir.exists() {
-        return Ok(entities);
+        return;
     }
 
-    for entry in fs::read_dir(dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
         let path = entry.path();
 
-        if path.extension().is_some_and(|e| e == "yaml") {
+        if path.is_dir() {
+            // Recursively search subdirectories
+            load_all_recursive(&path, entities);
+        } else if path.extension().is_some_and(|e| e == "yaml") {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(entity) = serde_yml::from_str::<T>(&content) {
                     entities.push(entity);
@@ -31,15 +42,18 @@ pub fn load_all<T: DeserializeOwned>(dir: &Path) -> Result<Vec<T>> {
             }
         }
     }
-
-    Ok(entities)
 }
 
 /// Find an entity file by ID (supports partial matching)
 ///
 /// Searches for a file whose stem contains the given ID.
+/// Searches recursively through subdirectories.
 /// Returns the first match found.
 pub fn find_entity_file(dir: &Path, id: &str) -> Option<PathBuf> {
+    find_entity_file_recursive(dir, id)
+}
+
+fn find_entity_file_recursive(dir: &Path, id: &str) -> Option<PathBuf> {
     if !dir.exists() {
         return None;
     }
@@ -48,7 +62,12 @@ pub fn find_entity_file(dir: &Path, id: &str) -> Option<PathBuf> {
         let entry = entry.ok()?;
         let path = entry.path();
 
-        if path.extension().is_some_and(|e| e == "yaml") {
+        if path.is_dir() {
+            // Recursively search subdirectories
+            if let Some(found) = find_entity_file_recursive(&path, id) {
+                return Some(found);
+            }
+        } else if path.extension().is_some_and(|e| e == "yaml") {
             let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             if filename.contains(id) || filename.starts_with(id) {
                 return Some(path);

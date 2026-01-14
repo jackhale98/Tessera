@@ -2,42 +2,42 @@
 
 /* Custom CSS variables for theming - will be used by shadcn-svelte */
 @theme {
-	/* Colors - Modern dark theme with blue accents */
-	--color-background: oklch(0.145 0 0);
-	--color-foreground: oklch(0.985 0 0);
-	--color-card: oklch(0.165 0 0);
-	--color-card-foreground: oklch(0.985 0 0);
-	--color-popover: oklch(0.165 0 0);
-	--color-popover-foreground: oklch(0.985 0 0);
-	--color-primary: oklch(0.646 0.222 264.052);
-	--color-primary-foreground: oklch(0.985 0 0);
-	--color-secondary: oklch(0.269 0 0);
-	--color-secondary-foreground: oklch(0.985 0 0);
-	--color-muted: oklch(0.269 0 0);
-	--color-muted-foreground: oklch(0.708 0 0);
-	--color-accent: oklch(0.269 0 0);
-	--color-accent-foreground: oklch(0.985 0 0);
-	--color-destructive: oklch(0.704 0.191 22.216);
-	--color-destructive-foreground: oklch(0.985 0 0);
-	--color-border: oklch(0.269 0 0);
-	--color-input: oklch(0.269 0 0);
-	--color-ring: oklch(0.646 0.222 264.052);
+	/* Colors - Using CSS custom properties for theme switching */
+	--color-background: var(--theme-background);
+	--color-foreground: var(--theme-foreground);
+	--color-card: var(--theme-card);
+	--color-card-foreground: var(--theme-card-foreground);
+	--color-popover: var(--theme-popover);
+	--color-popover-foreground: var(--theme-popover-foreground);
+	--color-primary: var(--theme-primary);
+	--color-primary-foreground: var(--theme-primary-foreground);
+	--color-secondary: var(--theme-secondary);
+	--color-secondary-foreground: var(--theme-secondary-foreground);
+	--color-muted: var(--theme-muted);
+	--color-muted-foreground: var(--theme-muted-foreground);
+	--color-accent: var(--theme-accent);
+	--color-accent-foreground: var(--theme-accent-foreground);
+	--color-destructive: var(--theme-destructive);
+	--color-destructive-foreground: var(--theme-destructive-foreground);
+	--color-border: var(--theme-border);
+	--color-input: var(--theme-input);
+	--color-ring: var(--theme-ring);
 
 	/* Status colors */
-	--color-success: oklch(0.723 0.191 142.495);
-	--color-warning: oklch(0.828 0.189 84.429);
-	--color-info: oklch(0.646 0.222 264.052);
-	--color-error: oklch(0.704 0.191 22.216);
+	--color-success: var(--theme-success);
+	--color-warning: var(--theme-warning);
+	--color-info: var(--theme-info);
+	--color-error: var(--theme-error);
 
 	/* Sidebar */
-	--color-sidebar: oklch(0.125 0 0);
-	--color-sidebar-foreground: oklch(0.985 0 0);
-	--color-sidebar-primary: oklch(0.646 0.222 264.052);
-	--color-sidebar-primary-foreground: oklch(0.985 0 0);
-	--color-sidebar-accent: oklch(0.269 0 0);
-	--color-sidebar-accent-foreground: oklch(0.985 0 0);
-	--color-sidebar-border: oklch(0.269 0 0);
-	--color-sidebar-ring: oklch(0.646 0.222 264.052);
+	--color-sidebar: var(--theme-sidebar);
+	--color-sidebar-foreground: var(--theme-sidebar-foreground);
+	--color-sidebar-primary: var(--theme-sidebar-primary);
+	--color-sidebar-primary-foreground: var(--theme-sidebar-primary-foreground);
+	--color-sidebar-accent: var(--theme-sidebar-accent);
+	--color-sidebar-accent-foreground: var(--theme-sidebar-accent-foreground);
+	--color-sidebar-border: var(--theme-sidebar-border);
+	--color-sidebar-ring: var(--theme-sidebar-ring);
 
 	/* Border radius */
 	--radius-sm: 0.25rem;
@@ -50,6 +50,85 @@
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* Dark theme (default) */
+:root,
+:root.dark {
+	--theme-background: oklch(0.145 0 0);
+	--theme-foreground: oklch(0.985 0 0);
+	--theme-card: oklch(0.165 0 0);
+	--theme-card-foreground: oklch(0.985 0 0);
+	--theme-popover: oklch(0.165 0 0);
+	--theme-popover-foreground: oklch(0.985 0 0);
+	--theme-primary: oklch(0.646 0.222 264.052);
+	--theme-primary-foreground: oklch(0.985 0 0);
+	--theme-secondary: oklch(0.269 0 0);
+	--theme-secondary-foreground: oklch(0.985 0 0);
+	--theme-muted: oklch(0.269 0 0);
+	--theme-muted-foreground: oklch(0.708 0 0);
+	--theme-accent: oklch(0.269 0 0);
+	--theme-accent-foreground: oklch(0.985 0 0);
+	--theme-destructive: oklch(0.704 0.191 22.216);
+	--theme-destructive-foreground: oklch(0.985 0 0);
+	--theme-border: oklch(0.269 0 0);
+	--theme-input: oklch(0.269 0 0);
+	--theme-ring: oklch(0.646 0.222 264.052);
+
+	/* Status colors */
+	--theme-success: oklch(0.723 0.191 142.495);
+	--theme-warning: oklch(0.828 0.189 84.429);
+	--theme-info: oklch(0.646 0.222 264.052);
+	--theme-error: oklch(0.704 0.191 22.216);
+
+	/* Sidebar */
+	--theme-sidebar: oklch(0.125 0 0);
+	--theme-sidebar-foreground: oklch(0.985 0 0);
+	--theme-sidebar-primary: oklch(0.646 0.222 264.052);
+	--theme-sidebar-primary-foreground: oklch(0.985 0 0);
+	--theme-sidebar-accent: oklch(0.269 0 0);
+	--theme-sidebar-accent-foreground: oklch(0.985 0 0);
+	--theme-sidebar-border: oklch(0.269 0 0);
+	--theme-sidebar-ring: oklch(0.646 0.222 264.052);
+}
+
+/* Light theme */
+:root.light {
+	--theme-background: oklch(0.985 0 0);
+	--theme-foreground: oklch(0.145 0 0);
+	--theme-card: oklch(0.985 0 0);
+	--theme-card-foreground: oklch(0.145 0 0);
+	--theme-popover: oklch(0.985 0 0);
+	--theme-popover-foreground: oklch(0.145 0 0);
+	--theme-primary: oklch(0.546 0.245 264.052);
+	--theme-primary-foreground: oklch(0.985 0 0);
+	--theme-secondary: oklch(0.945 0 0);
+	--theme-secondary-foreground: oklch(0.145 0 0);
+	--theme-muted: oklch(0.945 0 0);
+	--theme-muted-foreground: oklch(0.45 0 0);
+	--theme-accent: oklch(0.945 0 0);
+	--theme-accent-foreground: oklch(0.145 0 0);
+	--theme-destructive: oklch(0.577 0.245 27.325);
+	--theme-destructive-foreground: oklch(0.985 0 0);
+	--theme-border: oklch(0.88 0 0);
+	--theme-input: oklch(0.88 0 0);
+	--theme-ring: oklch(0.546 0.245 264.052);
+
+	/* Status colors */
+	--theme-success: oklch(0.527 0.154 150.069);
+	--theme-warning: oklch(0.769 0.189 70.08);
+	--theme-info: oklch(0.546 0.245 264.052);
+	--theme-error: oklch(0.577 0.245 27.325);
+
+	/* Sidebar */
+	--theme-sidebar: oklch(0.965 0 0);
+	--theme-sidebar-foreground: oklch(0.145 0 0);
+	--theme-sidebar-primary: oklch(0.546 0.245 264.052);
+	--theme-sidebar-primary-foreground: oklch(0.985 0 0);
+	--theme-sidebar-accent: oklch(0.945 0 0);
+	--theme-sidebar-accent-foreground: oklch(0.145 0 0);
+	--theme-sidebar-border: oklch(0.88 0 0);
+	--theme-sidebar-ring: oklch(0.546 0.245 264.052);
+}
+
 /* Base styles */
 @layer base {
 	html {
@@ -59,7 +138,8 @@
 	}
 
 	body {
-		@apply bg-background text-foreground;
+		background-color: var(--theme-background);
+		color: var(--theme-foreground);
 		font-feature-settings: "rlig" 1, "calt" 1;
 	}
 
@@ -70,15 +150,17 @@
 	}
 
 	::-webkit-scrollbar-track {
-		@apply bg-transparent;
+		background-color: transparent;
 	}
 
 	::-webkit-scrollbar-thumb {
-		@apply bg-muted rounded-full;
+		background-color: var(--theme-muted);
+		border-radius: 9999px;
 	}
 
 	::-webkit-scrollbar-thumb:hover {
-		@apply bg-muted-foreground/50;
+		background-color: var(--theme-muted-foreground);
+		opacity: 0.5;
 	}
 }
 

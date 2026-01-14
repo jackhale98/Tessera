@@ -15,6 +15,7 @@ export const error = writable<string | null>(null);
 export const isProjectOpen = derived(projectInfo, ($info) => $info !== null);
 export const projectName = derived(projectInfo, ($info) => $info?.name ?? '');
 export const projectPath = derived(projectInfo, ($info) => $info?.path ?? '');
+export const projectAuthor = derived(projectInfo, ($info) => $info?.author ?? '');
 export const entityCounts = derived(projectInfo, ($info) => $info?.entity_counts ?? null);
 
 export const totalEntities = derived(entityCounts, ($counts) => {
@@ -22,6 +23,7 @@ export const totalEntities = derived(entityCounts, ($counts) => {
 	return (
 		$counts.requirements +
 		$counts.risks +
+		($counts.hazards ?? 0) +
 		$counts.tests +
 		$counts.results +
 		$counts.components +
@@ -37,7 +39,8 @@ export const totalEntities = derived(entityCounts, ($counts) => {
 		$counts.ncrs +
 		$counts.capas +
 		$counts.quotes +
-		$counts.suppliers
+		$counts.suppliers +
+		($counts.actions ?? 0)
 	);
 });
 

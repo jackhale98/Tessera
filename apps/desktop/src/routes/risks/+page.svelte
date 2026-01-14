@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from '$lib/components/ui';
 	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/ui';
@@ -85,10 +84,7 @@
 		}
 	}
 
-	onMount(() => {
-		loadData();
-	});
-
+	// Use single effect for loading
 	$effect(() => {
 		if ($isProjectOpen) {
 			loadData();
@@ -103,7 +99,7 @@
 			<h1 class="text-2xl font-bold">Risk Management</h1>
 			<p class="text-muted-foreground">FMEA and risk analysis</p>
 		</div>
-		<Button>New Risk</Button>
+		<Button onclick={() => goto('/risks/new')}>New Risk</Button>
 	</div>
 
 	<!-- Stats cards -->
@@ -145,7 +141,7 @@
 	{/if}
 
 	<!-- Risk Matrix -->
-	{#if matrix && matrix.cells.length > 0}
+	{#if matrix && matrix.cells}
 		<Card>
 			<CardHeader>
 				<CardTitle>Risk Matrix</CardTitle>
@@ -166,16 +162,18 @@
 							{/each}
 						</div>
 
-						<!-- Matrix rows -->
+						<!-- Matrix rows (occurrence 10 at top, 1 at bottom) -->
 						{#each Array.from({ length: 10 }, (_, i) => 10 - i) as occ}
 							<div class="grid grid-cols-10 gap-1 mb-1">
 								{#each Array.from({ length: 10 }, (_, i) => i + 1) as sev}
-									{@const cell = matrix.cells.find((c: RiskMatrixCell) => c.severity === sev && c.occurrence === occ)}
+									{@const cell = matrix.cells[sev - 1]?.[occ - 1]}
+									{@const rpn = sev * occ}
+									{@const riskLevel = rpn >= 200 ? 'critical' : rpn >= 100 ? 'high' : rpn >= 40 ? 'medium' : 'low'}
 									<button
-										class="h-8 rounded text-xs font-medium transition-colors {cell
-											? getMatrixCellColor(cell.risk_level)
-											: 'bg-muted/30'}"
-										onclick={() => cell && console.log('Cell clicked:', cell.risk_ids)}
+										class="h-8 rounded text-xs font-medium transition-colors {cell?.count > 0
+											? getMatrixCellColor(riskLevel)
+											: 'bg-muted/30 hover:bg-muted/50'}"
+										onclick={() => cell?.count > 0 && console.log('Cell clicked:', cell.risk_ids)}
 									>
 										{cell?.count || ''}
 									</button>
@@ -192,19 +190,19 @@
 				<div class="flex items-center justify-center gap-4 mt-4">
 					<div class="flex items-center gap-1">
 						<div class="w-4 h-4 rounded bg-green-500/30"></div>
-						<span class="text-xs">Low</span>
+						<span class="text-xs">Low (RPN &lt; 40)</span>
 					</div>
 					<div class="flex items-center gap-1">
 						<div class="w-4 h-4 rounded bg-yellow-500/30"></div>
-						<span class="text-xs">Medium</span>
+						<span class="text-xs">Medium (40-99)</span>
 					</div>
 					<div class="flex items-center gap-1">
 						<div class="w-4 h-4 rounded bg-orange-500/30"></div>
-						<span class="text-xs">High</span>
+						<span class="text-xs">High (100-199)</span>
 					</div>
 					<div class="flex items-center gap-1">
 						<div class="w-4 h-4 rounded bg-red-500/30"></div>
-						<span class="text-xs">Critical</span>
+						<span class="text-xs">Critical (200+)</span>
 					</div>
 				</div>
 			</CardContent>

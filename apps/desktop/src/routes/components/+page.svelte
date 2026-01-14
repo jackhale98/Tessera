@@ -83,7 +83,7 @@
 			<h1 class="text-2xl font-bold">Bill of Materials</h1>
 			<p class="text-muted-foreground">Component and assembly management</p>
 		</div>
-		<Button>New Component</Button>
+		<Button onclick={() => goto('/components/new')}>New Component</Button>
 	</div>
 
 	<!-- Stats cards -->

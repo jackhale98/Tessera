@@ -75,23 +75,23 @@ fn entity_dir_name(prefix: EntityPrefix) -> &'static str {
     match prefix {
         EntityPrefix::Req => "requirements",
         EntityPrefix::Risk => "risks",
-        EntityPrefix::Test => "tests",
-        EntityPrefix::Rslt => "results",
-        EntityPrefix::Cmp => "components",
-        EntityPrefix::Asm => "assemblies",
-        EntityPrefix::Feat => "features",
-        EntityPrefix::Mate => "mates",
-        EntityPrefix::Tol => "stackups",
-        EntityPrefix::Proc => "processes",
-        EntityPrefix::Ctrl => "controls",
-        EntityPrefix::Work => "work_instructions",
-        EntityPrefix::Lot => "lots",
-        EntityPrefix::Dev => "deviations",
-        EntityPrefix::Ncr => "ncrs",
-        EntityPrefix::Capa => "capas",
-        EntityPrefix::Quot => "quotes",
-        EntityPrefix::Sup => "suppliers",
-        EntityPrefix::Haz => "hazards",
+        EntityPrefix::Test => "verification/protocols",
+        EntityPrefix::Rslt => "verification/results",
+        EntityPrefix::Cmp => "bom/components",
+        EntityPrefix::Asm => "bom/assemblies",
+        EntityPrefix::Feat => "tolerances/features",
+        EntityPrefix::Mate => "tolerances/mates",
+        EntityPrefix::Tol => "tolerances/stackups",
+        EntityPrefix::Proc => "manufacturing/processes",
+        EntityPrefix::Ctrl => "manufacturing/controls",
+        EntityPrefix::Work => "manufacturing/work_instructions",
+        EntityPrefix::Lot => "manufacturing/lots",
+        EntityPrefix::Dev => "manufacturing/deviations",
+        EntityPrefix::Ncr => "manufacturing/ncrs",
+        EntityPrefix::Capa => "manufacturing/capas",
+        EntityPrefix::Quot => "bom/quotes",
+        EntityPrefix::Sup => "bom/suppliers",
+        EntityPrefix::Haz => "risks/hazards",
         EntityPrefix::Act => "actions",
     }
 }
@@ -102,7 +102,10 @@ pub async fn list_entities(
     params: ListEntitiesParams,
     state: State<'_, AppState>,
 ) -> CommandResult<EntityListResult> {
+    let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
+
+    let project = project.as_ref().ok_or(CommandError::NoProject)?;
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
     let prefix = prefix_from_string(&params.entity_type)
@@ -136,19 +139,26 @@ pub async fn list_entities(
 
     // Apply pagination
     let offset = params.offset.unwrap_or(0);
+    let dir = project.root().join(entity_dir_name(prefix));
+
     let items: Vec<EntityData> = entities
         .into_iter()
         .skip(offset)
         .take(params.limit.unwrap_or(100))
-        .map(|e| EntityData {
-            id: e.id.clone(),
-            prefix: format!("{:?}", prefix),
-            title: e.title.clone(),
-            status: format!("{:?}", e.status).to_lowercase(),
-            author: e.author.clone(),
-            created: e.created.to_rfc3339(),
-            tags: e.tags.clone(),
-            data: Value::Null, // Summary doesn't include full data
+        .map(|e| {
+            // Load full entity data for entity-specific fields
+            let data = load_entity_json(&dir, &e.id).unwrap_or(Value::Null);
+
+            EntityData {
+                id: e.id.clone(),
+                prefix: format!("{:?}", prefix),
+                title: e.title.clone(),
+                status: format!("{:?}", e.status).to_lowercase(),
+                author: e.author.clone(),
+                created: e.created.to_rfc3339(),
+                tags: e.tags.clone(),
+                data,
+            }
         })
         .collect();
 
@@ -236,15 +246,16 @@ pub async fn delete_entity(
 /// Create or update an entity from JSON data
 #[tauri::command]
 pub async fn save_entity(
-    entity_type: String,
+    #[allow(non_snake_case)]
+    entityType: String,
     data: Value,
     state: State<'_, AppState>,
 ) -> CommandResult<String> {
     let project = state.project.lock().unwrap();
     let project = project.as_ref().ok_or(CommandError::NoProject)?;
 
-    let prefix = prefix_from_string(&entity_type)
-        .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", entity_type)))?;
+    let prefix = prefix_from_string(&entityType)
+        .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", entityType)))?;
 
     let dir = project.root().join(entity_dir_name(prefix));
 
@@ -279,14 +290,15 @@ pub async fn save_entity(
 /// Get entity count by type
 #[tauri::command]
 pub async fn get_entity_count(
-    entity_type: String,
+    #[allow(non_snake_case)]
+    entityType: String,
     state: State<'_, AppState>,
 ) -> CommandResult<usize> {
     let cache = state.cache.lock().unwrap();
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
-    let prefix = prefix_from_string(&entity_type)
-        .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", entity_type)))?;
+    let prefix = prefix_from_string(&entityType)
+        .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", entityType)))?;
 
     let filter = EntityFilter {
         prefix: Some(prefix),

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { MainLayout } from '$lib/components/layout/index.js';
+	import { MainLayout, CommandPalette } from '$lib/components/layout/index.js';
 	import { onMount } from 'svelte';
 	import { checkProjectState } from '$lib/stores/project.js';
 
@@ -20,3 +20,6 @@
 <MainLayout>
 	{@render children()}
 </MainLayout>
+
+<!-- Global command palette (Cmd+K) -->
+<CommandPalette />

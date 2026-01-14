@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { isProjectOpen, entityCounts, projectName, totalEntities } from '$lib/stores/project.js';
@@ -47,28 +48,28 @@
 				label: 'Tests',
 				value: counts.tests + counts.results,
 				icon: FlaskConical,
-				href: '/verification',
+				href: '/verification/tests',
 				color: 'text-green-500'
 			},
 			{
 				label: 'Components',
 				value: counts.components + counts.assemblies,
 				icon: Box,
-				href: '/bom',
+				href: '/assemblies',
 				color: 'text-purple-500'
 			},
 			{
 				label: 'Manufacturing',
 				value: counts.processes + counts.lots + counts.work_instructions,
 				icon: Factory,
-				href: '/manufacturing',
+				href: '/manufacturing/processes',
 				color: 'text-orange-500'
 			},
 			{
 				label: 'Quality',
 				value: counts.ncrs + counts.capas,
 				icon: Shield,
-				href: '/quality',
+				href: '/quality/ncrs',
 				color: 'text-red-500'
 			}
 		];
@@ -164,19 +165,19 @@
 			</CardHeader>
 			<CardContent>
 				<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-					<Button variant="outline" class="justify-start">
+					<Button variant="outline" class="justify-start" onclick={() => goto('/requirements/new')}>
 						<FileText class="mr-2 h-4 w-4" />
 						New Requirement
 					</Button>
-					<Button variant="outline" class="justify-start">
+					<Button variant="outline" class="justify-start" onclick={() => goto('/risks/new')}>
 						<AlertTriangle class="mr-2 h-4 w-4" />
 						New Risk
 					</Button>
-					<Button variant="outline" class="justify-start">
+					<Button variant="outline" class="justify-start" onclick={() => goto('/verification/tests/new')}>
 						<FlaskConical class="mr-2 h-4 w-4" />
 						New Test
 					</Button>
-					<Button variant="outline" class="justify-start">
+					<Button variant="outline" class="justify-start" onclick={() => goto('/components/new')}>
 						<Box class="mr-2 h-4 w-4" />
 						New Component
 					</Button>

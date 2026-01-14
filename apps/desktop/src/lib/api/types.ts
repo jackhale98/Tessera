@@ -32,6 +32,7 @@ export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export interface EntityCounts {
 	requirements: number;
 	risks: number;
+	hazards: number;
 	tests: number;
 	results: number;
 	components: number;
@@ -48,12 +49,14 @@ export interface EntityCounts {
 	capas: number;
 	quotes: number;
 	suppliers: number;
+	actions: number;
 }
 
 export interface ProjectInfo {
 	path: string;
 	name: string;
 	entity_counts: EntityCounts;
+	author: string;
 }
 
 // Links structure
@@ -200,7 +203,7 @@ export interface EntityData {
 	status: string;
 	author: string;
 	created: string;
-	tags: string[];
+	tags: string[]; // May be empty array, never null from backend
 	data: Record<string, unknown> | null;
 }
 

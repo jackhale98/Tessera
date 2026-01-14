@@ -5,7 +5,7 @@ use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::State;
-use tdt_core::core::{cache::EntityCache, identity::EntityPrefix, project::Project};
+use tdt_core::core::{cache::EntityCache, config::Config, identity::EntityPrefix, project::Project};
 
 /// Information about the currently open project
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +16,8 @@ pub struct ProjectInfo {
     pub name: String,
     /// Entity counts by type
     pub entity_counts: EntityCounts,
+    /// Default author from config
+    pub author: String,
 }
 
 /// Count of entities by type
@@ -110,6 +112,9 @@ pub async fn open_project(path: String, state: State<'_, AppState>) -> CommandRe
     // Open the cache
     let cache = EntityCache::open(&project).map_err(|e| CommandError::ProjectOpen(e.to_string()))?;
 
+    // Load config to get author
+    let config = Config::load();
+
     // Build project info
     let info = ProjectInfo {
         path: project.root().display().to_string(),
@@ -119,6 +124,7 @@ pub async fn open_project(path: String, state: State<'_, AppState>) -> CommandRe
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "TDT Project".to_string()),
         entity_counts: EntityCounts::from_cache(&cache),
+        author: config.author(),
     };
 
     // Store in state
@@ -139,6 +145,9 @@ pub async fn init_project(path: String, state: State<'_, AppState>) -> CommandRe
     // Open the cache
     let cache = EntityCache::open(&project).map_err(|e| CommandError::ProjectInit(e.to_string()))?;
 
+    // Load config to get author
+    let config = Config::load();
+
     // Build project info
     let info = ProjectInfo {
         path: project.root().display().to_string(),
@@ -147,6 +156,7 @@ pub async fn init_project(path: String, state: State<'_, AppState>) -> CommandRe
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "TDT Project".to_string()),
         entity_counts: EntityCounts::default(),
+        author: config.author(),
     };
 
     // Store in state
@@ -170,15 +180,19 @@ pub async fn get_project_info(state: State<'_, AppState>) -> CommandResult<Optio
     let cache = state.cache.lock().unwrap();
 
     match (&*project, &*cache) {
-        (Some(project), Some(cache)) => Ok(Some(ProjectInfo {
-            path: project.root().display().to_string(),
-            name: project
-                .root()
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "TDT Project".to_string()),
-            entity_counts: EntityCounts::from_cache(cache),
-        })),
+        (Some(project), Some(cache)) => {
+            let config = Config::load();
+            Ok(Some(ProjectInfo {
+                path: project.root().display().to_string(),
+                name: project
+                    .root()
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "TDT Project".to_string()),
+                entity_counts: EntityCounts::from_cache(cache),
+                author: config.author(),
+            }))
+        }
         _ => Ok(None),
     }
 }
@@ -195,6 +209,9 @@ pub async fn refresh_project(state: State<'_, AppState>) -> CommandResult<Projec
     let new_cache =
         EntityCache::open(project).map_err(|e| CommandError::Service(e.to_string()))?;
 
+    // Load config to get author
+    let config = Config::load();
+
     let info = ProjectInfo {
         path: project.root().display().to_string(),
         name: project
@@ -203,6 +220,7 @@ pub async fn refresh_project(state: State<'_, AppState>) -> CommandResult<Projec
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "TDT Project".to_string()),
         entity_counts: EntityCounts::from_cache(&new_cache),
+        author: config.author(),
     };
 
     *cache_guard = Some(new_cache);

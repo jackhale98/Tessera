@@ -4,10 +4,10 @@
 
 	interface Props extends HTMLInputAttributes {
 		class?: string;
-		value?: string;
+		value?: string | number | null;
 	}
 
-	let { class: className, value = $bindable(''), ...restProps }: Props = $props();
+	let { class: className, value = $bindable(), ...restProps }: Props = $props();
 </script>
 
 <input

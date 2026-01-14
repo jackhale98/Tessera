@@ -146,9 +146,9 @@ export const entities = {
 		}),
 	get: (id: string) => call<EntityData | null>('get_entity', { id }),
 	save: (entityType: string, data: Record<string, unknown>) =>
-		call<string>('save_entity', { entity_type: entityType, data }),
+		call<string>('save_entity', { entityType, data }),
 	delete: (id: string) => call<void>('delete_entity', { id }),
-	getCount: (entityType: string) => call<number>('get_entity_count', { entity_type: entityType }),
+	getCount: (entityType: string) => call<number>('get_entity_count', { entityType }),
 	getAllCounts: () => call<Record<string, number>>('get_all_entity_counts')
 };
 

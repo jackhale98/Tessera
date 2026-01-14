@@ -2,6 +2,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { projectName, projectPath, isProjectOpen, isLoading, totalEntities } from '$lib/stores/project.js';
+	import { theme, type Theme } from '$lib/stores/theme.js';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { openProject, initProject, closeProject, refreshProject } from '$lib/stores/project.js';
 	import {
@@ -10,8 +11,22 @@
 		X,
 		RefreshCw,
 		Search,
-		Command
+		Command,
+		Sun,
+		Moon,
+		Monitor
 	} from 'lucide-svelte';
+
+	function getThemeLabel(currentTheme: Theme): string {
+		switch (currentTheme) {
+			case 'light':
+				return 'Light mode';
+			case 'dark':
+				return 'Dark mode';
+			case 'system':
+				return 'System theme';
+		}
+	}
 
 	let searchQuery = $state('');
 
@@ -92,6 +107,22 @@
 
 	<!-- Right section: Actions -->
 	<div class="flex items-center gap-2">
+		<!-- Theme toggle -->
+		<Button
+			variant="ghost"
+			size="icon"
+			onclick={() => theme.toggle()}
+			title={getThemeLabel($theme)}
+		>
+			{#if $theme === 'light'}
+				<Sun class="h-4 w-4" />
+			{:else if $theme === 'dark'}
+				<Moon class="h-4 w-4" />
+			{:else}
+				<Monitor class="h-4 w-4" />
+			{/if}
+		</Button>
+
 		{#if $isProjectOpen}
 			<Button
 				variant="ghost"
