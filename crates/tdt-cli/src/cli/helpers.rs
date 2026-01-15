@@ -195,6 +195,7 @@ pub fn format_naive_date(date: &NaiveDate) -> String {
 /// | 1  | Alpha | 100   |
 /// | 2  | Beta  | 2000  |
 /// ```
+#[allow(dead_code)]
 pub struct MarkdownTable {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,

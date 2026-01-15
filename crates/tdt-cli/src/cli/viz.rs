@@ -10,10 +10,6 @@ use drawille::Canvas;
 use tdt_core::core::sdt::ChainContributor3D;
 use tdt_core::entities::stackup::{ResultTorsor, Stackup};
 
-/// Default canvas size for chain schematic
-pub const CHAIN_WIDTH: u32 = 120;
-pub const CHAIN_HEIGHT: u32 = 16;
-
 /// Default canvas size for deviation ellipse
 pub const ELLIPSE_SIZE: u32 = 32;
 
@@ -217,119 +213,6 @@ pub fn render_deviation_ellipse(result: &ResultTorsor, size: u32) -> String {
     output.push_str(&format!("\n  U: ±{:.4}  V: ±{:.4}", u_range, v_range));
 
     output
-}
-
-/// Render a simple 1D tolerance range bar
-///
-/// Shows min/max range with spec limits
-pub fn render_range_bar(min: f64, max: f64, lower_limit: f64, upper_limit: f64) -> String {
-    let bar_width = 60;
-
-    // Calculate positions
-    let full_range = upper_limit - lower_limit;
-    let spec_margin = full_range * 0.1; // 10% margin outside spec
-
-    let view_min = lower_limit - spec_margin;
-    let view_max = upper_limit + spec_margin;
-    let view_range = view_max - view_min;
-
-    // Map values to bar positions
-    let pos_lower = ((lower_limit - view_min) / view_range * bar_width as f64) as usize;
-    let pos_upper = ((upper_limit - view_min) / view_range * bar_width as f64) as usize;
-    let pos_min = ((min - view_min) / view_range * bar_width as f64) as usize;
-    let pos_max = ((max - view_min) / view_range * bar_width as f64) as usize;
-
-    let pos_min = pos_min.min(bar_width - 1).max(0);
-    let pos_max = pos_max.min(bar_width - 1).max(0);
-    let pos_lower = pos_lower.min(bar_width - 1).max(0);
-    let pos_upper = pos_upper.min(bar_width - 1).max(0);
-
-    // Build bar
-    let mut bar: Vec<char> = vec!['─'; bar_width];
-
-    // Mark spec limits
-    bar[pos_lower] = '│';
-    bar[pos_upper] = '│';
-
-    // Mark result range
-    for i in pos_min..=pos_max {
-        if i < bar_width {
-            bar[i] = if bar[i] == '│' { '╋' } else { '═' };
-        }
-    }
-
-    // Mark min/max endpoints
-    if pos_min < bar_width {
-        bar[pos_min] = if bar[pos_min] == '│' { '╟' } else { '[' };
-    }
-    if pos_max < bar_width {
-        bar[pos_max] = if bar[pos_max] == '│' { '╢' } else { ']' };
-    }
-
-    let bar_str: String = bar.into_iter().collect();
-
-    format!(
-        "  LSL={:.3}  USL={:.3}\n  {}\n  Min={:.4}  Max={:.4}",
-        lower_limit, upper_limit, bar_str, min, max
-    )
-}
-
-/// Render complete 3D analysis visualization
-pub fn render_3d_analysis(stackup: &Stackup) -> String {
-    let mut output = Vec::new();
-
-    // Chain schematic
-    output.push(render_chain_schematic(stackup));
-    output.push(String::new());
-
-    // 3D results if available
-    if let Some(ref results_3d) = stackup.analysis_results_3d {
-        if let Some(ref torsor) = results_3d.result_torsor {
-            // Deviation ellipse
-            output.push(render_deviation_ellipse(torsor, ELLIPSE_SIZE));
-            output.push(String::new());
-
-            // DOF summary table
-            output.push("6-DOF Results (3σ):".to_string());
-            output.push("  DOF    WC Min    WC Max    RSS Mean   RSS 3σ".to_string());
-            output.push("  ─────  ────────  ────────  ─────────  ───────".to_string());
-            output.push(format!(
-                "  u      {:>8.4}  {:>8.4}  {:>9.4}  {:>7.4}",
-                torsor.u.wc_min, torsor.u.wc_max, torsor.u.rss_mean, torsor.u.rss_3sigma
-            ));
-            output.push(format!(
-                "  v      {:>8.4}  {:>8.4}  {:>9.4}  {:>7.4}",
-                torsor.v.wc_min, torsor.v.wc_max, torsor.v.rss_mean, torsor.v.rss_3sigma
-            ));
-            output.push(format!(
-                "  w      {:>8.4}  {:>8.4}  {:>9.4}  {:>7.4}",
-                torsor.w.wc_min, torsor.w.wc_max, torsor.w.rss_mean, torsor.w.rss_3sigma
-            ));
-            output.push(format!(
-                "  α      {:>8.4}  {:>8.4}  {:>9.4}  {:>7.4}",
-                torsor.alpha.wc_min,
-                torsor.alpha.wc_max,
-                torsor.alpha.rss_mean,
-                torsor.alpha.rss_3sigma
-            ));
-            output.push(format!(
-                "  β      {:>8.4}  {:>8.4}  {:>9.4}  {:>7.4}",
-                torsor.beta.wc_min,
-                torsor.beta.wc_max,
-                torsor.beta.rss_mean,
-                torsor.beta.rss_3sigma
-            ));
-            output.push(format!(
-                "  γ      {:>8.4}  {:>8.4}  {:>9.4}  {:>7.4}",
-                torsor.gamma.wc_min,
-                torsor.gamma.wc_max,
-                torsor.gamma.rss_mean,
-                torsor.gamma.rss_3sigma
-            ));
-        }
-    }
-
-    output.join("\n")
 }
 
 // ============================================================================
@@ -1112,17 +995,6 @@ mod tests {
     }
 
     #[test]
-    fn test_render_range_bar() {
-        let output = render_range_bar(0.8, 1.2, 0.5, 1.5);
-
-        // Check format
-        assert!(output.contains("LSL=0.500"));
-        assert!(output.contains("USL=1.500"));
-        assert!(output.contains("Min=0.8000"));
-        assert!(output.contains("Max=1.2000"));
-    }
-
-    #[test]
     fn test_truncate_str() {
         assert_eq!(truncate_str("short", 10), "short");
         assert_eq!(truncate_str("verylongstring", 6), "veryl…");
@@ -1130,53 +1002,4 @@ mod tests {
         assert_eq!(truncate_str("abc", 2), "ab");
     }
 
-    #[test]
-    fn test_render_3d_analysis_no_results() {
-        let stackup = make_test_stackup();
-        let output = render_3d_analysis(&stackup);
-
-        // Should still render chain schematic
-        assert!(output.contains("Test Gap Stackup"));
-        // But no 3D results section since analysis_results_3d is None
-        assert!(!output.contains("6-DOF Results"));
-    }
-
-    #[test]
-    fn test_render_3d_analysis_with_results() {
-        let mut stackup = make_test_stackup();
-        stackup.analysis_results_3d = Some(tdt_core::entities::stackup::Analysis3DResults {
-            result_torsor: Some(ResultTorsor {
-                u: TorsorStats {
-                    wc_min: -0.1,
-                    wc_max: 0.1,
-                    rss_mean: 0.0,
-                    rss_3sigma: 0.08,
-                    mc_mean: None,
-                    mc_std_dev: None,
-                },
-                v: TorsorStats {
-                    wc_min: -0.05,
-                    wc_max: 0.05,
-                    rss_mean: 0.0,
-                    rss_3sigma: 0.04,
-                    mc_mean: None,
-                    mc_std_dev: None,
-                },
-                w: TorsorStats::default(),
-                alpha: TorsorStats::default(),
-                beta: TorsorStats::default(),
-                gamma: TorsorStats::default(),
-            }),
-            functional_result: None,
-            sensitivity_3d: vec![],
-            jacobian_summary: None,
-            analyzed_at: None,
-        });
-
-        let output = render_3d_analysis(&stackup);
-
-        assert!(output.contains("Test Gap Stackup"));
-        assert!(output.contains("6-DOF Results"));
-        assert!(output.contains("UV Deviation"));
-    }
 }
