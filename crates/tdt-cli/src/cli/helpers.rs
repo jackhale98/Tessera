@@ -3,6 +3,8 @@
 //! This module contains utility functions that are used across multiple
 //! command modules to avoid code duplication.
 
+#![allow(dead_code)]
+
 use tdt_core::core::identity::EntityId;
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use std::io::{self, BufRead, IsTerminal};

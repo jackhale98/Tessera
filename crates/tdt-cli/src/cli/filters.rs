@@ -3,6 +3,8 @@
 //! This module consolidates filter types used across entity commands,
 //! eliminating duplication and ensuring consistent behavior.
 
+#![allow(dead_code)]
+
 use clap::ValueEnum;
 
 use tdt_core::core::entity::{Priority, Status};

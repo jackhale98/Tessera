@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 
-pub use common::{generate_template, ImportStats};
+pub use common::generate_template;
 
 #[derive(clap::Args, Debug)]
 pub struct ImportArgs {

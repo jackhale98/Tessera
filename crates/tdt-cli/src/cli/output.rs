@@ -1,5 +1,7 @@
 //! Output formatting utilities
 
+#![allow(dead_code)]
+
 use crate::cli::OutputFormat;
 
 /// Determine the effective output format based on context

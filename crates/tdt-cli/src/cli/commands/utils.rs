@@ -1,5 +1,7 @@
 //! Shared utilities for CLI commands
 
+#![allow(dead_code)]
+
 use console::style;
 use miette::{IntoDiagnostic, Result};
 use std::fs;

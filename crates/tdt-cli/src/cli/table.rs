@@ -10,6 +10,8 @@
 //! - CSV, ID, and ShortId formats remain single-line for pipability
 //! - TSV and Md formats support wrapped output
 
+#![allow(dead_code)]
+
 use chrono::{DateTime, Local, Utc};
 use console::style;
 

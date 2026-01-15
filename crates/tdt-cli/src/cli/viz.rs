@@ -10,9 +10,6 @@ use drawille::Canvas;
 use tdt_core::core::sdt::ChainContributor3D;
 use tdt_core::entities::stackup::{ResultTorsor, Stackup};
 
-/// Default canvas size for deviation ellipse
-pub const ELLIPSE_SIZE: u32 = 32;
-
 /// Render a tolerance chain schematic
 ///
 /// Shows components connected by joints with labels.
@@ -982,7 +979,7 @@ mod tests {
             gamma: TorsorStats::default(),
         };
 
-        let output = render_deviation_ellipse(&result, ELLIPSE_SIZE);
+        let output = render_deviation_ellipse(&result, 32);
 
         // Check that output contains expected elements
         assert!(output.contains("UV Deviation (3σ)"));

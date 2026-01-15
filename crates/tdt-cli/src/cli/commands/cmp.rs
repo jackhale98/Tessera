@@ -282,9 +282,6 @@ const CMP_COLUMNS: &[ColumnDef] = &[
     ColumnDef::new("created", "CREATED", 12),
 ];
 
-/// Sort field (reuses ListColumn for consistency)
-pub type SortField = ListColumn;
-
 #[derive(clap::Args, Debug)]
 pub struct NewArgs {
     /// Part number (required)

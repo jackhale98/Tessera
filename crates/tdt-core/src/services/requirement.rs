@@ -1,4 +1,8 @@
 //! Requirement service - business logic for requirement management
+//!
+//! Note: This service layer is not yet fully integrated - kept for future use.
+
+#![allow(dead_code)]
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};

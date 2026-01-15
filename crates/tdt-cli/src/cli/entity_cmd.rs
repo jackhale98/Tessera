@@ -2,6 +2,11 @@
 //!
 //! This module provides common patterns for entity CRUD operations,
 //! reducing boilerplate across the 20+ command files.
+//!
+//! Note: Some of this infrastructure is not yet adopted - individual entity
+//! commands have their own implementations. Kept for potential future refactoring.
+
+#![allow(dead_code)]
 
 use console::style;
 use miette::{IntoDiagnostic, Result};

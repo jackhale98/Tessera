@@ -11,4 +11,3 @@ pub mod viz;
 
 pub use args::{Cli, Commands, GlobalOpts, OutputFormat};
 pub use entity_cmd::EntityConfig;
-pub use filters::{PriorityFilter, StatusFilter};

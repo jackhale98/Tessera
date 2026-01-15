@@ -18,6 +18,6 @@ pub mod team;
 pub use approve::ApproveArgs;
 pub use reject::RejectArgs;
 pub use release::ReleaseArgs;
-pub use review::{ReviewCommands, ReviewListArgs};
+pub use review::ReviewCommands;
 pub use submit::SubmitArgs;
 pub use team::TeamCommands;
