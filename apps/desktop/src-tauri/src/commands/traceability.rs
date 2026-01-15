@@ -283,7 +283,7 @@ pub async fn find_cycles(
 }
 
 /// Add a link between entities using inferred link type
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn add_link(
     source_id: String,
     target_id: String,
@@ -323,7 +323,7 @@ pub async fn add_link(
 /// Remove a link between entities
 /// Note: This currently requires editing entity YAML files directly.
 /// For now, use the generic save_entity command to update links.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn remove_link(
     _source_id: String,
     _target_id: String,

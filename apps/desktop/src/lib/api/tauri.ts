@@ -144,7 +144,25 @@ export const entities = {
 		call<EntityListResult>('list_entities', {
 			params: { entity_type: entityType, ...params }
 		}),
-	get: (id: string) => call<EntityData | null>('get_entity', { id }),
+	get: async (id: string) => {
+		console.log('[API] entities.get called with id:', id);
+		const startTime = Date.now();
+		try {
+			// Add timeout to detect hangs
+			const timeoutPromise = new Promise<never>((_, reject) => {
+				setTimeout(() => reject(new Error(`Timeout after 10s for entity ${id}`)), 10000);
+			});
+			const result = await Promise.race([
+				call<EntityData | null>('get_entity', { id }),
+				timeoutPromise
+			]);
+			console.log('[API] entities.get returned in', Date.now() - startTime, 'ms:', result?.title ?? 'null');
+			return result;
+		} catch (e) {
+			console.error('[API] entities.get failed for id:', id, 'after', Date.now() - startTime, 'ms:', e);
+			throw e;
+		}
+	},
 	save: (entityType: string, data: Record<string, unknown>) =>
 		call<string>('save_entity', { entityType, data }),
 	delete: (id: string) => call<void>('delete_entity', { id }),
@@ -301,9 +319,9 @@ export const traceability = {
 	findCycles: (entityType?: string) =>
 		call<string[][]>('find_cycles', { entity_type: entityType }),
 	addLink: (sourceId: string, targetId: string, linkType?: string) =>
-		call<void>('add_link', { source_id: sourceId, target_id: targetId, link_type: linkType }),
+		call<void>('add_link', { sourceId, targetId, linkType }),
 	removeLink: (sourceId: string, targetId: string, linkType?: string) =>
-		call<void>('remove_link', { source_id: sourceId, target_id: targetId, link_type: linkType }),
+		call<void>('remove_link', { sourceId, targetId, linkType }),
 	getLinkTypes: () => call<string[]>('get_link_types')
 };
 

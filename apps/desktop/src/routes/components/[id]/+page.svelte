@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { Card, CardContent, CardHeader, CardTitle, Badge } from '$lib/components/ui';
-	import { EntityDetailHeader, LinksSection } from '$lib/components/entities';
+	import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '$lib/components/ui';
+	import { EntityDetailHeader, LinksSection, AddFeatureDialog } from '$lib/components/entities';
 	import { StatusBadge } from '$lib/components/common';
 	import { entities, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
@@ -18,7 +18,9 @@
 		Truck,
 		FileText,
 		Shield,
-		Factory
+		Factory,
+		CircleDot,
+		Plus
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -29,6 +31,11 @@
 	let loading = $state(true);
 	let linksLoading = $state(true);
 	let error = $state<string | null>(null);
+
+	// Features for this component
+	let features = $state<Array<{ id: string; title: string; feature_type: string; status: string }>>([]);
+	let featuresLoading = $state(false);
+	let addFeatureDialogOpen = $state(false);
 
 	// Type-safe data access
 	const data = $derived(entity?.data ?? {});
@@ -103,6 +110,38 @@
 			linksLoading = false;
 			console.log('[Component Detail] Loading complete, loading=', loading);
 		}
+
+		// Load features for this component
+		loadFeatures();
+	}
+
+	async function loadFeatures() {
+		if (!id) return;
+
+		featuresLoading = true;
+		try {
+			// Get all features and filter by component ID
+			const result = await entities.list('FEAT', { limit: 100 });
+			features = result.items
+				.filter((f) => f.data?.component === id)
+				.map((f) => ({
+					id: f.id,
+					title: f.title,
+					feature_type: (f.data?.feature_type as string) ?? 'external',
+					status: f.status
+				}));
+		} catch (e) {
+			console.error('Failed to load features:', e);
+		} finally {
+			featuresLoading = false;
+		}
+	}
+
+	function handleFeatureCreated(featureId: string) {
+		// Reload features to show the new one
+		loadFeatures();
+		// Also reload links since we added a link
+		loadData();
 	}
 
 	function formatDate(dateStr: string): string {
@@ -117,16 +156,16 @@
 		}
 	}
 
-	function formatCurrency(value: number | null): string {
-		if (value === null) return '—';
+	function formatCurrency(value: number | null | undefined): string {
+		if (value == null) return '—';
 		return new Intl.NumberFormat('en-US', {
 			style: 'currency',
 			currency: 'USD'
 		}).format(value);
 	}
 
-	function formatMass(kg: number | null): string {
-		if (kg === null) return '—';
+	function formatMass(kg: number | null | undefined): string {
+		if (kg == null) return '—';
 		if (kg < 1) return `${(kg * 1000).toFixed(1)} g`;
 		return `${kg.toFixed(3)} kg`;
 	}
@@ -151,13 +190,15 @@
 		return variants[mb.toLowerCase()] ?? 'outline';
 	}
 
-	// Track if we've loaded for this ID to prevent double-loads
+	// Track loaded ID to prevent double-loads
 	let loadedId = $state<string | null>(null);
 
+	// Load data when ID changes
 	$effect(() => {
-		// Only load if we have an ID and haven't already loaded this ID
-		if (id && id !== loadedId) {
-			loadedId = id;
+		const currentId = id;
+		if (currentId && currentId !== loadedId) {
+			console.log('[Component Detail] Effect triggered for ID:', currentId);
+			loadedId = currentId;
 			loadData();
 		}
 	});
@@ -235,6 +276,65 @@
 								</div>
 							{/if}
 						</dl>
+					</CardContent>
+				</Card>
+
+				<!-- Features -->
+				<Card>
+					<CardHeader>
+						<div class="flex items-center justify-between">
+							<CardTitle class="flex items-center gap-2">
+								<CircleDot class="h-5 w-5" />
+								Features ({features.length})
+							</CardTitle>
+							<Button size="sm" onclick={() => (addFeatureDialogOpen = true)}>
+								<Plus class="mr-1 h-4 w-4" />
+								Add Feature
+							</Button>
+						</div>
+					</CardHeader>
+					<CardContent>
+						{#if featuresLoading}
+							<div class="flex justify-center py-4">
+								<div class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+							</div>
+						{:else if features.length === 0}
+							<div class="rounded-lg border border-dashed p-6 text-center">
+								<CircleDot class="mx-auto h-8 w-8 text-muted-foreground/50" />
+								<p class="mt-2 text-sm text-muted-foreground">
+									No features defined for this component
+								</p>
+								<Button
+									size="sm"
+									variant="outline"
+									class="mt-3"
+									onclick={() => (addFeatureDialogOpen = true)}
+								>
+									<Plus class="mr-1 h-4 w-4" />
+									Add First Feature
+								</Button>
+							</div>
+						{:else}
+							<div class="space-y-2">
+								{#each features as feature}
+									<button
+										class="flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+										onclick={() => goto(`/features/${feature.id}`)}
+									>
+										<div class="flex items-center gap-3">
+											<CircleDot class="h-4 w-4 text-muted-foreground" />
+											<div>
+												<p class="font-medium">{feature.title}</p>
+												<p class="text-xs text-muted-foreground capitalize">
+													{feature.feature_type}
+												</p>
+											</div>
+										</div>
+										<Badge variant="outline" class="capitalize">{feature.status}</Badge>
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</CardContent>
 				</Card>
 
@@ -437,3 +537,14 @@
 		</Card>
 	{/if}
 </div>
+
+<!-- Add Feature Dialog -->
+{#if entity}
+	<AddFeatureDialog
+		bind:open={addFeatureDialogOpen}
+		componentId={entity.id}
+		componentTitle={entity.title}
+		onClose={() => (addFeatureDialogOpen = false)}
+		onCreated={handleFeatureCreated}
+	/>
+{/if}

@@ -87,6 +87,13 @@ pub fn infer_link_type(source_prefix: EntityPrefix, target_prefix: EntityPrefix)
         (EntityPrefix::Cmp, EntityPrefix::Test) => Some("tests".to_string()),
         (EntityPrefix::Asm, EntityPrefix::Test) => Some("tests".to_string()),
 
+        // Components/Assemblies linking to features
+        (EntityPrefix::Cmp, EntityPrefix::Feat) => Some("features".to_string()),
+        (EntityPrefix::Asm, EntityPrefix::Feat) => Some("features".to_string()),
+
+        // Features linking to components (back-link)
+        (EntityPrefix::Feat, EntityPrefix::Cmp) => Some("component".to_string()),
+
         // Processes linking to requirements
         (EntityPrefix::Proc, EntityPrefix::Req) => Some("requirements".to_string()),
 

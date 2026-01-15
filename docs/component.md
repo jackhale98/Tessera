@@ -115,6 +115,7 @@ datum_frame:
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `links.features` | array[EntityId] | Features defined on this component |
 | `links.related_to` | array[EntityId] | Related entities |
 | `links.used_in` | array[EntityId] | Assemblies using this component |
 
@@ -164,6 +165,8 @@ tags: [mechanical, bracket, aluminum]
 status: approved
 
 links:
+  features:
+    - FEAT-01HC2JB7SMQX7RS1Y0GFKBHPTE  # Mounting Hole A
   related_to: []
   used_in:
     - ASM-01HC2JB7SMQX7RS1Y0GFKBHPTE

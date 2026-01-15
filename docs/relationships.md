@@ -168,12 +168,21 @@ Links are simple cross-references stored in the `links` section of entities. The
 
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
+| `features` | FEAT | - | Features defined on this component |
 | `replaces` | CMP | `replaced_by` | Component this supersedes |
 | `replaced_by` | CMP | `replaces` | Component that supersedes this |
 | `interchangeable_with` | CMP | `interchangeable_with` | Alternate components (symmetric) |
 | `used_in` | ASM | - | Assemblies using this component |
 | `risks` | RISK | `affects` | Risks affecting this component |
 | `related_to` | Any | `related_to` | Generic related entity |
+
+#### Assemblies (ASM)
+
+| Link Type | Target | Reciprocal | Description |
+|-----------|--------|------------|-------------|
+| `features` | FEAT | - | Features defined on this assembly |
+| `related_to` | Any | `related_to` | Generic related entity |
+| `parent` | ASM | - | Parent assembly (for sub-assemblies) |
 
 #### Processes (PROC)
 
@@ -214,6 +223,7 @@ tdt link add SOURCE TARGET LINK_TYPE
 tdt link add REQ@1 TEST@1 verified_by
 tdt link add RISK@1 CMP@1 affects
 tdt link add CAPA@1 PROC@1 processes_modified
+tdt link add CMP@1 FEAT@1 features    # Link component to its feature
 
 # Add reciprocal automatically with -r
 tdt link add REQ@1 TEST@1 verified_by -r

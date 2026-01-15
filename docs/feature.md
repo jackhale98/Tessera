@@ -204,6 +204,10 @@ dimensions:
 | `links.allocated_from` | array[EntityId] | Requirements allocated to this feature |
 | `links.risks` | array[EntityId] | Risks affecting this feature |
 
+> **Note:** Features reference their parent component via the required `component` field (not a link).
+> Components can optionally link back to their features via `links.features` for bidirectional navigation.
+> Use `tdt link add CMP@1 FEAT@1` to create this reciprocal link.
+
 ## Tolerance Format
 
 TDT uses `plus_tol` and `minus_tol` fields instead of the `±` symbol:

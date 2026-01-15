@@ -84,6 +84,11 @@
 		}
 	}
 
+	function getMatrixCell(severity: number, occurrence: number): RiskMatrixCell | undefined {
+		if (!matrix) return undefined;
+		return matrix.cells.find((c) => c.severity === severity && c.occurrence === occurrence);
+	}
+
 	// Use single effect for loading
 	$effect(() => {
 		if ($isProjectOpen) {
@@ -166,14 +171,14 @@
 						{#each Array.from({ length: 10 }, (_, i) => 10 - i) as occ}
 							<div class="grid grid-cols-10 gap-1 mb-1">
 								{#each Array.from({ length: 10 }, (_, i) => i + 1) as sev}
-									{@const cell = matrix.cells[sev - 1]?.[occ - 1]}
+									{@const cell = getMatrixCell(sev, occ)}
 									{@const rpn = sev * occ}
 									{@const riskLevel = rpn >= 200 ? 'critical' : rpn >= 100 ? 'high' : rpn >= 40 ? 'medium' : 'low'}
 									<button
-										class="h-8 rounded text-xs font-medium transition-colors {cell?.count > 0
+										class="h-8 rounded text-xs font-medium transition-colors {cell && cell.count > 0
 											? getMatrixCellColor(riskLevel)
 											: 'bg-muted/30 hover:bg-muted/50'}"
-										onclick={() => cell?.count > 0 && console.log('Cell clicked:', cell.risk_ids)}
+										onclick={() => cell && cell.count > 0 && console.log('Cell clicked:', cell.risk_ids)}
 									>
 										{cell?.count || ''}
 									</button>

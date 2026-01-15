@@ -66,6 +66,7 @@ Assemblies represent collections of components and sub-assemblies in your Bill o
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `links.features` | array[EntityId] | Features defined on this assembly |
 | `links.related_to` | array[EntityId] | Related entities |
 | `links.parent` | EntityId | Parent assembly (if sub-assembly) |
 
