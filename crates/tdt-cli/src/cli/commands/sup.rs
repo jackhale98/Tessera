@@ -17,6 +17,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::supplier::Supplier;
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::SupplierService;
 
 #[derive(Subcommand, Debug)]
 pub enum SupCommands {
@@ -553,6 +554,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -560,35 +562,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the supplier file
-    let sup_dir = project.root().join("bom/suppliers");
-    let mut found_path = None;
-
-    if sup_dir.exists() {
-        for entry in fs::read_dir(&sup_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No supplier found matching '{}'", args.id))?;
-
-    // Read and parse supplier
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let sup: Supplier = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use SupplierService to get the supplier (cache-first lookup)
+    let service = SupplierService::new(&project, &cache);
+    let sup = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No supplier found matching '{}'", args.id))?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&sup).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&sup).into_diagnostic()?;

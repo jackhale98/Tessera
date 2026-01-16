@@ -11,6 +11,7 @@ use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
+use crate::entities::assembly::ManufacturingConfig;
 use crate::entities::component::{
     Component, ComponentCategory, ComponentLinks, ComponentSupplier, Document, MakeBuy,
 };
@@ -227,7 +228,6 @@ pub struct UpdateComponent {
 /// Service for component management (BOM)
 pub struct ComponentService<'a> {
     project: &'a Project,
-    #[allow(dead_code)]
     cache: &'a EntityCache,
 }
 
@@ -269,6 +269,21 @@ impl<'a> ComponentService<'a> {
             filter.common.offset,
             filter.common.limit,
         ))
+    }
+
+    /// List components from cache (fast path for list display)
+    ///
+    /// Returns cached component data without loading full YAML files.
+    /// Use this for list commands where full entity data isn't needed.
+    pub fn list_cached(&self) -> Vec<crate::core::CachedEntity> {
+        use crate::core::cache::EntityFilter;
+        use crate::core::identity::EntityPrefix;
+
+        let filter = EntityFilter {
+            prefix: Some(EntityPrefix::Cmp),
+            ..Default::default()
+        };
+        self.cache.list_entities(&filter)
     }
 
     /// Load all components from the filesystem
@@ -480,8 +495,132 @@ impl<'a> ComponentService<'a> {
         Ok(component)
     }
 
-    /// Find a component and its file path
+    /// Set the selected quote for pricing
+    pub fn set_quote(&self, id: &str, quote_id: &str) -> ServiceResult<Component> {
+        let (path, mut component) = self.find_component(id)?;
+
+        component.selected_quote = Some(quote_id.to_string());
+        component.entity_revision += 1;
+
+        let yaml =
+            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        fs::write(&path, yaml)?;
+
+        Ok(component)
+    }
+
+    /// Clear the selected quote
+    pub fn clear_quote(&self, id: &str) -> ServiceResult<Component> {
+        let (path, mut component) = self.find_component(id)?;
+
+        component.selected_quote = None;
+        component.entity_revision += 1;
+
+        let yaml =
+            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        fs::write(&path, yaml)?;
+
+        Ok(component)
+    }
+
+    /// Get the manufacturing routing (list of process IDs)
+    pub fn get_routing(&self, id: &str) -> ServiceResult<Vec<String>> {
+        let component = self.get_required(id)?;
+        Ok(component
+            .manufacturing
+            .map(|m| m.routing)
+            .unwrap_or_default())
+    }
+
+    /// Set the manufacturing routing
+    pub fn set_routing(&self, id: &str, routing: Vec<String>) -> ServiceResult<Component> {
+        let (path, mut component) = self.find_component(id)?;
+
+        let manufacturing = component
+            .manufacturing
+            .get_or_insert(ManufacturingConfig::default());
+        manufacturing.routing = routing;
+        component.entity_revision += 1;
+
+        let yaml =
+            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        fs::write(&path, yaml)?;
+
+        Ok(component)
+    }
+
+    /// Add a process to the manufacturing routing
+    pub fn add_routing_process(&self, id: &str, process_id: &str) -> ServiceResult<Component> {
+        let (path, mut component) = self.find_component(id)?;
+
+        let manufacturing = component
+            .manufacturing
+            .get_or_insert(ManufacturingConfig::default());
+        if manufacturing.routing.contains(&process_id.to_string()) {
+            return Err(ServiceError::AlreadyExists(format!(
+                "Process {} already in routing",
+                process_id
+            ))
+            .into());
+        }
+        manufacturing.routing.push(process_id.to_string());
+        component.entity_revision += 1;
+
+        let yaml =
+            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        fs::write(&path, yaml)?;
+
+        Ok(component)
+    }
+
+    /// Remove a process from the manufacturing routing
+    pub fn remove_routing_process(&self, id: &str, process_id: &str) -> ServiceResult<Component> {
+        let (path, mut component) = self.find_component(id)?;
+
+        if let Some(ref mut manufacturing) = component.manufacturing {
+            let original_len = manufacturing.routing.len();
+            manufacturing.routing.retain(|p| p != process_id);
+            if manufacturing.routing.len() == original_len {
+                return Err(ServiceError::NotFound(format!(
+                    "Process {} not in routing",
+                    process_id
+                ))
+                .into());
+            }
+        } else {
+            return Err(ServiceError::NotFound(format!(
+                "Process {} not in routing (no routing defined)",
+                process_id
+            ))
+            .into());
+        }
+
+        component.entity_revision += 1;
+
+        let yaml =
+            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        fs::write(&path, yaml)?;
+
+        Ok(component)
+    }
+
+    /// Find a component and its file path (cache-first lookup)
     fn find_component(&self, id: &str) -> ServiceResult<(PathBuf, Component)> {
+        // Try to find in cache first for fast path lookup
+        if let Some(cached) = self.cache.get_entity(id) {
+            let path = if cached.file_path.is_absolute() {
+                cached.file_path.clone()
+            } else {
+                self.project.root().join(&cached.file_path)
+            };
+            if path.exists() {
+                if let Ok(component) = crate::yaml::parse_yaml_file::<Component>(&path) {
+                    return Ok((path, component));
+                }
+            }
+        }
+
+        // Fall back to directory scan
         let dir = self.get_directory();
         if let Some((path, cmp)) = loader::load_entity::<Component>(&dir, id)? {
             return Ok((path, cmp));

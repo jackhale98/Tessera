@@ -290,8 +290,8 @@ pub async fn add_link(
     _link_type: Option<String>,
     state: State<'_, AppState>,
 ) -> CommandResult<()> {
-    let project = state.project.lock().unwrap();
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     use tdt_core::core::{identity::EntityId, links, loader};
 
@@ -316,6 +316,13 @@ pub async fn add_link(
         target_entity_id.prefix(),
     )
     .map_err(|e| CommandError::Other(e))?;
+
+    // Sync cache to pick up the link change
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }

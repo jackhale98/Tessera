@@ -375,6 +375,27 @@ pub struct RequirementCoverage {
     pub coverage_percent: f64,
 }
 
+/// Requirement statistics from cache (fast, SQL-based)
+#[derive(Debug, Clone, Default)]
+pub struct CachedRequirementStats {
+    pub total: usize,
+    pub inputs: usize,
+    pub outputs: usize,
+    pub by_status: CachedStatusCounts,
+    pub unverified: usize,
+    pub orphaned: usize,
+}
+
+/// Status breakdown for requirements
+#[derive(Debug, Clone, Default)]
+pub struct CachedStatusCounts {
+    pub draft: usize,
+    pub review: usize,
+    pub approved: usize,
+    pub released: usize,
+    pub obsolete: usize,
+}
+
 /// Quote summary by supplier
 #[derive(Debug, Clone)]
 pub struct SupplierQuoteSummary {

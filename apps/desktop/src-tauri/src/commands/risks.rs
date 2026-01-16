@@ -256,30 +256,39 @@ pub async fn create_risk(
     input: CreateRiskInput,
     state: State<'_, AppState>,
 ) -> CommandResult<Risk> {
-    let project = state.project.lock().unwrap();
-    let cache = state.cache.lock().unwrap();
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
-    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+    let risk = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = RiskService::new(project, cache);
 
-    let service = RiskService::new(project, cache);
+        let create = CreateRisk {
+            title: input.title,
+            description: input.description,
+            author: input.author,
+            risk_type: input.risk_type.and_then(|s| parse_risk_type(&s)).unwrap_or(RiskType::Design),
+            category: input.category,
+            failure_mode: input.failure_mode,
+            cause: input.cause,
+            effect: input.effect,
+            severity: input.severity,
+            occurrence: input.occurrence,
+            detection: input.detection,
+            tags: input.tags.unwrap_or_default(),
+        };
 
-    let create = CreateRisk {
-        title: input.title,
-        description: input.description,
-        author: input.author,
-        risk_type: input.risk_type.and_then(|s| parse_risk_type(&s)).unwrap_or(RiskType::Design),
-        category: input.category,
-        failure_mode: input.failure_mode,
-        cause: input.cause,
-        effect: input.effect,
-        severity: input.severity,
-        occurrence: input.occurrence,
-        detection: input.detection,
-        tags: input.tags.unwrap_or_default(),
+        service.create(create)?
     };
 
-    let risk = service.create(create)?;
+    // Sync cache to pick up the new entity
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
     Ok(risk)
 }
 
@@ -290,46 +299,63 @@ pub async fn update_risk(
     input: UpdateRiskInput,
     state: State<'_, AppState>,
 ) -> CommandResult<Risk> {
-    let project = state.project.lock().unwrap();
-    let cache = state.cache.lock().unwrap();
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
-    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+    let risk = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = RiskService::new(project, cache);
 
-    let service = RiskService::new(project, cache);
+        let update = UpdateRisk {
+            title: input.title,
+            description: input.description,
+            risk_type: input.risk_type.and_then(|s| parse_risk_type(&s)),
+            status: input.status.and_then(|s| parse_status(&s)),
+            category: input.category,
+            tags: input.tags,
+            failure_mode: input.failure_mode,
+            cause: input.cause,
+            effect: input.effect,
+            severity: input.severity,
+            occurrence: input.occurrence,
+            detection: input.detection,
+            mitigations: None,
+            risk_level: None,
+        };
 
-    let update = UpdateRisk {
-        title: input.title,
-        description: input.description,
-        risk_type: input.risk_type.and_then(|s| parse_risk_type(&s)),
-        status: input.status.and_then(|s| parse_status(&s)),
-        category: input.category,
-        tags: input.tags,
-        failure_mode: input.failure_mode,
-        cause: input.cause,
-        effect: input.effect,
-        severity: input.severity,
-        occurrence: input.occurrence,
-        detection: input.detection,
-        mitigations: None,
-        risk_level: None,
+        service.update(&id, update)?
     };
 
-    let risk = service.update(&id, update)?;
+    // Sync cache to pick up the changes
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
     Ok(risk)
 }
 
 /// Delete a risk
 #[tauri::command]
 pub async fn delete_risk(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let project = state.project.lock().unwrap();
-    let cache = state.cache.lock().unwrap();
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
-    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+    {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = RiskService::new(project, cache);
+        service.delete(&id, false)?;
+    }
 
-    let service = RiskService::new(project, cache);
-    service.delete(&id, false)?;
+    // Sync cache to remove the deleted entity
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }

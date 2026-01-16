@@ -19,6 +19,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::requirement::{Level, Requirement, RequirementType};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::RequirementService;
 
 /// CLI-friendly requirement type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -129,6 +130,9 @@ pub enum ReqCommands {
 
     /// Archive a requirement (move to .tdt/archive/)
     Archive(ArchiveArgs),
+
+    /// Show requirement statistics
+    Stats(StatsArgs),
 }
 
 /// Requirement type filter
@@ -403,6 +407,17 @@ pub struct ArchiveArgs {
     pub quiet: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct StatsArgs {
+    /// Show detailed breakdown by level
+    #[arg(long)]
+    pub by_level: bool,
+
+    /// Show detailed breakdown by category
+    #[arg(long)]
+    pub by_category: bool,
+}
+
 /// Directories where requirements are stored
 const REQ_DIRS: &[&str] = &["requirements/inputs", "requirements/outputs"];
 
@@ -422,6 +437,7 @@ pub fn run(cmd: ReqCommands, global: &GlobalOpts) -> Result<()> {
         ReqCommands::Edit(args) => run_edit(args),
         ReqCommands::Delete(args) => run_delete(args),
         ReqCommands::Archive(args) => run_archive(args),
+        ReqCommands::Stats(args) => run_stats(args, global),
     }
 }
 
@@ -1188,12 +1204,21 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve ID from argument or stdin
     let id = resolve_id_arg(&args.id).map_err(|e| miette::miette!("{}", e))?;
 
-    // Find the requirement by ID prefix match
-    let req = find_requirement(&project, &id)?;
+    // Resolve short ID if needed
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids.resolve(&id).unwrap_or_else(|| id.clone());
+
+    // Use RequirementService to get the requirement (cache-first lookup)
+    let service = RequirementService::new(&project, &cache);
+    let req = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No requirement found matching '{}'", id))?;
 
     // Output based on format (pretty is default, yaml/json explicit)
     match global.output {
@@ -1209,9 +1234,8 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             println!("{}", req.id);
         }
         _ => {
-            // Load cache and short IDs for link lookups
-            let short_ids = ShortIdIndex::load(&project);
-            let cache = EntityCache::open(&project).ok();
+            // Reopen cache for title lookups (format_link_with_title expects Option<EntityCache>)
+            let cache_opt = EntityCache::open(&project).ok();
 
             // Human-readable format (default for terminal)
             println!("{}", style("─".repeat(60)).dim());
@@ -1267,7 +1291,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .satisfied_by
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1279,7 +1303,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .verified_by
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1291,7 +1315,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .derives_from
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1303,7 +1327,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .derived_by
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1315,7 +1339,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .allocated_to
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1505,4 +1529,134 @@ fn run_delete(args: DeleteArgs) -> Result<()> {
 
 fn run_archive(args: ArchiveArgs) -> Result<()> {
     crate::cli::commands::utils::run_delete(&args.id, REQ_DIRS, args.force, true, args.quiet)
+}
+
+/// Run stats command using the RequirementService
+fn run_stats(args: StatsArgs, global: &GlobalOpts) -> Result<()> {
+    use tdt_core::services::RequirementService;
+
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project)?;
+    let service = RequirementService::new(&project, &cache);
+
+    // Get stats from service layer
+    let stats = service.stats().map_err(|e| miette::miette!("{}", e))?;
+
+    // JSON output
+    if matches!(global.output, OutputFormat::Json) {
+        let json = serde_json::to_string_pretty(&stats).into_diagnostic()?;
+        println!("{}", json);
+        return Ok(());
+    }
+
+    // YAML output
+    if matches!(global.output, OutputFormat::Yaml) {
+        let yaml = serde_yml::to_string(&stats).into_diagnostic()?;
+        print!("{}", yaml);
+        return Ok(());
+    }
+
+    // Human-readable output
+    println!("{}", style("Requirement Statistics").bold().underlined());
+    println!();
+
+    // Overview
+    println!("{:<20} {}", style("Total:").bold(), style(stats.total).cyan());
+    println!(
+        "{:<20} {}",
+        style("Inputs:").bold(),
+        style(stats.inputs).green()
+    );
+    println!(
+        "{:<20} {}",
+        style("Outputs:").bold(),
+        style(stats.outputs).blue()
+    );
+    println!();
+
+    // Verification status
+    println!("{}", style("Verification Status:").bold());
+    let verified = stats.total.saturating_sub(stats.unverified);
+    let verified_pct = if stats.total > 0 {
+        (verified as f64 / stats.total as f64 * 100.0) as usize
+    } else {
+        0
+    };
+    println!(
+        "  {:<18} {} ({}%)",
+        "Verified:",
+        style(verified).green(),
+        verified_pct
+    );
+    println!(
+        "  {:<18} {}",
+        "Unverified:",
+        if stats.unverified > 0 {
+            style(stats.unverified).yellow()
+        } else {
+            style(stats.unverified).green()
+        }
+    );
+    println!(
+        "  {:<18} {}",
+        "Orphaned:",
+        if stats.orphaned > 0 {
+            style(stats.orphaned).red()
+        } else {
+            style(stats.orphaned).green()
+        }
+    );
+    println!();
+
+    // Status breakdown
+    println!("{}", style("By Status:").bold());
+    println!("  {:<18} {}", "Draft:", stats.by_status.draft);
+    println!("  {:<18} {}", "Review:", stats.by_status.review);
+    println!("  {:<18} {}", "Approved:", stats.by_status.approved);
+    println!("  {:<18} {}", "Released:", stats.by_status.released);
+    println!("  {:<18} {}", "Obsolete:", stats.by_status.obsolete);
+
+    // Additional breakdowns if requested
+    if args.by_level || args.by_category {
+        // Load full requirements for detailed breakdown
+        let reqs = service.load_all().map_err(|e| miette::miette!("{}", e))?;
+
+        if args.by_level {
+            println!();
+            println!("{}", style("By Level:").bold());
+            let mut level_counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
+            for req in &reqs {
+                *level_counts.entry(req.level.to_string()).or_default() += 1;
+            }
+            let mut levels: Vec<_> = level_counts.into_iter().collect();
+            levels.sort_by(|a, b| b.1.cmp(&a.1));
+            for (level, count) in levels {
+                println!("  {:<18} {}", format!("{}:", level), count);
+            }
+        }
+
+        if args.by_category {
+            println!();
+            println!("{}", style("By Category:").bold());
+            let mut cat_counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
+            for req in &reqs {
+                let cat = req
+                    .category
+                    .as_ref()
+                    .filter(|c| !c.is_empty())
+                    .map(|c| c.clone())
+                    .unwrap_or_else(|| "(uncategorized)".to_string());
+                *cat_counts.entry(cat).or_default() += 1;
+            }
+            let mut cats: Vec<_> = cat_counts.into_iter().collect();
+            cats.sort_by(|a, b| b.1.cmp(&a.1));
+            for (cat, count) in cats {
+                println!("  {:<18} {}", format!("{}:", cat), count);
+            }
+        }
+    }
+
+    Ok(())
 }

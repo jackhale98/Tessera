@@ -20,6 +20,7 @@ use tdt_core::entities::assembly::{Assembly, ManufacturingConfig};
 use tdt_core::entities::component::{Component, ComponentCategory, MakeBuy};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::ComponentService;
 
 #[derive(Subcommand, Debug)]
 pub enum CmpCommands {
@@ -1036,6 +1037,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve ID from argument or stdin
     let id = resolve_id_arg(&args.id).map_err(|e| miette::miette!("{}", e))?;
@@ -1044,34 +1046,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let short_ids = ShortIdIndex::load(&project);
     let resolved_id = short_ids.resolve(&id).unwrap_or_else(|| id.clone());
 
-    // Find the component file
-    let cmp_dir = project.root().join("bom/components");
-    let mut found_path = None;
-
-    if cmp_dir.exists() {
-        for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path = found_path.ok_or_else(|| miette::miette!("No component found matching '{}'", id))?;
-
-    // Read and parse component
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let cmp: Component = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use ComponentService to get the component (cache-first lookup)
+    let service = ComponentService::new(&project, &cache);
+    let cmp = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No component found matching '{}'", id))?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&cmp).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&cmp).into_diagnostic()?;
@@ -1079,7 +1064,6 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Id | OutputFormat::ShortId => {
             if global.output == OutputFormat::ShortId {
-                let short_ids = ShortIdIndex::load(&project);
                 let short_id = short_ids
                     .get_short_id(&cmp.id.to_string())
                     .unwrap_or_default();

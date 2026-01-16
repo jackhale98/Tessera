@@ -18,6 +18,7 @@ use tdt_core::core::CachedQuote;
 use tdt_core::core::Config;
 use tdt_core::entities::quote::{Quote, QuoteStatus};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::QuoteService;
 
 #[derive(Subcommand, Debug)]
 pub enum QuoteCommands {
@@ -1048,6 +1049,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -1055,35 +1057,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the quote file
-    let quote_dir = project.root().join("bom/quotes");
-    let mut found_path = None;
-
-    if quote_dir.exists() {
-        for entry in fs::read_dir(&quote_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No quote found matching '{}'", args.id))?;
-
-    // Read and parse quote
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let quote: Quote = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use QuoteService to get the quote (cache-first lookup)
+    let service = QuoteService::new(&project, &cache);
+    let quote = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No quote found matching '{}'", args.id))?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&quote).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&quote).into_diagnostic()?;

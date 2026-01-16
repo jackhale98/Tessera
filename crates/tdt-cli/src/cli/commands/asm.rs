@@ -11,6 +11,7 @@ use crate::cli::filters::StatusFilter;
 use crate::cli::helpers::{escape_csv, truncate_str};
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
+use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -19,6 +20,7 @@ use tdt_core::entities::assembly::Assembly;
 use tdt_core::entities::component::Component;
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::AssemblyService;
 
 #[derive(Subcommand, Debug)]
 pub enum AsmCommands {
@@ -798,6 +800,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -805,35 +808,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the assembly file
-    let asm_dir = project.root().join("bom/assemblies");
-    let mut found_path = None;
-
-    if asm_dir.exists() {
-        for entry in fs::read_dir(&asm_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No assembly found matching '{}'", args.id))?;
-
-    // Read and parse assembly
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let asm: Assembly = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use AssemblyService to get the assembly (cache-first lookup)
+    let service = AssemblyService::new(&project, &cache);
+    let asm = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No assembly found matching '{}'", args.id))?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&asm).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&asm).into_diagnostic()?;
@@ -841,7 +826,6 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Id | OutputFormat::ShortId => {
             if global.output == OutputFormat::ShortId {
-                let short_ids = ShortIdIndex::load(&project);
                 let short_id = short_ids
                     .get_short_id(&asm.id.to_string())
                     .unwrap_or_default();

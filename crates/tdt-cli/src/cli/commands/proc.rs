@@ -17,6 +17,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::process::{Process, ProcessType};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::ProcessService;
 
 /// Column definitions for process list output
 const PROC_COLUMNS: &[ColumnDef] = &[
@@ -717,6 +718,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -724,35 +726,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the process file
-    let proc_dir = project.root().join("manufacturing/processes");
-    let mut found_path = None;
-
-    if proc_dir.exists() {
-        for entry in fs::read_dir(&proc_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No process found matching '{}'", args.id))?;
-
-    // Read and parse process
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let proc: Process = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use ProcessService to get the process (cache-first lookup)
+    let service = ProcessService::new(&project, &cache);
+    let proc = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No process found matching '{}'", args.id))?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&proc).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&proc).into_diagnostic()?;

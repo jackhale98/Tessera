@@ -19,6 +19,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::feature::{DimensionRef, Feature, FeatureType};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::FeatureService;
 
 #[derive(Subcommand, Debug)]
 pub enum FeatCommands {
@@ -880,6 +881,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -887,35 +889,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the feature file
-    let feat_dir = project.root().join("tolerances/features");
-    let mut found_path = None;
-
-    if feat_dir.exists() {
-        for entry in fs::read_dir(&feat_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No feature found matching '{}'", args.id))?;
-
-    // Read and parse feature
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let feat: Feature = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use FeatureService to get the feature (cache-first lookup)
+    let service = FeatureService::new(&project, &cache);
+    let feat = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No feature found matching '{}'", args.id))?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&feat).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&feat).into_diagnostic()?;
@@ -923,8 +907,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Id | OutputFormat::ShortId => {
             if global.output == OutputFormat::ShortId {
-                let sid_index = ShortIdIndex::load(&project);
-                let short_id = sid_index
+                let short_id = short_ids
                     .get_short_id(&feat.id.to_string())
                     .unwrap_or_default();
                 println!("{}", short_id);
@@ -933,8 +916,8 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
         _ => {
-            // Load cache for title lookups
-            let cache = EntityCache::open(&project).ok();
+            // Reopen cache for title lookups (format_link_with_title expects Option<EntityCache>)
+            let cache_opt = EntityCache::open(&project).ok();
 
             // Pretty format (default)
             println!("{}", style("─".repeat(60)).dim());
@@ -949,9 +932,9 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             let cmp_short = short_ids
                 .get_short_id(&feat.component)
                 .unwrap_or_else(|| feat.component.clone());
-            let cmp_display = if let Some(ref cache) = cache {
+            let cmp_display = if let Some(ref cache_ref) = cache_opt {
                 // Find component in cache to get part number and title
-                let components = cache.list_components(None, None, None, None, None, None);
+                let components = cache_ref.list_components(None, None, None, None, None, None);
                 if let Some(cmp) = components.iter().find(|c| c.id == feat.component) {
                     match (&cmp.part_number, cmp.title.as_str()) {
                         (Some(pn), title) if !pn.is_empty() => {

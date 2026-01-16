@@ -18,6 +18,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::risk::{Risk, RiskLevel, RiskType};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::RiskService;
 
 /// CLI-friendly risk type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1006,9 +1007,20 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
-    // Find the risk by ID prefix match
-    let risk = find_risk(&project, &args.id)?;
+    // Resolve short ID if needed
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
+
+    // Use RiskService to get the risk (cache-first lookup)
+    let service = RiskService::new(&project, &cache);
+    let risk = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No risk found matching '{}'", args.id))?;
 
     // Output based on format (pretty is default, yaml/json explicit)
     match global.output {
@@ -1026,7 +1038,6 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         | OutputFormat::Dot
         | OutputFormat::Tree => {
             if global.output == OutputFormat::ShortId {
-                let short_ids = ShortIdIndex::load(&project);
                 let short_id = short_ids
                     .get_short_id(&risk.id.to_string())
                     .unwrap_or_default();
@@ -1037,7 +1048,6 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         }
         _ => {
             // Human-readable format
-            let short_ids = ShortIdIndex::load(&project);
 
             println!("{}", style("─".repeat(60)).dim());
             println!(

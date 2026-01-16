@@ -20,6 +20,7 @@ use tdt_core::entities::feature::Feature;
 use tdt_core::entities::mate::{FitAnalysis, Mate, MateType, StatisticalFit};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::MateService;
 
 #[derive(Subcommand, Debug)]
 pub enum MateCommands {
@@ -707,6 +708,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -714,34 +716,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the mate file
-    let mate_dir = project.root().join("tolerances/mates");
-    let mut found_path = None;
-
-    if mate_dir.exists() {
-        for entry in fs::read_dir(&mate_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path = found_path.ok_or_else(|| miette::miette!("No mate found matching '{}'", args.id))?;
-
-    // Read and parse mate
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let mate: Mate = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use MateService to get the mate (cache-first lookup)
+    let service = MateService::new(&project, &cache);
+    let mate = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No mate found matching '{}'", args.id))?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&mate).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&mate).into_diagnostic()?;
@@ -749,8 +734,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Id | OutputFormat::ShortId => {
             if global.output == OutputFormat::ShortId {
-                let sid_index = ShortIdIndex::load(&project);
-                let short_id = sid_index
+                let short_id = short_ids
                     .get_short_id(&mate.id.to_string())
                     .unwrap_or_default();
                 println!("{}", short_id);
@@ -759,8 +743,8 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
         _ => {
-            // Load cache for title lookups
-            let cache = EntityCache::open(&project).ok();
+            // Reopen cache for title lookups (format_link_with_title expects Option<EntityCache>)
+            let cache_opt = EntityCache::open(&project).ok();
 
             // Pretty format (default)
             println!("{}", style("─".repeat(60)).dim());
@@ -778,16 +762,16 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             println!();
             println!("{}", style("Mating Features:").bold());
             let feat_a_display =
-                format_link_with_title(&mate.feature_a.id.to_string(), &short_ids, &cache);
+                format_link_with_title(&mate.feature_a.id.to_string(), &short_ids, &cache_opt);
             let feat_b_display =
-                format_link_with_title(&mate.feature_b.id.to_string(), &short_ids, &cache);
+                format_link_with_title(&mate.feature_b.id.to_string(), &short_ids, &cache_opt);
 
             // Helper to get component display with part number and title
             let get_component_display =
                 |cmp_id: Option<&String>, cmp_name: Option<&String>| -> Option<String> {
                     if let Some(cmp_id) = cmp_id {
                         // Look up component info from cache
-                        if let Some(ref c) = cache {
+                        if let Some(ref c) = cache_opt {
                             let components = c.list_components(None, None, None, None, None, None);
                             if let Some(cmp) = components.iter().find(|c| &c.id == cmp_id) {
                                 let short = short_ids

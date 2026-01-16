@@ -18,6 +18,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::result::{Result as TestResult, Verdict};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::ResultService;
 
 #[derive(Subcommand, Debug)]
 pub enum RsltCommands {
@@ -1053,9 +1054,20 @@ fn determine_test_type(project: &Project, test_id: &EntityId) -> Result<String> 
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
-    // Find the result by ID prefix match
-    let result = find_result(&project, &args.id)?;
+    // Resolve short ID if needed
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
+
+    // Use ResultService to get the result (cache-first lookup)
+    let service = ResultService::new(&project, &cache);
+    let result = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No result found matching '{}'", args.id))?;
 
     // Output based on format (pretty is default)
     match global.output {
@@ -1069,7 +1081,6 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Id | OutputFormat::ShortId => {
             if global.output == OutputFormat::ShortId {
-                let short_ids = ShortIdIndex::load(&project);
                 let short_id = short_ids
                     .get_short_id(&result.id.to_string())
                     .unwrap_or_default();
@@ -1079,9 +1090,8 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
         _ => {
-            // Load cache and short IDs for title lookups
-            let short_ids = ShortIdIndex::load(&project);
-            let cache = EntityCache::open(&project).ok();
+            // Reopen cache for title lookups (format_link_with_title expects Option<EntityCache>)
+            let cache_opt = EntityCache::open(&project).ok();
 
             // Human-readable format
             println!("{}", style("─".repeat(60)).dim());
@@ -1091,7 +1101,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                 style(&result.id.to_string()).cyan()
             );
             let test_display =
-                format_link_with_title(&result.test_id.to_string(), &short_ids, &cache);
+                format_link_with_title(&result.test_id.to_string(), &short_ids, &cache_opt);
             println!(
                 "{}: {}",
                 style("Test").bold(),

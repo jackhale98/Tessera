@@ -21,6 +21,7 @@ use tdt_core::entities::result::{Result as TestResult, StepResult, StepResultRec
 use tdt_core::entities::test::{Test, TestLevel, TestMethod, TestType};
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::TestService;
 
 /// CLI-friendly test type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1327,9 +1328,20 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
-    // Find the test by ID prefix match
-    let test = find_test(&project, &args.id)?;
+    // Resolve short ID if needed
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
+
+    // Use TestService to get the test (cache-first lookup)
+    let service = TestService::new(&project, &cache);
+    let test = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No test found matching '{}'", args.id))?;
 
     // Output based on format (pretty is default)
     match global.output {
@@ -1343,7 +1355,6 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Id | OutputFormat::ShortId => {
             if global.output == OutputFormat::ShortId {
-                let short_ids = ShortIdIndex::load(&project);
                 let short_id = short_ids
                     .get_short_id(&test.id.to_string())
                     .unwrap_or_default();
@@ -1353,9 +1364,8 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
         _ => {
-            // Load cache and short IDs for title lookups
-            let short_ids = ShortIdIndex::load(&project);
-            let cache = EntityCache::open(&project).ok();
+            // Reopen cache for title lookups (format_link_with_title expects Option<EntityCache>)
+            let cache_opt = EntityCache::open(&project).ok();
 
             // Human-readable format
             println!("{}", style("─".repeat(60)).dim());
@@ -1442,7 +1452,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         test.links
                             .verifies
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1454,7 +1464,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         test.links
                             .validates
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1466,7 +1476,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         test.links
                             .mitigates
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache))
+                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );

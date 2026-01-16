@@ -17,6 +17,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::work_instruction::WorkInstruction;
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::WorkInstructionService;
 
 #[derive(Subcommand, Debug)]
 pub enum WorkCommands {
@@ -662,6 +663,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -669,35 +671,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the work instruction file
-    let work_dir = project.root().join("manufacturing/work_instructions");
-    let mut found_path = None;
-
-    if work_dir.exists() {
-        for entry in fs::read_dir(&work_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path = found_path
+    // Use WorkInstructionService to get the work instruction (cache-first lookup)
+    let service = WorkInstructionService::new(&project, &cache);
+    let work = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
         .ok_or_else(|| miette::miette!("No work instruction found matching '{}'", args.id))?;
-
-    // Read and parse work instruction
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let work: WorkInstruction = serde_yml::from_str(&content).into_diagnostic()?;
 
     match global.output {
         OutputFormat::Yaml => {
-            print!("{}", content);
+            let yaml = serde_yml::to_string(&work).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&work).into_diagnostic()?;

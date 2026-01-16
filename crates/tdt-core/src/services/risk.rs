@@ -226,7 +226,6 @@ pub struct UpdateRisk {
 /// Service for risk management (FMEA)
 pub struct RiskService<'a> {
     project: &'a Project,
-    #[allow(dead_code)]
     cache: &'a EntityCache,
 }
 
@@ -268,6 +267,21 @@ impl<'a> RiskService<'a> {
             filter.common.offset,
             filter.common.limit,
         ))
+    }
+
+    /// List risks from cache (fast path for list display)
+    ///
+    /// Returns cached risk data without loading full YAML files.
+    /// Use this for list commands where full entity data isn't needed.
+    pub fn list_cached(&self) -> Vec<crate::core::CachedEntity> {
+        use crate::core::cache::EntityFilter;
+        use crate::core::identity::EntityPrefix;
+
+        let filter = EntityFilter {
+            prefix: Some(EntityPrefix::Risk),
+            ..Default::default()
+        };
+        self.cache.list_entities(&filter)
     }
 
     /// Load all risks from the filesystem
@@ -547,8 +561,23 @@ impl<'a> RiskService<'a> {
         Ok(risk)
     }
 
-    /// Find a risk and its file path
+    /// Find a risk and its file path (cache-first lookup)
     fn find_risk(&self, id: &str) -> ServiceResult<(PathBuf, Risk)> {
+        // Try to find in cache first for fast path lookup
+        if let Some(cached) = self.cache.get_entity(id) {
+            let path = if cached.file_path.is_absolute() {
+                cached.file_path.clone()
+            } else {
+                self.project.root().join(&cached.file_path)
+            };
+            if path.exists() {
+                if let Ok(risk) = crate::yaml::parse_yaml_file::<Risk>(&path) {
+                    return Ok((path, risk));
+                }
+            }
+        }
+
+        // Fall back to directory scan
         let dir = self.get_directory();
         if let Some((path, risk)) = loader::load_entity::<Risk>(&dir, id)? {
             return Ok((path, risk));

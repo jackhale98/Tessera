@@ -11,8 +11,10 @@ use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
+use tdt_core::core::cache::EntityCache;
 use tdt_core::entities::hazard::{Hazard, HazardCategory, HazardSeverity};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::HazardService;
 
 /// Column definitions for hazard list output
 const HAZ_COLUMNS: &[ColumnDef] = &[
@@ -578,17 +580,20 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().into_diagnostic()?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
-    // Resolve ID
-    let full_id = short_ids
+    // Resolve short ID if needed
+    let resolved_id = short_ids
         .resolve(&args.id)
-        .ok_or_else(|| miette::miette!("Cannot resolve ID: {}", args.id))?;
+        .unwrap_or_else(|| args.id.clone());
 
-    // Find file
-    let file_path = find_hazard_file(&project, &full_id)?;
-    let content = fs::read_to_string(&file_path).into_diagnostic()?;
-    let hazard: Hazard = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use HazardService to get the hazard (cache-first lookup)
+    let service = HazardService::new(&project, &cache);
+    let hazard = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No hazard found matching '{}'", args.id))?;
 
     let format = global.output;
 
@@ -598,7 +603,8 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            println!("{}", content);
+            let yaml = serde_yml::to_string(&hazard).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Auto | _ => {
             let short_id = short_ids

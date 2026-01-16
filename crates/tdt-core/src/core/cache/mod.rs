@@ -490,6 +490,84 @@ impl EntityCache {
         cov
     }
 
+    /// Get comprehensive requirement statistics via SQL (fast)
+    pub fn requirement_stats(&self) -> CachedRequirementStats {
+        let mut stats = CachedRequirementStats::default();
+
+        // Total and type breakdown
+        stats.total = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM entities WHERE prefix = 'REQ'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as usize;
+
+        // Count by type (entity_type stores 'input' or 'output' for requirements)
+        if let Ok(mut stmt) = self.conn.prepare(
+            "SELECT entity_type, COUNT(*) FROM entities WHERE prefix = 'REQ' GROUP BY entity_type",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            }) {
+                for row in rows.flatten() {
+                    match row.0.as_str() {
+                        "input" => stats.inputs = row.1 as usize,
+                        "output" => stats.outputs = row.1 as usize,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Count by status
+        if let Ok(mut stmt) = self.conn.prepare(
+            "SELECT status, COUNT(*) FROM entities WHERE prefix = 'REQ' GROUP BY status",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            }) {
+                for row in rows.flatten() {
+                    match row.0.as_str() {
+                        "draft" => stats.by_status.draft = row.1 as usize,
+                        "review" => stats.by_status.review = row.1 as usize,
+                        "approved" => stats.by_status.approved = row.1 as usize,
+                        "released" => stats.by_status.released = row.1 as usize,
+                        "obsolete" => stats.by_status.obsolete = row.1 as usize,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Unverified: requirements with no incoming 'verified_by' links
+        // (link_type 'verifies' means TEST verifies REQ, so we look for target_id)
+        let verified_count = self
+            .conn
+            .query_row(
+                "SELECT COUNT(DISTINCT target_id) FROM links WHERE link_type = 'verifies' AND target_id LIKE 'REQ-%'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as usize;
+        stats.unverified = stats.total.saturating_sub(verified_count);
+
+        // Orphaned: requirements with no incoming links at all (not just verified_by)
+        // A requirement is orphaned if it has no satisfied_by AND no verified_by links
+        let linked_count = self
+            .conn
+            .query_row(
+                "SELECT COUNT(DISTINCT target_id) FROM links WHERE target_id LIKE 'REQ-%'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as usize;
+        stats.orphaned = stats.total.saturating_sub(linked_count);
+
+        stats
+    }
+
     /// Get quote summary by supplier
     pub fn quote_summary_by_supplier(&self) -> Vec<SupplierQuoteSummary> {
         let mut stmt = match self.conn.prepare(

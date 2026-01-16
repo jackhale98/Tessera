@@ -170,7 +170,7 @@ pub struct DesignStructureMatrix {
 
 /// Service for traceability queries and coverage analysis
 pub struct TraceabilityService<'a> {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Reserved for future use (e.g., file path resolution)
     project: &'a Project,
     cache: &'a EntityCache,
 }
@@ -625,6 +625,232 @@ impl<'a> TraceabilityService<'a> {
             },
         )
     }
+
+    /// Generate a Domain Mapping Matrix (DMM) showing relationships between two entity types
+    ///
+    /// For example, generate_dmm(Req, Test, "verified_by") shows which requirements are verified
+    /// by which tests. Rows are source entities, columns are target entities.
+    pub fn generate_dmm(
+        &self,
+        source_type: EntityPrefix,
+        target_type: EntityPrefix,
+        link_type: Option<&str>,
+    ) -> DomainMappingMatrix {
+        // Get all entities of source type
+        let source_filter = EntityFilter {
+            prefix: Some(source_type),
+            ..Default::default()
+        };
+        let source_entities = self.cache.list_entities(&source_filter);
+
+        // Get all entities of target type
+        let target_filter = EntityFilter {
+            prefix: Some(target_type),
+            ..Default::default()
+        };
+        let target_entities = self.cache.list_entities(&target_filter);
+
+        let n_rows = source_entities.len();
+        let n_cols = target_entities.len();
+
+        // Create ID to index mappings
+        let target_id_to_idx: HashMap<&str, usize> = target_entities
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.id.as_str(), i))
+            .collect();
+
+        let mut cells = vec![vec![false; n_cols]; n_rows];
+        let mut link_types_matrix = vec![vec![None; n_cols]; n_rows];
+
+        // Fill in the matrix
+        for (row, source) in source_entities.iter().enumerate() {
+            let links = self.get_forward_links(&source.id);
+
+            for link in links {
+                // Filter by link type if specified
+                if let Some(lt) = link_type {
+                    if link.link_type != lt {
+                        continue;
+                    }
+                }
+
+                if let Some(&col) = target_id_to_idx.get(link.target_id.as_str()) {
+                    cells[row][col] = true;
+                    link_types_matrix[row][col] = Some(link.link_type.clone());
+                }
+            }
+        }
+
+        // Count coverage statistics
+        let sources_with_links = cells.iter().filter(|row| row.iter().any(|&c| c)).count();
+        let targets_with_links = (0..n_cols)
+            .filter(|&col| cells.iter().any(|row| row[col]))
+            .count();
+
+        DomainMappingMatrix {
+            source_type,
+            target_type,
+            source_ids: source_entities.iter().map(|e| e.id.clone()).collect(),
+            source_labels: source_entities.iter().map(|e| e.title.clone()).collect(),
+            target_ids: target_entities.iter().map(|e| e.id.clone()).collect(),
+            target_labels: target_entities.iter().map(|e| e.title.clone()).collect(),
+            cells,
+            link_types: link_types_matrix,
+            source_coverage: if n_rows > 0 {
+                (sources_with_links as f64 / n_rows as f64) * 100.0
+            } else {
+                0.0
+            },
+            target_coverage: if n_cols > 0 {
+                (targets_with_links as f64 / n_cols as f64) * 100.0
+            } else {
+                0.0
+            },
+        }
+    }
+
+    /// Find broken links - links that point to non-existent entities
+    pub fn find_broken_links(&self) -> Vec<BrokenLink> {
+        let mut broken = Vec::new();
+        let mut seen_links: HashSet<(String, String, String)> = HashSet::new();
+
+        // Iterate over all entities and check their outgoing links
+        for prefix in EntityPrefix::all() {
+            let filter = EntityFilter {
+                prefix: Some(*prefix),
+                ..Default::default()
+            };
+            let entities = self.cache.list_entities(&filter);
+
+            for entity in entities {
+                let links = self.get_forward_links(&entity.id);
+
+                for link in links {
+                    // Avoid duplicates
+                    let key = (
+                        link.source_id.clone(),
+                        link.target_id.clone(),
+                        link.link_type.clone(),
+                    );
+                    if seen_links.contains(&key) {
+                        continue;
+                    }
+                    seen_links.insert(key);
+
+                    // Check if target exists
+                    let target_exists = self.cache.get_entity(&link.target_id).is_some();
+
+                    if !target_exists {
+                        broken.push(BrokenLink {
+                            source_id: link.source_id.clone(),
+                            target_id: link.target_id.clone(),
+                            link_type: link.link_type.clone(),
+                            source_exists: true, // Source must exist since we found it
+                            target_exists: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        broken
+    }
+
+    /// Validate all links and return a summary
+    pub fn validate_links(&self) -> LinkValidationResult {
+        let broken = self.find_broken_links();
+
+        // Count total links by iterating over all entities
+        let mut total_links = 0;
+        for prefix in EntityPrefix::all() {
+            let filter = EntityFilter {
+                prefix: Some(*prefix),
+                ..Default::default()
+            };
+            let entities = self.cache.list_entities(&filter);
+
+            for entity in entities {
+                total_links += self.get_forward_links(&entity.id).len();
+            }
+        }
+
+        LinkValidationResult {
+            total_links,
+            valid_links: total_links - broken.len(),
+            broken_links: broken.len(),
+            broken,
+        }
+    }
+}
+
+/// Domain Mapping Matrix - shows relationships between two different entity types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainMappingMatrix {
+    /// Source entity type (rows)
+    pub source_type: EntityPrefix,
+
+    /// Target entity type (columns)
+    pub target_type: EntityPrefix,
+
+    /// Source entity IDs
+    pub source_ids: Vec<String>,
+
+    /// Source entity labels (titles)
+    pub source_labels: Vec<String>,
+
+    /// Target entity IDs
+    pub target_ids: Vec<String>,
+
+    /// Target entity labels (titles)
+    pub target_labels: Vec<String>,
+
+    /// Matrix cells: cells[row][col] = link exists from source to target
+    pub cells: Vec<Vec<bool>>,
+
+    /// Link types for each cell (if link exists)
+    pub link_types: Vec<Vec<Option<String>>>,
+
+    /// Percentage of source entities with at least one link
+    pub source_coverage: f64,
+
+    /// Percentage of target entities with at least one link
+    pub target_coverage: f64,
+}
+
+/// A broken link (points to non-existent entity)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokenLink {
+    /// Source entity ID
+    pub source_id: String,
+
+    /// Target entity ID (may not exist)
+    pub target_id: String,
+
+    /// Link type
+    pub link_type: String,
+
+    /// Whether source entity exists
+    pub source_exists: bool,
+
+    /// Whether target entity exists
+    pub target_exists: bool,
+}
+
+/// Result of link validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkValidationResult {
+    /// Total number of links
+    pub total_links: usize,
+
+    /// Number of valid links
+    pub valid_links: usize,
+
+    /// Number of broken links
+    pub broken_links: usize,
+
+    /// Details of broken links
+    pub broken: Vec<BrokenLink>,
 }
 
 /// Parse entity prefix from string

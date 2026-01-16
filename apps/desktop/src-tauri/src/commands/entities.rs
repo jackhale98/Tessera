@@ -224,8 +224,8 @@ pub async fn delete_entity(
     id: String,
     state: State<'_, AppState>,
 ) -> CommandResult<()> {
-    let project = state.project.lock().unwrap();
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     // Parse the ID to get prefix
     let entity_id: EntityId = id.parse()
@@ -240,6 +240,13 @@ pub async fn delete_entity(
 
     std::fs::remove_file(&file_path)?;
 
+    // Sync cache to remove the deleted entity
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
     Ok(())
 }
 
@@ -251,8 +258,8 @@ pub async fn save_entity(
     data: Value,
     state: State<'_, AppState>,
 ) -> CommandResult<String> {
-    let project = state.project.lock().unwrap();
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let prefix = prefix_from_string(&entityType)
         .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", entityType)))?;
@@ -283,6 +290,13 @@ pub async fn save_entity(
 
     let file_path = dir.join(format!("{}.pdt.yaml", id));
     std::fs::write(&file_path, yaml)?;
+
+    // Sync cache to pick up the new/updated entity
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(id)
 }

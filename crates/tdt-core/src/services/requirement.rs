@@ -1,15 +1,15 @@
 //! Requirement service - business logic for requirement management
 //!
-//! Note: This service layer is not yet fully integrated - kept for future use.
-
-#![allow(dead_code)]
+//! This service uses the EntityCache for fast queries and only loads
+//! full entities from disk when necessary.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::core::cache::EntityCache;
+use crate::core::cache::{CachedRequirement, EntityCache};
 use crate::core::entity::{Priority, Status};
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
@@ -209,30 +209,162 @@ impl<'a> RequirementService<'a> {
         dir.join(format!("{}.tdt.yaml", id))
     }
 
-    /// List requirements with filtering and pagination
+    /// List requirements using the cache (fast path)
+    ///
+    /// Returns cached requirement data without loading full entities from disk.
+    /// Use this for list views and simple queries.
+    pub fn list_cached(
+        &self,
+        filter: &RequirementFilter,
+    ) -> ServiceResult<ListResult<CachedRequirement>> {
+        // Build cache query parameters
+        let status_str = filter
+            .common
+            .status
+            .as_ref()
+            .and_then(|s| s.first())
+            .map(|s| s.to_string());
+
+        let priority_str = filter
+            .common
+            .priority
+            .as_ref()
+            .and_then(|p| p.first())
+            .map(|p| match p {
+                Priority::Low => "low",
+                Priority::Medium => "medium",
+                Priority::High => "high",
+                Priority::Critical => "critical",
+            });
+
+        let req_type_str = filter.req_type.as_ref().map(|t| match t {
+            RequirementType::Input => "input",
+            RequirementType::Output => "output",
+        });
+
+        // Query cache
+        let mut cached = self.cache.list_requirements(
+            status_str.as_deref(),
+            priority_str,
+            req_type_str,
+            filter.category.as_deref(),
+            filter.common.author.as_deref(),
+            filter.common.search.as_deref(),
+            None, // Apply limit after all filters
+        );
+
+        // Apply additional filters not supported by cache query
+        if filter.needs_review {
+            cached.retain(|r| r.status == Status::Draft || r.status == Status::Review);
+        }
+
+        if let Some(level) = &filter.level {
+            let level_str = level.to_string();
+            cached.retain(|r| r.level.as_ref().map(|l| l == &level_str).unwrap_or(false));
+        }
+
+        if let Some(days) = filter.common.recent_days {
+            let cutoff = Utc::now() - chrono::Duration::days(days as i64);
+            cached.retain(|r| r.created >= cutoff);
+        }
+
+        if let Some(tags) = &filter.common.tags {
+            cached.retain(|r| {
+                tags.iter().any(|t| {
+                    r.tags
+                        .iter()
+                        .any(|rt| rt.to_lowercase() == t.to_lowercase())
+                })
+            });
+        }
+
+        // Apply link-based filters using cache
+        if filter.orphans_only {
+            let orphan_ids = self.get_orphan_ids();
+            cached.retain(|r| orphan_ids.contains(&r.id));
+        }
+
+        if filter.unverified_only {
+            let unverified_ids = self.get_unverified_ids();
+            cached.retain(|r| unverified_ids.contains(&r.id));
+        }
+
+        // Paginate
+        Ok(apply_pagination(
+            cached,
+            filter.common.offset,
+            filter.common.limit,
+        ))
+    }
+
+    /// List requirements with full entity data
+    ///
+    /// Loads full requirement entities from disk. Use this when you need
+    /// access to text, rationale, acceptance_criteria, or links.
     pub fn list(
         &self,
         filter: &RequirementFilter,
         sort_by: RequirementSortField,
         sort_dir: SortDirection,
     ) -> ServiceResult<ListResult<Requirement>> {
-        let mut requirements = self.load_all()?;
+        // Use cache to get file paths, then load full entities
+        let cached = self.list_cached(filter)?;
 
-        // Apply filters
-        requirements.retain(|req| self.matches_filter(req, filter));
+        let mut requirements: Vec<Requirement> = Vec::new();
+        for c in &cached.items {
+            // Cache stores relative paths - resolve to absolute
+            let full_path = if c.file_path.is_absolute() {
+                c.file_path.clone()
+            } else {
+                self.project.root().join(&c.file_path)
+            };
+
+            match crate::yaml::parse_yaml_file::<Requirement>(&full_path) {
+                Ok(req) => requirements.push(req),
+                Err(e) => {
+                    // Log error but continue - don't fail entire list for one bad file
+                    eprintln!("Warning: Failed to load requirement from {:?}: {}", full_path, e);
+                }
+            }
+        }
 
         // Sort
         self.sort_requirements(&mut requirements, sort_by, sort_dir);
 
-        // Paginate
-        Ok(apply_pagination(
-            requirements,
-            filter.common.offset,
-            filter.common.limit,
-        ))
+        Ok(ListResult::new(requirements, cached.total_count, cached.has_more))
     }
 
-    /// Load all requirements from the filesystem
+    /// Get IDs of orphaned requirements (no incoming links)
+    fn get_orphan_ids(&self) -> HashSet<String> {
+        let all_reqs = self.cache.list_requirements(None, None, None, None, None, None, None);
+        let mut orphans = HashSet::new();
+
+        for req in all_reqs {
+            let links_to = self.cache.get_links_to(&req.id);
+            if links_to.is_empty() {
+                orphans.insert(req.id);
+            }
+        }
+
+        orphans
+    }
+
+    /// Get IDs of unverified requirements (no verified_by links)
+    fn get_unverified_ids(&self) -> HashSet<String> {
+        let all_reqs = self.cache.list_requirements(None, None, None, None, None, None, None);
+        let mut unverified = HashSet::new();
+
+        for req in all_reqs {
+            let verifies_links = self.cache.get_links_to_of_type(&req.id, "verifies");
+            if verifies_links.is_empty() {
+                unverified.insert(req.id);
+            }
+        }
+
+        unverified
+    }
+
+    /// Load all requirements from the filesystem (slow, use list_cached when possible)
     pub fn load_all(&self) -> ServiceResult<Vec<Requirement>> {
         let mut requirements = Vec::new();
 
@@ -254,14 +386,30 @@ impl<'a> RequirementService<'a> {
     }
 
     /// Get a single requirement by ID
+    ///
+    /// Uses the cache to find the file path, then loads the full entity.
     pub fn get(&self, id: &str) -> ServiceResult<Option<Requirement>> {
-        // Try inputs first
+        // Try cache first for fast lookup
+        if let Some(entity) = self.cache.get_entity(id) {
+            if entity.prefix == "REQ" {
+                // Cache stores relative paths - resolve to absolute
+                let full_path = if entity.file_path.is_absolute() {
+                    entity.file_path.clone()
+                } else {
+                    self.project.root().join(&entity.file_path)
+                };
+                if let Ok(req) = crate::yaml::parse_yaml_file::<Requirement>(&full_path) {
+                    return Ok(Some(req));
+                }
+            }
+        }
+
+        // Fallback to filesystem search if not in cache
         let inputs_dir = self.get_directory(RequirementType::Input);
         if let Some((_, req)) = loader::load_entity::<Requirement>(&inputs_dir, id)? {
             return Ok(Some(req));
         }
 
-        // Try outputs
         let outputs_dir = self.get_directory(RequirementType::Output);
         if let Some((_, req)) = loader::load_entity::<Requirement>(&outputs_dir, id)? {
             return Ok(Some(req));
@@ -519,7 +667,32 @@ impl<'a> RequirementService<'a> {
     }
 
     /// Get statistics about requirements
+    ///
+    /// Uses the cache's SQL-based stats for fast aggregation without loading entities.
     pub fn stats(&self) -> ServiceResult<RequirementStats> {
+        // Use cache for fast SQL-based stats
+        let cached = self.cache.requirement_stats();
+
+        Ok(RequirementStats {
+            total: cached.total,
+            inputs: cached.inputs,
+            outputs: cached.outputs,
+            unverified: cached.unverified,
+            orphaned: cached.orphaned,
+            by_status: StatusCounts {
+                draft: cached.by_status.draft,
+                review: cached.by_status.review,
+                approved: cached.by_status.approved,
+                released: cached.by_status.released,
+                obsolete: cached.by_status.obsolete,
+            },
+        })
+    }
+
+    /// Get statistics by loading all entities (slower, but provides full data)
+    ///
+    /// Use this when you need accurate link-based stats that require full entity data.
+    pub fn stats_full(&self) -> ServiceResult<RequirementStats> {
         let requirements = self.load_all()?;
 
         let mut stats = RequirementStats::default();
@@ -707,7 +880,7 @@ mod tests {
         let service = RequirementService::new(&project, &cache);
 
         // Create multiple requirements
-        service
+        let req1 = service
             .create(CreateRequirement {
                 req_type: RequirementType::Input,
                 title: "Input 1".into(),
@@ -718,7 +891,7 @@ mod tests {
             })
             .unwrap();
 
-        service
+        let req2 = service
             .create(CreateRequirement {
                 req_type: RequirementType::Output,
                 title: "Output 1".into(),
@@ -728,6 +901,21 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
+
+        // Verify files exist
+        let input_path = service.get_file_path(&req1.id, RequirementType::Input);
+        let output_path = service.get_file_path(&req2.id, RequirementType::Output);
+        assert!(input_path.exists(), "Input file should exist at {:?}", input_path);
+        assert!(output_path.exists(), "Output file should exist at {:?}", output_path);
+
+        // Sync cache to pick up newly created files
+        let cache = EntityCache::open(&project).unwrap();
+
+        // Debug: check cache directly
+        let cached_reqs = cache.list_requirements(None, None, None, None, None, None, None);
+        assert_eq!(cached_reqs.len(), 2, "Cache should have 2 requirements, found {}", cached_reqs.len());
+
+        let service = RequirementService::new(&project, &cache);
 
         // List all
         let all = service
@@ -776,6 +964,10 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
+
+        // Sync cache to pick up newly created files
+        let cache = EntityCache::open(&project).unwrap();
+        let service = RequirementService::new(&project, &cache);
 
         let stats = service.stats().unwrap();
         assert_eq!(stats.total, 2);

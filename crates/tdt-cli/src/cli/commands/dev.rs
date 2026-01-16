@@ -7,6 +7,7 @@ use std::fs;
 
 use crate::cli::helpers::{escape_csv, truncate_str};
 use crate::cli::{GlobalOpts, OutputFormat};
+use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -16,6 +17,7 @@ use tdt_core::entities::dev::{
 };
 use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
+use tdt_core::services::DeviationService;
 
 /// CLI-friendly deviation type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -896,6 +898,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 /// Show deviation details
 fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -903,30 +906,12 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the file
-    let dev_dir = project.root().join("manufacturing/deviations");
-    let mut found_path = None;
-
-    if dev_dir.exists() {
-        for entry in fs::read_dir(&dev_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No deviation found matching '{}'", args.id))?;
-
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let dev: Dev = serde_yml::from_str(&content).into_diagnostic()?;
+    // Use DeviationService to get the deviation (cache-first lookup)
+    let service = DeviationService::new(&project, &cache);
+    let dev = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No deviation found matching '{}'", args.id))?;
 
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
@@ -939,7 +924,8 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            println!("{}", content);
+            let yaml = serde_yml::to_string(&dev).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Csv => {
             let short_id = short_ids
@@ -1066,7 +1052,17 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             println!("{}", short_id);
         }
         OutputFormat::Path => {
-            println!("{}", path.display());
+            // Get file path from cache
+            if let Some(cached) = cache.get_entity(&dev.id.to_string()) {
+                let path = if cached.file_path.is_absolute() {
+                    cached.file_path.clone()
+                } else {
+                    project.root().join(&cached.file_path)
+                };
+                println!("{}", path.display());
+            } else {
+                return Err(miette::miette!("Could not find file path for deviation"));
+            }
         }
     }
 

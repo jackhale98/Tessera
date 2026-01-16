@@ -229,30 +229,40 @@ pub async fn create_component(
     input: CreateComponentInput,
     state: State<'_, AppState>,
 ) -> CommandResult<Component> {
-    let project = state.project.lock().unwrap();
-    let cache = state.cache.lock().unwrap();
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
-    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+    // Create component using service
+    let cmp = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = ComponentService::new(project, cache);
 
-    let service = ComponentService::new(project, cache);
+        let create = CreateComponent {
+            title: input.title,
+            part_number: input.part_number,
+            author: input.author,
+            revision: input.revision,
+            description: input.description,
+            category: input.category.and_then(|s| parse_category(&s)).unwrap_or_default(),
+            make_buy: input.make_buy.and_then(|s| parse_make_buy(&s)).unwrap_or_default(),
+            unit_cost: input.unit_cost,
+            mass_kg: input.mass_kg,
+            material: input.material,
+            tags: input.tags.unwrap_or_default(),
+            suppliers: vec![],
+        };
 
-    let create = CreateComponent {
-        title: input.title,
-        part_number: input.part_number,
-        author: input.author,
-        revision: input.revision,
-        description: input.description,
-        category: input.category.and_then(|s| parse_category(&s)).unwrap_or_default(),
-        make_buy: input.make_buy.and_then(|s| parse_make_buy(&s)).unwrap_or_default(),
-        unit_cost: input.unit_cost,
-        mass_kg: input.mass_kg,
-        material: input.material,
-        tags: input.tags.unwrap_or_default(),
-        suppliers: vec![],
+        service.create(create)?
     };
 
-    let cmp = service.create(create)?;
+    // Sync cache to pick up the new entity
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
     Ok(cmp)
 }
 
@@ -263,45 +273,62 @@ pub async fn update_component(
     input: UpdateComponentInput,
     state: State<'_, AppState>,
 ) -> CommandResult<Component> {
-    let project = state.project.lock().unwrap();
-    let cache = state.cache.lock().unwrap();
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
-    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+    let cmp = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = ComponentService::new(project, cache);
 
-    let service = ComponentService::new(project, cache);
+        let update = UpdateComponent {
+            title: input.title,
+            part_number: input.part_number,
+            revision: input.revision,
+            description: input.description,
+            category: input.category.and_then(|s| parse_category(&s)),
+            make_buy: input.make_buy.and_then(|s| parse_make_buy(&s)),
+            unit_cost: input.unit_cost,
+            mass_kg: input.mass_kg,
+            material: input.material,
+            status: input.status.and_then(|s| parse_status(&s)),
+            tags: None,
+            suppliers: None,
+            documents: None,
+        };
 
-    let update = UpdateComponent {
-        title: input.title,
-        part_number: input.part_number,
-        revision: input.revision,
-        description: input.description,
-        category: input.category.and_then(|s| parse_category(&s)),
-        make_buy: input.make_buy.and_then(|s| parse_make_buy(&s)),
-        unit_cost: input.unit_cost,
-        mass_kg: input.mass_kg,
-        material: input.material,
-        status: input.status.and_then(|s| parse_status(&s)),
-        tags: None,
-        suppliers: None,
-        documents: None,
+        service.update(&id, update)?
     };
 
-    let cmp = service.update(&id, update)?;
+    // Sync cache to pick up the changes
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
     Ok(cmp)
 }
 
 /// Delete a component
 #[tauri::command]
 pub async fn delete_component(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let project = state.project.lock().unwrap();
-    let cache = state.cache.lock().unwrap();
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
-    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+    {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = ComponentService::new(project, cache);
+        service.delete(&id, false)?;
+    }
 
-    let service = ComponentService::new(project, cache);
-    service.delete(&id, false)?;
+    // Sync cache to remove the deleted entity
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }
