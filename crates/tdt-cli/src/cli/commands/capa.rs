@@ -4,6 +4,8 @@ use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
 
+use chrono::NaiveDate;
+
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::helpers::format_short_id;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
@@ -13,7 +15,7 @@ use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
-use tdt_core::entities::capa::{Capa, CapaStatus, CapaType, EffectivenessResult, SourceType};
+use tdt_core::entities::capa::{ActionStatus, Capa, CapaStatus, CapaType, EffectivenessResult, SourceType};
 use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
     CapaFilter, CapaService, CapaSortField, CommonFilter, CreateCapa, SortDirection,
@@ -69,6 +71,7 @@ pub enum ListColumn {
     Title,
     CapaType,
     Status,
+    NextDue,
     Author,
     Created,
 }
@@ -80,6 +83,7 @@ impl std::fmt::Display for ListColumn {
             ListColumn::Title => write!(f, "title"),
             ListColumn::CapaType => write!(f, "capa-type"),
             ListColumn::Status => write!(f, "status"),
+            ListColumn::NextDue => write!(f, "next-due"),
             ListColumn::Author => write!(f, "author"),
             ListColumn::Created => write!(f, "created"),
         }
@@ -89,11 +93,12 @@ impl std::fmt::Display for ListColumn {
 /// Column definitions for CAPA list output
 const CAPA_COLUMNS: &[ColumnDef] = &[
     ColumnDef::new("id", "ID", 17),
-    ColumnDef::new("title", "TITLE", 30),
-    ColumnDef::new("capa-type", "TYPE", 12),
+    ColumnDef::new("title", "TITLE", 35),
+    ColumnDef::new("capa-type", "TYPE", 11),
     ColumnDef::new("status", "STATUS", 14),
-    ColumnDef::new("author", "AUTHOR", 20),
-    ColumnDef::new("created", "CREATED", 20),
+    ColumnDef::new("next-due", "DUE", 12),
+    ColumnDef::new("author", "AUTHOR", 16),
+    ColumnDef::new("created", "CREATED", 12),
 ];
 
 #[derive(clap::Args, Debug)]
@@ -106,9 +111,13 @@ pub struct ListArgs {
     #[arg(long, default_value = "all")]
     pub capa_status: CapaStatusFilter,
 
-    /// Show only overdue CAPAs
+    /// Show only overdue CAPAs (based on timeline target date)
     #[arg(long)]
     pub overdue: bool,
+
+    /// Show only CAPAs with overdue actions (action due date < today)
+    #[arg(long)]
+    pub overdue_actions: bool,
 
     /// Show only open CAPAs (status != closed) - shortcut filter
     #[arg(long)]
@@ -128,10 +137,10 @@ pub struct ListArgs {
 
     /// Columns to display
     #[arg(long, value_delimiter = ',', default_values_t = vec![
-        ListColumn::Id,
-        ListColumn::Title,
         ListColumn::CapaType,
+        ListColumn::Title,
         ListColumn::Status,
+        ListColumn::NextDue,
     ])]
     pub columns: Vec<ListColumn>,
 
@@ -242,6 +251,42 @@ const ENTITY_CONFIG: crate::cli::EntityConfig = crate::cli::EntityConfig {
     name_plural: "CAPAs",
 };
 
+/// Get the next due date for non-completed actions in a CAPA
+/// Returns the earliest due date from actions that are not completed or verified
+fn get_next_action_due_date(capa: &Capa) -> Option<NaiveDate> {
+    capa.actions
+        .iter()
+        .filter(|a| a.status != ActionStatus::Completed && a.status != ActionStatus::Verified)
+        .filter_map(|a| a.due_date)
+        .min()
+}
+
+/// Check if a CAPA has any overdue actions
+/// An overdue action is one where due_date < today and status is not completed/verified
+fn has_overdue_actions(capa: &Capa) -> bool {
+    let today = chrono::Local::now().date_naive();
+    capa.actions.iter().any(|a| {
+        a.status != ActionStatus::Completed
+            && a.status != ActionStatus::Verified
+            && a.due_date.map(|d| d < today).unwrap_or(false)
+    })
+}
+
+/// Format a date for display, with optional overdue highlighting
+fn format_due_date(due_date: Option<NaiveDate>, is_overdue: bool) -> String {
+    match due_date {
+        Some(date) => {
+            let formatted = date.format("%Y-%m-%d").to_string();
+            if is_overdue {
+                format!("{}!", formatted) // Add indicator for overdue
+            } else {
+                formatted
+            }
+        }
+        None => "-".to_string(),
+    }
+}
+
 /// Verification result CLI option
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum VerifyResult {
@@ -328,6 +373,7 @@ fn build_capa_sort_field(col: &ListColumn) -> CapaSortField {
         ListColumn::Title => CapaSortField::Title,
         ListColumn::CapaType => CapaSortField::CapaType,
         ListColumn::Status => CapaSortField::CapaStatus,
+        ListColumn::NextDue => CapaSortField::TargetDate, // Closest available sort field
         ListColumn::Author => CapaSortField::Author,
         ListColumn::Created => CapaSortField::Created,
     }
@@ -350,6 +396,8 @@ fn sort_cached_capas(capas: &mut Vec<CachedCapa>, args: &ListArgs) {
                 .unwrap_or("")
                 .cmp(b.capa_status.as_deref().unwrap_or(""))
         }),
+        // NextDue requires full entity loading; fallback to created when using cache
+        ListColumn::NextDue => capas.sort_by(|a, b| a.created.cmp(&b.created)),
         ListColumn::Author => capas.sort_by(|a, b| a.author.cmp(&b.author)),
         ListColumn::Created => capas.sort_by(|a, b| a.created.cmp(&b.created)),
     }
@@ -454,8 +502,10 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let filter = build_capa_filter(&args);
 
     // Fast path: use cache when possible
-    // Can't use cache for: overdue (requires timeline), search (requires problem_statement), JSON/YAML
+    // Can't use cache for: overdue (requires timeline), overdue_actions (requires actions),
+    // search (requires problem_statement), JSON/YAML (need full entity)
     let can_use_cache = !args.overdue
+        && !args.overdue_actions
         && args.search.is_none()
         && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
 
@@ -476,6 +526,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
     // Full entity loading path
     let mut capas = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply overdue actions filter (requires full entity data)
+    if args.overdue_actions {
+        capas.retain(|capa| has_overdue_actions(capa));
+    }
 
     // Apply limit
     if let Some(limit) = args.limit {
@@ -874,16 +929,22 @@ fn output_cached_capas(
 
 /// Convert a full Capa entity to a TableRow
 fn capa_to_row(capa: &Capa, short_ids: &ShortIdIndex) -> TableRow {
+    let next_due = get_next_action_due_date(capa);
+    let is_overdue = has_overdue_actions(capa);
+    let due_display = format_due_date(next_due, is_overdue);
+
     TableRow::new(capa.id.to_string(), short_ids)
         .cell("id", CellValue::Id(capa.id.to_string()))
         .cell("title", CellValue::Text(capa.title.clone()))
         .cell("capa-type", CellValue::Type(capa.capa_type.to_string()))
         .cell("status", CellValue::Type(capa.capa_status.to_string()))
+        .cell("next-due", CellValue::Text(due_display))
         .cell("author", CellValue::Text(capa.author.clone()))
         .cell("created", CellValue::DateTime(capa.created))
 }
 
 /// Convert a cached CAPA to a TableRow
+/// Note: next-due column shows "-" for cached data since action details aren't in cache
 fn cached_capa_to_row(capa: &CachedCapa, short_ids: &ShortIdIndex) -> TableRow {
     TableRow::new(capa.id.clone(), short_ids)
         .cell("id", CellValue::Id(capa.id.clone()))
@@ -896,6 +957,7 @@ fn cached_capa_to_row(capa: &CachedCapa, short_ids: &ShortIdIndex) -> TableRow {
             "status",
             CellValue::Type(capa.capa_status.clone().unwrap_or_default()),
         )
+        .cell("next-due", CellValue::Text("-".to_string())) // Requires full entity
         .cell("author", CellValue::Text(capa.author.clone()))
         .cell("created", CellValue::DateTime(capa.created))
 }

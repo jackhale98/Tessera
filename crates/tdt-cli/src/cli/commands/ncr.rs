@@ -1,5 +1,6 @@
 //! `tdt ncr` command - Non-conformance report management
 
+use chrono::Utc;
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
@@ -178,6 +179,7 @@ pub enum ListColumn {
     NcrType,
     Severity,
     Status,
+    DaysOpen,
     Author,
     Created,
 }
@@ -190,6 +192,7 @@ impl std::fmt::Display for ListColumn {
             ListColumn::NcrType => write!(f, "ncr-type"),
             ListColumn::Severity => write!(f, "severity"),
             ListColumn::Status => write!(f, "status"),
+            ListColumn::DaysOpen => write!(f, "days-open"),
             ListColumn::Author => write!(f, "author"),
             ListColumn::Created => write!(f, "created"),
         }
@@ -199,12 +202,13 @@ impl std::fmt::Display for ListColumn {
 /// Column definitions for NCR list output
 const NCR_COLUMNS: &[ColumnDef] = &[
     ColumnDef::new("id", "ID", 17),
-    ColumnDef::new("title", "TITLE", 26),
+    ColumnDef::new("title", "TITLE", 35),
     ColumnDef::new("ncr-type", "TYPE", 10),
-    ColumnDef::new("severity", "SEVERITY", 10),
+    ColumnDef::new("severity", "SEV", 10),
     ColumnDef::new("status", "STATUS", 12),
+    ColumnDef::new("days-open", "DAYS", 6),
     ColumnDef::new("author", "AUTHOR", 16),
-    ColumnDef::new("created", "CREATED", 20),
+    ColumnDef::new("created", "CREATED", 12),
 ];
 
 #[derive(clap::Args, Debug)]
@@ -229,6 +233,10 @@ pub struct ListArgs {
     #[arg(long)]
     pub recent: bool,
 
+    /// Show only stale NCRs open longer than N days (e.g., --stale 30)
+    #[arg(long)]
+    pub stale: Option<u32>,
+
     /// Search in title and description
     #[arg(long)]
     pub search: Option<String>,
@@ -239,11 +247,11 @@ pub struct ListArgs {
 
     /// Columns to display
     #[arg(long, value_delimiter = ',', default_values_t = vec![
-        ListColumn::Id,
-        ListColumn::Title,
         ListColumn::NcrType,
+        ListColumn::Title,
         ListColumn::Severity,
-        ListColumn::Status
+        ListColumn::Status,
+        ListColumn::DaysOpen
     ])]
     pub columns: Vec<ListColumn>,
 
@@ -460,8 +468,44 @@ fn build_ncr_sort_field(col: &ListColumn) -> NcrSortField {
         ListColumn::NcrType => NcrSortField::NcrType,
         ListColumn::Severity => NcrSortField::Severity,
         ListColumn::Status => NcrSortField::NcrStatus,
+        ListColumn::DaysOpen => NcrSortField::Created, // Sort by age via created date
         ListColumn::Author => NcrSortField::Author,
         ListColumn::Created => NcrSortField::Created,
+    }
+}
+
+/// Calculate days open for an NCR
+/// Uses report_date if available, otherwise created date
+fn calculate_days_open(ncr: &Ncr) -> i64 {
+    let today = Utc::now().date_naive();
+    let start_date = ncr
+        .report_date
+        .unwrap_or_else(|| ncr.created.date_naive());
+    (today - start_date).num_days()
+}
+
+/// Calculate days open from a cached NCR (uses created date)
+fn calculate_days_open_cached(created: &chrono::DateTime<Utc>) -> i64 {
+    let today = Utc::now().date_naive();
+    (today - created.date_naive()).num_days()
+}
+
+/// Check if an NCR is stale (open longer than threshold days)
+fn is_stale(ncr: &Ncr, threshold_days: u32) -> bool {
+    if ncr.ncr_status == NcrStatus::Closed {
+        return false;
+    }
+    calculate_days_open(ncr) > threshold_days as i64
+}
+
+/// Format days open for display, with warning indicator for stale NCRs
+fn format_days_open(days: i64, is_closed: bool) -> String {
+    if is_closed {
+        "-".to_string()
+    } else if days > 30 {
+        format!("{}!", days) // Warning indicator for > 30 days
+    } else {
+        days.to_string()
     }
 }
 
@@ -487,6 +531,12 @@ fn sort_cached_ncrs(ncrs: &mut Vec<CachedNcr>, args: &ListArgs) {
                 .as_deref()
                 .unwrap_or("")
                 .cmp(b.ncr_status.as_deref().unwrap_or(""))
+        }),
+        // Sort by days open (older first = more days)
+        ListColumn::DaysOpen => ncrs.sort_by(|a, b| {
+            let days_a = calculate_days_open_cached(&a.created);
+            let days_b = calculate_days_open_cached(&b.created);
+            days_b.cmp(&days_a) // Descending: oldest (most days) first
         }),
         ListColumn::Author => ncrs.sort_by(|a, b| a.author.cmp(&b.author)),
         ListColumn::Created => ncrs.sort_by(|a, b| a.created.cmp(&b.created)),
@@ -592,8 +642,10 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let filter = build_ncr_filter(&args);
 
     // Fast path: use cache when possible
-    // Can't use cache for: search (requires description), JSON/YAML (need full entity)
+    // Can't use cache for: search (requires description), stale (requires report_date),
+    // JSON/YAML (need full entity)
     let can_use_cache = args.search.is_none()
+        && args.stale.is_none()
         && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
 
     if can_use_cache {
@@ -613,6 +665,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
     // Full entity loading path
     let mut ncrs = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply stale filter (requires full entity with report_date)
+    if let Some(threshold_days) = args.stale {
+        ncrs.retain(|ncr| is_stale(ncr, threshold_days));
+    }
 
     // Apply limit
     if let Some(limit) = args.limit {
@@ -1002,18 +1059,27 @@ fn output_cached_ncrs(
 
 /// Convert an Ncr to a TableRow
 fn ncr_to_row(ncr: &Ncr, short_ids: &ShortIdIndex) -> TableRow {
+    let is_closed = ncr.ncr_status == NcrStatus::Closed;
+    let days_open = calculate_days_open(ncr);
+    let days_display = format_days_open(days_open, is_closed);
+
     TableRow::new(ncr.id.to_string(), short_ids)
         .cell("id", CellValue::Id(ncr.id.to_string()))
         .cell("title", CellValue::Text(ncr.title.clone()))
         .cell("ncr-type", CellValue::Type(ncr.ncr_type.to_string()))
         .cell("severity", CellValue::NcrSeverity(ncr.severity.to_string()))
         .cell("status", CellValue::Type(ncr.ncr_status.to_string()))
+        .cell("days-open", CellValue::Text(days_display))
         .cell("author", CellValue::Text(ncr.author.clone()))
         .cell("created", CellValue::DateTime(ncr.created))
 }
 
 /// Convert a CachedNcr to a TableRow
 fn cached_ncr_to_row(ncr: &CachedNcr, short_ids: &ShortIdIndex) -> TableRow {
+    let is_closed = ncr.ncr_status.as_deref() == Some("closed");
+    let days_open = calculate_days_open_cached(&ncr.created);
+    let days_display = format_days_open(days_open, is_closed);
+
     TableRow::new(ncr.id.clone(), short_ids)
         .cell("id", CellValue::Id(ncr.id.clone()))
         .cell("title", CellValue::Text(ncr.title.clone()))
@@ -1029,6 +1095,7 @@ fn cached_ncr_to_row(ncr: &CachedNcr, short_ids: &ShortIdIndex) -> TableRow {
             "status",
             CellValue::Type(ncr.ncr_status.as_deref().unwrap_or("-").to_string()),
         )
+        .cell("days-open", CellValue::Text(days_display))
         .cell("author", CellValue::Text(ncr.author.clone()))
         .cell("created", CellValue::DateTime(ncr.created))
 }
