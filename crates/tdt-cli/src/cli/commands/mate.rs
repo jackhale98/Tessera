@@ -18,9 +18,11 @@ use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::feature::Feature;
 use tdt_core::entities::mate::{FitAnalysis, Mate, MateType, StatisticalFit};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::MateService;
+use tdt_core::services::{
+    CommonFilter, CreateMate, FeatureService, MateFilter, MateService, MateSortField,
+    SortDirection,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum MateCommands {
@@ -302,114 +304,28 @@ pub fn run(cmd: MateCommands, global: &GlobalOpts) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let mate_dir = project.root().join("tolerances/mates");
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = MateService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
 
-    if !mate_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No mates found.");
-        }
-        return Ok(());
-    }
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
 
-    // Load and parse all mates
-    let mut mates: Vec<Mate> = Vec::new();
+    let filter = build_mate_filter(&args);
+    let mut mates = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
 
-    for entry in fs::read_dir(&mate_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(mate) = serde_yml::from_str::<Mate>(&content) {
-                mates.push(mate);
-            }
+    // Post-sort for columns not in service (Match, FeatureA, FeatureB)
+    if let Some(ref sort_col) = args.sort {
+        match sort_col {
+            ListColumn::Match => mates.sort_by(|a, b| fit_matches_type(a).cmp(&fit_matches_type(b))),
+            ListColumn::FeatureA => mates.sort_by(|a, b| a.feature_a.id.to_string().cmp(&b.feature_a.id.to_string())),
+            ListColumn::FeatureB => mates.sort_by(|a, b| a.feature_b.id.to_string().cmp(&b.feature_b.id.to_string())),
+            _ => {} // Handled by service
         }
     }
 
-    // Apply filters
-    let mates: Vec<Mate> = mates
-        .into_iter()
-        .filter(|m| match args.mate_type {
-            TypeFilter::Clearance => m.mate_type == MateType::Clearance,
-            TypeFilter::Transition => m.mate_type == MateType::Transition,
-            TypeFilter::Interference => m.mate_type == MateType::Interference,
-            TypeFilter::All => true,
-        })
-        .filter(|m| match args.status {
-            StatusFilter::Draft => m.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => m.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => m.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => m.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => m.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => m.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        })
-        .filter(|m| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                m.title.to_lowercase().contains(&search_lower)
-                    || m.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|m| {
-            args.author
-                .as_ref()
-                .is_none_or(|a| m.author.to_lowercase().contains(&a.to_lowercase()))
-        })
-        .filter(|m| {
-            args.recent.is_none_or(|days| {
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-                m.created >= cutoff
-            })
-        })
-        .collect();
-
-    // Apply sorting
-    let mut mates = mates;
-    if let Some(sort_column) = args.sort {
-        match sort_column {
-            ListColumn::Id => mates.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-            ListColumn::Title => mates.sort_by(|a, b| a.title.cmp(&b.title)),
-            ListColumn::MateType => {
-                mates.sort_by(|a, b| format!("{}", a.mate_type).cmp(&format!("{}", b.mate_type)))
-            }
-            ListColumn::FitResult => mates.sort_by(|a, b| {
-                let fit_a = a
-                    .fit_analysis
-                    .as_ref()
-                    .map(|f| format!("{}", f.fit_result))
-                    .unwrap_or_default();
-                let fit_b = b
-                    .fit_analysis
-                    .as_ref()
-                    .map(|f| format!("{}", f.fit_result))
-                    .unwrap_or_default();
-                fit_a.cmp(&fit_b)
-            }),
-            ListColumn::Match => mates.sort_by(|a, b| {
-                let match_a = fit_matches_type(a);
-                let match_b = fit_matches_type(b);
-                match_a.cmp(&match_b)
-            }),
-            ListColumn::FeatureA => {
-                mates.sort_by(|a, b| a.feature_a.id.to_string().cmp(&b.feature_a.id.to_string()))
-            }
-            ListColumn::FeatureB => {
-                mates.sort_by(|a, b| a.feature_b.id.to_string().cmp(&b.feature_b.id.to_string()))
-            }
-            ListColumn::Status => mates.sort_by(|a, b| a.status().cmp(b.status())),
-            ListColumn::Author => mates.sort_by(|a, b| a.author.cmp(&b.author)),
-            ListColumn::Created => mates.sort_by(|a, b| a.created.cmp(&b.created)),
-        }
-    }
-
-    // Apply limit
     if let Some(limit) = args.limit {
         mates.truncate(limit);
     }
@@ -420,30 +336,93 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    // No results
+    output_mates(&mates, &mut short_ids, &args, format, &project)
+}
+
+/// Build a MateFilter from CLI ListArgs
+fn build_mate_filter(args: &ListArgs) -> MateFilter {
+    let mate_type = match args.mate_type {
+        TypeFilter::All => None,
+        TypeFilter::Clearance => Some(MateType::Clearance),
+        TypeFilter::Transition => Some(MateType::Transition),
+        TypeFilter::Interference => Some(MateType::Interference),
+    };
+
+    let status = match args.status {
+        StatusFilter::All => None,
+        StatusFilter::Draft => Some(vec![tdt_core::core::entity::Status::Draft]),
+        StatusFilter::Review => Some(vec![tdt_core::core::entity::Status::Review]),
+        StatusFilter::Approved => Some(vec![tdt_core::core::entity::Status::Approved]),
+        StatusFilter::Released => Some(vec![tdt_core::core::entity::Status::Released]),
+        StatusFilter::Obsolete => Some(vec![tdt_core::core::entity::Status::Obsolete]),
+        StatusFilter::Active => Some(vec![
+            tdt_core::core::entity::Status::Draft,
+            tdt_core::core::entity::Status::Review,
+            tdt_core::core::entity::Status::Approved,
+            tdt_core::core::entity::Status::Released,
+        ]),
+    };
+
+    let (sort, sort_direction) = build_mate_sort(args);
+
+    MateFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        mate_type,
+        recent_days: args.recent,
+        sort,
+        sort_direction,
+        ..Default::default()
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_mate_sort(args: &ListArgs) -> (MateSortField, SortDirection) {
+    let field = args.sort.as_ref().map(|col| match col {
+        ListColumn::Id => MateSortField::Id,
+        ListColumn::Title => MateSortField::Title,
+        ListColumn::MateType => MateSortField::MateType,
+        ListColumn::FitResult => MateSortField::FitResult,
+        ListColumn::Status => MateSortField::Status,
+        ListColumn::Author => MateSortField::Author,
+        ListColumn::Created => MateSortField::Created,
+        // Columns handled as post-sort
+        ListColumn::Match | ListColumn::FeatureA | ListColumn::FeatureB => MateSortField::Created,
+    }).unwrap_or(MateSortField::Created);
+
+    (field, SortDirection::Descending)
+}
+
+/// Output mates in the specified format
+fn output_mates(
+    mates: &[Mate],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
     if mates.is_empty() {
         println!("No mates found.");
         return Ok(());
     }
 
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(mates.iter().map(|m| m.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
-    // Output based on format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
-    };
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&mates).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(&mates).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&mates).into_diagnostic()?;
+            let yaml = serde_yml::to_string(&mates).map_err(|e| miette::miette!("{}", e))?;
             print!("{}", yaml);
         }
         OutputFormat::Csv
@@ -460,7 +439,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             if args.show_id && !columns.contains(&"id") {
                 columns.insert(0, "id");
             }
-            let rows: Vec<TableRow> = mates.iter().map(|m| mate_to_row(m, &short_ids)).collect();
+            let rows: Vec<TableRow> = mates.iter().map(|m| mate_to_row(m, short_ids)).collect();
 
             let config = TableConfig {
                 wrap_width: args.wrap,
@@ -470,7 +449,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for mate in &mates {
+            for mate in mates {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&mate.id.to_string())
@@ -490,6 +469,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Determine feature IDs from positional args or -a/-b flags
     let (feat_a_input, feat_b_input) = if args.features.len() >= 2 {
@@ -504,47 +484,30 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
     // Resolve feature IDs
     let short_ids = ShortIdIndex::load(&project);
-    let feature_a = short_ids
+    let feature_a_str = short_ids
         .resolve(&feat_a_input)
         .unwrap_or_else(|| feat_a_input.clone());
-    let feature_b = short_ids
+    let feature_b_str = short_ids
         .resolve(&feat_b_input)
         .unwrap_or_else(|| feat_b_input.clone());
 
-    // Validate features exist and load them for fit calculation
-    let feat_dir = project.root().join("tolerances/features");
-    let mut feat_a: Option<Feature> = None;
-    let mut feat_b: Option<Feature> = None;
-
-    if feat_dir.exists() {
-        for entry in fs::read_dir(&feat_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&feature_a) {
-                    let content = fs::read_to_string(&path).into_diagnostic()?;
-                    if let Ok(feat) = serde_yml::from_str::<Feature>(&content) {
-                        feat_a = Some(feat);
-                    }
-                }
-                if filename.contains(&feature_b) {
-                    let content = fs::read_to_string(&path).into_diagnostic()?;
-                    if let Ok(feat) = serde_yml::from_str::<Feature>(&content) {
-                        feat_b = Some(feat);
-                    }
-                }
-            }
-        }
-    }
-
-    if feat_a.is_none() {
+    // Validate features exist using service
+    let feat_service = FeatureService::new(&project, &cache);
+    if feat_service
+        .get(&feature_a_str)
+        .map_err(|e| miette::miette!("{}", e))?
+        .is_none()
+    {
         return Err(miette::miette!(
             "Feature A '{}' not found. Create it first with: tdt feat new",
             feat_a_input
         ));
     }
-    if feat_b.is_none() {
+    if feat_service
+        .get(&feature_b_str)
+        .map_err(|e| miette::miette!("{}", e))?
+        .is_none()
+    {
         return Err(miette::miette!(
             "Feature B '{}' not found. Create it first with: tdt feat new",
             feat_b_input
@@ -577,49 +540,43 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         notes = None;
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Mate);
+    // Create mate via service
+    let service = MateService::new(&project, &cache);
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_feature_a(&feature_a)
-        .with_feature_b(&feature_b)
-        .with_mate_type(mate_type.to_string());
+    // Parse feature IDs
+    let feature_a_id: EntityId = feature_a_str
+        .parse()
+        .map_err(|_| miette::miette!("Invalid feature A ID: {}", feature_a_str))?;
+    let feature_b_id: EntityId = feature_b_str
+        .parse()
+        .map_err(|_| miette::miette!("Invalid feature B ID: {}", feature_b_str))?;
 
-    let yaml_content = generator
-        .generate_mate(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
+    let input = CreateMate {
+        title: title.clone(),
+        feature_a: feature_a_id,
+        feature_b: feature_b_id,
+        mate_type,
+        description,
+        notes,
+        tags: Vec::new(),
+        author: config.author(),
+    };
 
-    // Try to calculate fit if both features have dimensions
-    let fit_analysis = calculate_fit_from_features(&feat_a.unwrap(), &feat_b.unwrap());
+    let mate = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    // Parse and update with fit analysis and wizard values
-    let mut mate: Mate = serde_yml::from_str(&yaml_content).into_diagnostic()?;
-    mate.fit_analysis = fit_analysis;
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                mate.description = Some(desc.clone());
-            }
-        }
-        if let Some(ref n) = notes {
-            if !n.is_empty() {
-                mate.notes = Some(n.clone());
-            }
-        }
-    }
-    let yaml_content = serde_yml::to_string(&mate).into_diagnostic()?;
+    // Calculate fit analysis
+    let _ = service.recalculate(&mate.id.to_string());
 
-    // Write file
-    let output_dir = project.root().join("tolerances/mates");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
+    // Reload the mate to get updated fit analysis
+    let mate = service
+        .get(&mate.id.to_string())
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("Failed to reload mate after creation"))?;
 
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let id = &mate.id;
+    let file_path = project
+        .root()
+        .join(format!("tolerances/mates/{}.tdt.yaml", id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
@@ -657,8 +614,8 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!("   {}", style(file_path.display()).dim());
             println!(
                 "   {} <-> {} | {}",
-                style(truncate_str(&feature_a, 13)).yellow(),
-                style(truncate_str(&feature_b, 13)).yellow(),
+                style(truncate_str(&feature_a_str, 13)).yellow(),
+                style(truncate_str(&feature_b_str, 13)).yellow(),
                 style(&title).white()
             );
 
@@ -904,6 +861,7 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
 
 fn run_recalc(args: RecalcArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -911,69 +869,33 @@ fn run_recalc(args: RecalcArgs) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find and load the mate
-    let mate_dir = project.root().join("tolerances/mates");
-    let mut found_path = None;
+    // Use service to recalculate
+    let service = MateService::new(&project, &cache);
+    let result = service
+        .recalculate(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?;
 
-    if mate_dir.exists() {
-        for entry in fs::read_dir(&mate_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
+    // Check for errors
+    if let Some(ref error) = result.error {
+        return Err(miette::miette!("{}", error));
     }
 
-    let path = found_path.ok_or_else(|| miette::miette!("No mate found matching '{}'", args.id))?;
+    let mut mate = result.mate;
 
-    // Load mate
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let mut mate: Mate = serde_yml::from_str(&content).into_diagnostic()?;
-
-    // Load features
-    let feat_dir = project.root().join("tolerances/features");
-    let mut feat_a: Option<Feature> = None;
-    let mut feat_b: Option<Feature> = None;
-
-    if feat_dir.exists() {
-        let feat_a_id = mate.feature_a.id.to_string();
-        let feat_b_id = mate.feature_b.id.to_string();
-        for entry in fs::read_dir(&feat_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let feat_path = entry.path();
-            if feat_path.extension().is_some_and(|e| e == "yaml") {
-                let filename = feat_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&feat_a_id) {
-                    let content = fs::read_to_string(&feat_path).into_diagnostic()?;
-                    if let Ok(feat) = serde_yml::from_str::<Feature>(&content) {
-                        feat_a = Some(feat);
-                    }
-                }
-                if filename.contains(&feat_b_id) {
-                    let content = fs::read_to_string(&feat_path).into_diagnostic()?;
-                    if let Ok(feat) = serde_yml::from_str::<Feature>(&content) {
-                        feat_b = Some(feat);
-                    }
-                }
-            }
-        }
-    }
-
-    let feat_a = feat_a.ok_or_else(|| miette::miette!("Could not find feature A"))?;
-    let feat_b = feat_b.ok_or_else(|| miette::miette!("Could not find feature B"))?;
-
-    // Calculate fit
-    let mut fit_analysis = calculate_fit_from_features(&feat_a, &feat_b);
-
-    // Add statistical analysis if requested
+    // Add statistical analysis if requested (needs features)
     if args.statistical {
-        if let Some(ref mut analysis) = fit_analysis {
+        if let Some(ref mut analysis) = mate.fit_analysis {
+            // Load features for statistical calculation
+            let feat_service = tdt_core::services::FeatureService::new(&project, &cache);
+            let feat_a = feat_service
+                .get(&mate.feature_a.id.to_string())
+                .map_err(|e| miette::miette!("{}", e))?
+                .ok_or_else(|| miette::miette!("Could not find feature A"))?;
+            let feat_b = feat_service
+                .get(&mate.feature_b.id.to_string())
+                .map_err(|e| miette::miette!("{}", e))?
+                .ok_or_else(|| miette::miette!("Could not find feature B"))?;
+
             let dim_a = feat_a.primary_dimension();
             let dim_b = feat_b.primary_dimension();
             if let (Some(dim_a), Some(dim_b)) = (dim_a, dim_b) {
@@ -992,6 +914,13 @@ fn run_recalc(args: RecalcArgs) -> Result<()> {
                 match StatisticalFit::calculate(hole_dim, shaft_dim, args.sigma) {
                     Ok(stat) => {
                         analysis.statistical = Some(stat);
+                        // Save updated mate with statistical analysis
+                        let file_path = project
+                            .root()
+                            .join(format!("tolerances/mates/{}.tdt.yaml", mate.id));
+                        let yaml_content =
+                            serde_yml::to_string(&mate).map_err(|e| miette::miette!("{}", e))?;
+                        fs::write(&file_path, yaml_content).into_diagnostic()?;
                     }
                     Err(e) => {
                         eprintln!(
@@ -1004,12 +933,6 @@ fn run_recalc(args: RecalcArgs) -> Result<()> {
             }
         }
     }
-
-    mate.fit_analysis = fit_analysis;
-
-    // Write back
-    let yaml_content = serde_yml::to_string(&mate).into_diagnostic()?;
-    fs::write(&path, &yaml_content).into_diagnostic()?;
 
     println!(
         "{} Recalculated fit for mate {}",

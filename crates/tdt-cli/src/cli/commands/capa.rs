@@ -3,23 +3,21 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::helpers::format_short_id;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::{CachedCapa, EntityCache};
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
-use tdt_core::entities::capa::{
-    Capa, CapaStatus, CapaType, Effectiveness, EffectivenessResult, SourceType,
-};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
+use tdt_core::entities::capa::{Capa, CapaStatus, CapaType, EffectivenessResult, SourceType};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::CapaService;
+use tdt_core::services::{
+    CapaFilter, CapaService, CapaSortField, CommonFilter, CreateCapa, SortDirection,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum CapaCommands {
@@ -283,186 +281,75 @@ pub fn run(cmd: CapaCommands, global: &GlobalOpts) -> Result<()> {
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let capa_dir = project.root().join("manufacturing/capas");
-
-    if !capa_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No CAPAs found.");
-        }
-        return Ok(());
-    }
-
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
+/// Build a CapaFilter from CLI ListArgs
+fn build_capa_filter(args: &ListArgs) -> CapaFilter {
+    // Map CAPA type
+    let capa_type = match args.r#type {
+        CapaTypeFilter::Corrective => Some(CapaType::Corrective),
+        CapaTypeFilter::Preventive => Some(CapaType::Preventive),
+        CapaTypeFilter::All => None,
     };
 
-    // Fast path: use cache when possible
-    let can_use_cache = !args.overdue
-        && !args.open
-        && args.search.is_none()
-        && !args.recent
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    // Map CAPA status
+    let capa_status = match args.capa_status {
+        CapaStatusFilter::Initiation => Some(CapaStatus::Initiation),
+        CapaStatusFilter::Investigation => Some(CapaStatus::Investigation),
+        CapaStatusFilter::Implementation => Some(CapaStatus::Implementation),
+        CapaStatusFilter::Verification => Some(CapaStatus::Verification),
+        CapaStatusFilter::Closed => Some(CapaStatus::Closed),
+        CapaStatusFilter::All => None,
+    };
 
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            // Build filters for cache query
-            let capa_type_filter = match args.r#type {
-                CapaTypeFilter::Corrective => Some("corrective"),
-                CapaTypeFilter::Preventive => Some("preventive"),
-                CapaTypeFilter::All => None,
-            };
-
-            let capa_status_filter = match args.capa_status {
-                CapaStatusFilter::Initiation => Some("initiation"),
-                CapaStatusFilter::Investigation => Some("investigation"),
-                CapaStatusFilter::Implementation => Some("implementation"),
-                CapaStatusFilter::Verification => Some("verification"),
-                CapaStatusFilter::Closed => Some("closed"),
-                CapaStatusFilter::All => None,
-            };
-
-            let mut capas = cache.list_capas(
-                None, // entity status (draft/active/etc)
-                capa_type_filter,
-                capa_status_filter,
-                args.author.as_deref(),
-                None, // limit - apply after sorting
-            );
-
-            // Sort
-            match args.sort {
-                ListColumn::Id => capas.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Title => capas.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::CapaType => capas.sort_by(|a, b| {
-                    a.capa_type
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.capa_type.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Status => capas.sort_by(|a, b| {
-                    a.capa_status
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.capa_status.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Author => capas.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => capas.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                capas.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                capas.truncate(limit);
-            }
-
-            // Update short ID index
-            let mut short_ids = ShortIdIndex::load(&project);
-            short_ids.ensure_all(capas.iter().map(|c| c.id.clone()));
-            super::utils::save_short_ids(&mut short_ids, &project);
-
-            return output_cached_capas(&capas, &args, &short_ids, format);
-        }
+    CapaFilter {
+        common: CommonFilter {
+            author: args.author.clone(),
+            search: args.search.clone(),
+            limit: None, // Apply limit after sorting
+            ..Default::default()
+        },
+        capa_type,
+        capa_status,
+        overdue_only: args.overdue,
+        open_only: args.open,
+        recent_days: if args.recent { Some(30) } else { None },
+        sort: build_capa_sort_field(&args.sort),
+        sort_direction: if args.reverse {
+            SortDirection::Descending
+        } else {
+            SortDirection::Ascending
+        },
     }
+}
 
-    // Slow path: load from files
-    let mut capas: Vec<Capa> = Vec::new();
-
-    for entry in fs::read_dir(&capa_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(capa) = serde_yml::from_str::<Capa>(&content) {
-                capas.push(capa);
-            }
-        }
+/// Convert CLI sort column to CapaSortField
+fn build_capa_sort_field(col: &ListColumn) -> CapaSortField {
+    match col {
+        ListColumn::Id => CapaSortField::Id,
+        ListColumn::Title => CapaSortField::Title,
+        ListColumn::CapaType => CapaSortField::CapaType,
+        ListColumn::Status => CapaSortField::CapaStatus,
+        ListColumn::Author => CapaSortField::Author,
+        ListColumn::Created => CapaSortField::Created,
     }
+}
 
-    let today = chrono::Local::now().date_naive();
-    let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
-
-    // Apply filters
-    let capas: Vec<Capa> = capas
-        .into_iter()
-        .filter(|c| match args.r#type {
-            CapaTypeFilter::Corrective => c.capa_type == CapaType::Corrective,
-            CapaTypeFilter::Preventive => c.capa_type == CapaType::Preventive,
-            CapaTypeFilter::All => true,
-        })
-        .filter(|c| match args.capa_status {
-            CapaStatusFilter::Initiation => c.capa_status == CapaStatus::Initiation,
-            CapaStatusFilter::Investigation => c.capa_status == CapaStatus::Investigation,
-            CapaStatusFilter::Implementation => c.capa_status == CapaStatus::Implementation,
-            CapaStatusFilter::Verification => c.capa_status == CapaStatus::Verification,
-            CapaStatusFilter::Closed => c.capa_status == CapaStatus::Closed,
-            CapaStatusFilter::All => true,
-        })
-        .filter(|c| {
-            if args.overdue {
-                c.timeline
-                    .as_ref()
-                    .and_then(|t| t.target_date)
-                    .is_some_and(|target| target < today && c.capa_status != CapaStatus::Closed)
-            } else {
-                true
-            }
-        })
-        // Open filter - show CAPAs not closed
-        .filter(|c| {
-            if args.open {
-                c.capa_status != CapaStatus::Closed
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                c.title.to_lowercase().contains(&search_lower)
-                    || c.problem_statement
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-                    || c.capa_number
-                        .as_ref()
-                        .is_some_and(|num| num.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            if let Some(ref author) = args.author {
-                c.author.to_lowercase().contains(&author.to_lowercase())
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            if args.recent {
-                c.created >= thirty_days_ago
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Sort
-    let mut capas = capas;
+/// Sort cached CAPAs according to CLI args
+fn sort_cached_capas(capas: &mut Vec<CachedCapa>, args: &ListArgs) {
     match args.sort {
-        ListColumn::Id => capas.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
+        ListColumn::Id => capas.sort_by(|a, b| a.id.cmp(&b.id)),
         ListColumn::Title => capas.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::CapaType => {
-            capas.sort_by(|a, b| format!("{:?}", a.capa_type).cmp(&format!("{:?}", b.capa_type)))
-        }
-        ListColumn::Status => capas
-            .sort_by(|a, b| format!("{:?}", a.capa_status).cmp(&format!("{:?}", b.capa_status))),
+        ListColumn::CapaType => capas.sort_by(|a, b| {
+            a.capa_type
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.capa_type.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Status => capas.sort_by(|a, b| {
+            a.capa_status
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.capa_status.as_deref().unwrap_or(""))
+        }),
         ListColumn::Author => capas.sort_by(|a, b| a.author.cmp(&b.author)),
         ListColumn::Created => capas.sort_by(|a, b| a.created.cmp(&b.created)),
     }
@@ -471,29 +358,37 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         capas.reverse();
     }
 
-    // Apply limit
     if let Some(limit) = args.limit {
         capas.truncate(limit);
     }
+}
 
-    // Count only
+/// Output full CAPA entities
+fn output_capas(
+    capas: &[Capa],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
+    if capas.is_empty() {
+        if args.count {
+            println!("0");
+        } else {
+            println!("No CAPAs found.");
+        }
+        return Ok(());
+    }
+
     if args.count {
         println!("{}", capas.len());
         return Ok(());
     }
 
-    // No results
-    if capas.is_empty() {
-        println!("No CAPAs found.");
-        return Ok(());
-    }
-
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(capas.iter().map(|c| c.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    super::utils::save_short_ids(short_ids, project);
 
-    // Output based on format
     match format {
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&capas).into_diagnostic()?;
@@ -517,7 +412,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 .collect();
 
             // Build rows
-            let rows: Vec<TableRow> = capas.iter().map(|c| capa_to_row(c, &short_ids)).collect();
+            let rows: Vec<TableRow> = capas.iter().map(|c| capa_to_row(c, short_ids)).collect();
 
             let config = TableConfig {
                 wrap_width: args.wrap,
@@ -527,7 +422,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for capa in &capas {
+            for capa in capas {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&capa.id.to_string())
@@ -544,16 +439,66 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = CapaService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Build filter from CLI args
+    let filter = build_capa_filter(&args);
+
+    // Fast path: use cache when possible
+    // Can't use cache for: overdue (requires timeline), search (requires problem_statement), JSON/YAML
+    let can_use_cache = !args.overdue
+        && args.search.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        let mut cached_capas = service
+            .list_cached(&filter)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        // Sort and limit
+        sort_cached_capas(&mut cached_capas, &args);
+
+        // Update short ID index
+        short_ids.ensure_all(cached_capas.iter().map(|c| c.id.clone()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        return output_cached_capas(&cached_capas, &args, &short_ids, format);
+    }
+
+    // Full entity loading path
+    let mut capas = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply limit
+    if let Some(limit) = args.limit {
+        capas.truncate(limit);
+    }
+
+    output_capas(&capas, &mut short_ids, &args, format, &project)
+}
+
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let service = CapaService::new(&project, &cache);
 
     let title: String;
-    let capa_type: String;
-    let source_type: String;
+    let capa_type: CapaType;
+    let source_type: SourceType;
     let problem_statement: Option<String>;
     let capa_number: Option<String>;
-    let capa_status: Option<String>;
+
+    // Load short IDs early for NCR reference resolution
+    let mut short_ids = ShortIdIndex::load(&project);
 
     if args.interactive {
         let wizard = SchemaWizard::new();
@@ -565,8 +510,8 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .unwrap_or_else(|| "New CAPA".to_string());
         capa_type = result
             .get_string("capa_type")
-            .map(String::from)
-            .unwrap_or_else(|| "corrective".to_string());
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(CapaType::Corrective);
 
         // Wizard can't handle nested fields like "source.type", so prompt explicitly
         use dialoguer::{theme::ColorfulTheme, Select};
@@ -588,92 +533,49 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .default(0)
             .interact()
             .into_diagnostic()?;
-        source_type = source_options[source_selection].to_string();
+        source_type = source_options[source_selection]
+            .parse()
+            .unwrap_or(SourceType::Ncr);
 
         problem_statement = result.get_string("problem_statement").map(String::from);
         capa_number = result.get_string("capa_number").map(String::from);
-        capa_status = result.get_string("capa_status").map(String::from);
     } else {
         title = args.title.unwrap_or_else(|| "New CAPA".to_string());
-        capa_type = args.r#type;
-        source_type = args.source;
+        capa_type = args.r#type.parse().map_err(|e| miette::miette!("{}", e))?;
+        source_type = args.source.parse().map_err(|e| miette::miette!("{}", e))?;
         problem_statement = None;
         capa_number = None;
-        capa_status = None;
     }
 
-    // Validate enums
-    capa_type
-        .parse::<CapaType>()
-        .map_err(|e| miette::miette!("{}", e))?;
-    source_type
-        .parse::<SourceType>()
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Capa);
-
     // Resolve NCR reference if provided
-    let short_ids = ShortIdIndex::load(&project);
-    let ncr_ref = args
+    let source_reference = args
         .ncr
         .as_ref()
         .map(|n| short_ids.resolve(n).unwrap_or_else(|| n.clone()));
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_capa_type(&capa_type)
-        .with_source_type(&source_type);
+    // Create CAPA via service
+    let input = CreateCapa {
+        title: title.clone(),
+        capa_type,
+        capa_number,
+        problem_statement,
+        source_type: Some(source_type),
+        source_reference: source_reference.clone(),
+        target_date: None,
+        tags: Vec::new(),
+        author: config.author(),
+    };
 
-    if let Some(ref ncr_id) = ncr_ref {
-        ctx = ctx.with_source_ref(ncr_id);
-    }
+    let capa = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    let mut yaml_content = generator
-        .generate_capa(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Apply wizard values via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref problem) = problem_statement {
-            if !problem.is_empty() {
-                let indented = problem
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "problem_statement: |\n  # Describe the problem being addressed\n  # Include scope and impact",
-                    &format!("problem_statement: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref num) = capa_number {
-            yaml_content =
-                yaml_content.replace("capa_number: null", &format!("capa_number: \"{}\"", num));
-        }
-        if let Some(ref status) = capa_status {
-            yaml_content = yaml_content.replace(
-                "capa_status: initiation",
-                &format!("capa_status: {}", status),
-            );
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("manufacturing/capas");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    // Get file path for the created CAPA
+    let file_path = project
+        .root()
+        .join("manufacturing/capas")
+        .join(format!("{}.tdt.yaml", capa.id));
 
     // Add to short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(capa.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -687,12 +589,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Output based on format flag
     match global.output {
         OutputFormat::Id => {
-            println!("{}", id);
+            println!("{}", capa.id);
         }
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&id))
+                short_id.clone().unwrap_or_else(|| format_short_id(&capa.id))
             );
         }
         OutputFormat::Path => {
@@ -702,15 +604,15 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created CAPA {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&id))).cyan()
+                style(short_id.clone().unwrap_or_else(|| format_short_id(&capa.id))).cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
                 "   {} | {}",
-                style(&capa_type).yellow(),
+                style(capa.capa_type.to_string()).yellow(),
                 style(&title).white()
             );
-            if let Some(ref ncr_id) = ncr_ref {
+            if let Some(ref ncr_id) = source_reference {
                 println!("   Source: {}", style(ncr_id).cyan());
             }
 
@@ -720,7 +622,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                     "   {} --[{}]--> {}",
                     style("→").dim(),
                     style(link_type).cyan(),
-                    style(format_short_id(&EntityId::parse(target).unwrap())).yellow()
+                    style(&short_ids.get_short_id(target).unwrap_or_else(|| target.clone())).yellow()
                 );
             }
         }
@@ -1000,43 +902,25 @@ fn cached_capa_to_row(capa: &CachedCapa, short_ids: &ShortIdIndex) -> TableRow {
 
 fn run_verify(args: VerifyArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = CapaService::new(&project, &cache);
+    let short_ids = ShortIdIndex::load(&project);
 
     // Resolve short ID if needed
-    let short_ids = ShortIdIndex::load(&project);
     let resolved_id = short_ids
         .resolve(&args.capa)
         .unwrap_or_else(|| args.capa.clone());
 
-    // Find the CAPA file
-    let capa_dir = project.root().join("manufacturing/capas");
-    let mut found_path = None;
-
-    if capa_dir.exists() {
-        for entry in fs::read_dir(&capa_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No CAPA found matching '{}'", args.capa))?;
-
-    // Read and parse CAPA
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let mut capa: Capa = serde_yml::from_str(&content).into_diagnostic()?;
-
     // Get display ID for user messages
     let display_id = short_ids
-        .get_short_id(&capa.id.to_string())
-        .unwrap_or_else(|| format_short_id(&capa.id));
+        .get_short_id(&resolved_id)
+        .unwrap_or_else(|| args.capa.clone());
+
+    // Get CAPA to validate status and show confirmation
+    let capa = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No CAPA found matching '{}'", args.capa))?;
 
     // Validate status allows verification
     match capa.capa_status {
@@ -1100,28 +984,10 @@ fn run_verify(args: VerifyArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
-    // Update effectiveness
-    let today = chrono::Local::now().date_naive();
-    capa.effectiveness = Some(Effectiveness {
-        verified: true,
-        verified_date: Some(today),
-        result: Some(effectiveness_result),
-        evidence: args.evidence.clone(),
-    });
-
-    // Auto-close if effective
-    if matches!(args.result, VerifyResult::Effective) {
-        capa.capa_status = CapaStatus::Closed;
-    } else {
-        capa.capa_status = CapaStatus::Verification;
-    }
-
-    // Increment revision
-    capa.entity_revision += 1;
-
-    // Write updated CAPA
-    let yaml_content = serde_yml::to_string(&capa).into_diagnostic()?;
-    fs::write(&path, &yaml_content).into_diagnostic()?;
+    // Use service to verify effectiveness
+    let capa = service
+        .verify_effectiveness(&resolved_id, effectiveness_result, args.evidence.clone())
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Output based on format
     match global.output {

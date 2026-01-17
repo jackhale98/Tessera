@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::core::cache::{CachedResult, EntityCache};
-use crate::core::entity::{Entity, Status};
+use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
@@ -491,7 +491,7 @@ impl<'a> ResultService<'a> {
     }
 
     /// Get the file path for a result
-    fn get_file_path(&self, result: &Result) -> PathBuf {
+    pub fn get_file_path(&self, result: &Result) -> PathBuf {
         let dir = self.determine_result_dir(&result.test_id);
         dir.join(format!("{}.tdt.yaml", result.id))
     }

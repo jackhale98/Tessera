@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::core::cache::{CachedCapa, EntityCache};
 use crate::core::entity::{Entity, Status};
-use crate::core::identity::{EntityId, EntityPrefix};
+use crate::core::identity::EntityId;
 use crate::core::loader;
 use crate::core::project::Project;
 use crate::entities::capa::{
@@ -756,6 +756,7 @@ impl<'a> CapaService<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::identity::EntityPrefix;
     use tempfile::TempDir;
 
     fn setup() -> (TempDir, Project, EntityCache) {

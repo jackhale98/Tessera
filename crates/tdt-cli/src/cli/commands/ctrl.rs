@@ -3,21 +3,22 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::filters::StatusFilter;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
+use tdt_core::core::CachedEntity;
 use tdt_core::core::Config;
-use tdt_core::entities::control::{Control, ControlType};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
+use tdt_core::entities::control::{Characteristic, Control, ControlCategory, ControlType};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::ControlService;
+use tdt_core::services::{
+    CommonFilter, ControlFilter, ControlService, ControlSortField, CreateControl, SortDirection,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum CtrlCommands {
@@ -239,219 +240,92 @@ const ENTITY_CONFIG: crate::cli::EntityConfig = crate::cli::EntityConfig {
     name_plural: "controls",
 };
 
-/// Run a control subcommand
-pub fn run(cmd: CtrlCommands, global: &GlobalOpts) -> Result<()> {
-    match cmd {
-        CtrlCommands::List(args) => run_list(args, global),
-        CtrlCommands::New(args) => run_new(args, global),
-        CtrlCommands::Show(args) => run_show(args, global),
-        CtrlCommands::Edit(args) => run_edit(args),
-        CtrlCommands::Delete(args) => run_delete(args),
-        CtrlCommands::Archive(args) => run_archive(args),
+/// Build a ControlFilter from CLI list arguments
+fn build_ctrl_filter(args: &ListArgs, short_ids: &ShortIdIndex) -> ControlFilter {
+    // Map ControlTypeFilter to ControlType
+    let control_type = match args.r#type {
+        ControlTypeFilter::Spc => Some(ControlType::Spc),
+        ControlTypeFilter::Inspection => Some(ControlType::Inspection),
+        ControlTypeFilter::PokaYoke => Some(ControlType::PokaYoke),
+        ControlTypeFilter::Visual => Some(ControlType::Visual),
+        ControlTypeFilter::FunctionalTest => Some(ControlType::FunctionalTest),
+        ControlTypeFilter::Attribute => Some(ControlType::Attribute),
+        ControlTypeFilter::All => None,
+    };
+
+    // Resolve process ID if provided
+    let process = args
+        .process
+        .as_ref()
+        .map(|p| short_ids.resolve(p).unwrap_or_else(|| p.clone()));
+
+    ControlFilter {
+        common: CommonFilter {
+            status: crate::cli::entity_cmd::status_filter_to_status(args.status)
+                .map(|s| vec![s]),
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: if args.recent { Some(30) } else { None },
+            limit: args.limit,
+            ..Default::default()
+        },
+        control_type,
+        process,
+        critical_only: args.critical,
+        ..Default::default()
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let short_ids = ShortIdIndex::load(&project);
-
-    // Determine output format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
+/// Build sort field and direction from CLI arguments
+fn build_ctrl_sort(args: &ListArgs) -> (ControlSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => ControlSortField::Id,
+        ListColumn::Title => ControlSortField::Title,
+        ListColumn::ControlType => ControlSortField::ControlType,
+        ListColumn::Status => ControlSortField::Status,
+        ListColumn::Author => ControlSortField::Author,
+        ListColumn::Created => ControlSortField::Created,
     };
 
-    // Check if we can use the fast cache path:
-    // - No type filter (control_type not in base cache)
-    // - No process filter (link-based)
-    // - No critical filter (nested field)
-    // - No recent filter
-    // - No search filter (searches in nested fields)
-    // - Not JSON/YAML output
-    let can_use_cache = matches!(args.r#type, ControlTypeFilter::All)
-        && args.process.is_none()
-        && !args.critical
-        && !args.recent
-        && args.search.is_none()
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
-
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            let filter = tdt_core::core::cache::EntityFilter {
-                prefix: Some(EntityPrefix::Ctrl),
-                status: crate::cli::entity_cmd::status_filter_to_status(args.status),
-                author: args.author.clone(),
-                search: None,
-                limit: None,
-                priority: None,
-                entity_type: None,
-                category: None,
-            };
-
-            let mut entities = cache.list_entities(&filter);
-
-            // Sort
-            match args.sort {
-                ListColumn::Id => entities.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Title => entities.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::ControlType => entities.sort_by(|a, b| a.id.cmp(&b.id)), // Can't sort by type in cache
-                ListColumn::Status => entities.sort_by(|a, b| a.status.cmp(&b.status)),
-                ListColumn::Author => entities.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => entities.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                entities.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                entities.truncate(limit);
-            }
-
-            return output_cached_controls(&entities, &short_ids, &args, format);
-        }
-    }
-
-    // Fall back to full YAML loading
-    let ctrl_dir = project.root().join("manufacturing/controls");
-
-    if !ctrl_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No controls found.");
-        }
-        return Ok(());
-    }
-
-    // Load and parse all controls
-    let mut controls: Vec<Control> = Vec::new();
-
-    for entry in fs::read_dir(&ctrl_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(ctrl) = serde_yml::from_str::<Control>(&content) {
-                controls.push(ctrl);
-            }
-        }
-    }
-
-    // Resolve process filter if provided
-    let process_filter = args.process.as_ref().map(|proc_id| {
-        short_ids
-            .resolve(proc_id)
-            .unwrap_or_else(|| proc_id.clone())
-    });
-
-    // Calculate recent cutoff if needed
-    let recent_cutoff = if args.recent {
-        Some(chrono::Utc::now() - chrono::Duration::days(30))
+    let direction = if args.reverse {
+        SortDirection::Ascending
     } else {
-        None
+        SortDirection::Descending
     };
 
-    // Apply filters
-    let controls: Vec<Control> = controls
-        .into_iter()
-        .filter(|c| match args.r#type {
-            ControlTypeFilter::Spc => c.control_type == ControlType::Spc,
-            ControlTypeFilter::Inspection => c.control_type == ControlType::Inspection,
-            ControlTypeFilter::PokaYoke => c.control_type == ControlType::PokaYoke,
-            ControlTypeFilter::Visual => c.control_type == ControlType::Visual,
-            ControlTypeFilter::FunctionalTest => c.control_type == ControlType::FunctionalTest,
-            ControlTypeFilter::Attribute => c.control_type == ControlType::Attribute,
-            ControlTypeFilter::All => true,
-        })
-        .filter(|c| crate::cli::entity_cmd::status_enum_matches_filter(&c.status, args.status))
-        .filter(|c| {
-            if let Some(ref proc_id) = process_filter {
-                c.links
-                    .process
-                    .as_ref()
-                    .is_some_and(|p| p.to_string().contains(proc_id))
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            if let Some(ref author_filter) = args.author {
-                c.author
-                    .to_lowercase()
-                    .contains(&author_filter.to_lowercase())
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            if args.critical {
-                c.characteristic.critical
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            if let Some(cutoff) = recent_cutoff {
-                c.created >= cutoff
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                c.title.to_lowercase().contains(&search_lower)
-                    || c.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-                    || c.characteristic.name.to_lowercase().contains(&search_lower)
-            } else {
-                true
-            }
-        })
-        .collect();
+    (field, direction)
+}
 
-    // Sort
-    let mut controls = controls;
-    match args.sort {
-        ListColumn::Id => controls.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Title => controls.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::ControlType => controls
-            .sort_by(|a, b| format!("{:?}", a.control_type).cmp(&format!("{:?}", b.control_type))),
-        ListColumn::Status => {
-            controls.sort_by(|a, b| format!("{:?}", a.status).cmp(&format!("{:?}", b.status)))
+/// Sort cached controls by the specified column
+fn sort_cached_controls(entities: &mut [CachedEntity], sort: ListColumn, reverse: bool) {
+    entities.sort_by(|a, b| {
+        let cmp = match sort {
+            ListColumn::Id => a.id.cmp(&b.id),
+            ListColumn::Title => a.title.cmp(&b.title),
+            ListColumn::ControlType => a.id.cmp(&b.id), // Can't sort by type in cache
+            ListColumn::Status => a.status.cmp(&b.status),
+            ListColumn::Author => a.author.cmp(&b.author),
+            ListColumn::Created => a.created.cmp(&b.created),
+        };
+        if reverse {
+            cmp.reverse()
+        } else {
+            cmp
         }
-        ListColumn::Author => controls.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => controls.sort_by(|a, b| a.created.cmp(&b.created)),
-    }
+    });
+}
 
-    if args.reverse {
-        controls.reverse();
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        controls.truncate(limit);
-    }
-
-    // Count only
-    if args.count {
-        println!("{}", controls.len());
-        return Ok(());
-    }
-
-    // No results
-    if controls.is_empty() {
-        println!("No controls found.");
-        return Ok(());
-    }
-
+/// Output controls in the requested format
+fn output_controls(
+    controls: &[Control],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
     // Update short ID index
-    let mut short_ids = short_ids;
     short_ids.ensure_all(controls.iter().map(|c| c.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
         OutputFormat::Json => {
@@ -483,7 +357,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             // Convert to TableRows
             let rows: Vec<TableRow> = controls
                 .iter()
-                .map(|ctrl| control_to_row(ctrl, &short_ids))
+                .map(|ctrl| control_to_row(ctrl, short_ids))
                 .collect();
 
             // Configure table
@@ -501,6 +375,94 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Run a control subcommand
+pub fn run(cmd: CtrlCommands, global: &GlobalOpts) -> Result<()> {
+    match cmd {
+        CtrlCommands::List(args) => run_list(args, global),
+        CtrlCommands::New(args) => run_new(args, global),
+        CtrlCommands::Show(args) => run_show(args, global),
+        CtrlCommands::Edit(args) => run_edit(args),
+        CtrlCommands::Delete(args) => run_delete(args),
+        CtrlCommands::Archive(args) => run_archive(args),
+    }
+}
+
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = ControlService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    // Determine output format
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Check if we can use the fast cache path:
+    // - No type filter (control_type not in base cache)
+    // - No process filter (link-based)
+    // - No critical filter (nested field)
+    // - No recent filter
+    // - No search filter (searches in nested fields)
+    // - Not JSON/YAML output
+    let can_use_cache = matches!(args.r#type, ControlTypeFilter::All)
+        && args.process.is_none()
+        && !args.critical
+        && !args.recent
+        && args.search.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        // Fast path: use cached entities
+        let mut entities = service.list_cached();
+
+        // Apply status filter manually on cached entities
+        if let Some(status) = crate::cli::entity_cmd::status_filter_to_status(args.status) {
+            entities.retain(|e| e.status == status);
+        }
+
+        // Apply author filter
+        if let Some(ref author_filter) = args.author {
+            let author_lower = author_filter.to_lowercase();
+            entities.retain(|e| e.author.to_lowercase().contains(&author_lower));
+        }
+
+        // Sort
+        sort_cached_controls(&mut entities, args.sort, args.reverse);
+
+        // Apply limit
+        if let Some(limit) = args.limit {
+            entities.truncate(limit);
+        }
+
+        return output_cached_controls(&entities, &short_ids, &args, format);
+    }
+
+    // Full entity loading via service
+    let filter = build_ctrl_filter(&args, &short_ids);
+    let (sort_field, sort_dir) = build_ctrl_sort(&args);
+
+    let result = service
+        .list(&filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
+    let controls = result.items;
+
+    // Count only
+    if args.count {
+        println!("{}", controls.len());
+        return Ok(());
+    }
+
+    // No results
+    if controls.is_empty() {
+        println!("No controls found.");
+        return Ok(());
+    }
+
+    output_controls(&controls, &mut short_ids, &args, format, &project)
 }
 
 /// Convert a Control to a TableRow
@@ -574,15 +536,25 @@ fn cached_entity_to_row(entity: &tdt_core::core::CachedEntity, short_ids: &Short
         .cell("created", CellValue::DateTime(entity.created))
 }
 
+/// Convert string to ControlCategory
+fn parse_control_category(s: &str) -> ControlCategory {
+    match s.to_lowercase().as_str() {
+        "variable" => ControlCategory::Variable,
+        "attribute" => ControlCategory::Attribute,
+        _ => ControlCategory::default(),
+    }
+}
+
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = ControlService::new(&project, &cache);
     let config = Config::load();
 
     let title: String;
-    let control_type: String;
+    let control_type: ControlType;
     let description: Option<String>;
-    let control_category: Option<String>;
-    let reaction_plan: Option<String>;
+    let control_category: ControlCategory;
 
     if args.interactive {
         let wizard = SchemaWizard::new();
@@ -594,26 +566,22 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .unwrap_or_else(|| "New Control".to_string());
         control_type = result
             .get_string("control_type")
-            .map(String::from)
-            .unwrap_or_else(|| "inspection".to_string());
+            .map(|s| s.parse::<ControlType>().unwrap_or_default())
+            .unwrap_or_default();
         description = result.get_string("description").map(String::from);
-        control_category = result.get_string("control_category").map(String::from);
-        reaction_plan = result.get_string("reaction_plan").map(String::from);
+        control_category = result
+            .get_string("control_category")
+            .map(|s| parse_control_category(s))
+            .unwrap_or_default();
     } else {
         title = args.title.unwrap_or_else(|| "New Control".to_string());
-        control_type = args.r#type;
+        control_type = args
+            .r#type
+            .parse::<ControlType>()
+            .map_err(|e| miette::miette!("{}", e))?;
         description = None;
-        control_category = None;
-        reaction_plan = None;
+        control_category = ControlCategory::default();
     }
-
-    // Validate control type
-    control_type
-        .parse::<ControlType>()
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Ctrl);
 
     // Resolve linked IDs if provided
     let short_ids = ShortIdIndex::load(&project);
@@ -626,75 +594,41 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         .as_ref()
         .map(|f| short_ids.resolve(f).unwrap_or_else(|| f.clone()));
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_control_type(&control_type)
-        .with_critical(args.critical);
+    // Build characteristic if name provided
+    let characteristic = args.characteristic.as_ref().map(|name| Characteristic {
+        name: name.clone(),
+        nominal: None,
+        upper_limit: None,
+        lower_limit: None,
+        units: None,
+        critical: args.critical,
+    });
 
-    if let Some(ref proc_id) = process_id {
-        ctx = ctx.with_process_id(proc_id);
-    }
-    if let Some(ref feat_id) = feature_id {
-        ctx = ctx.with_feature_id(feat_id);
-    }
-    if let Some(ref char_name) = args.characteristic {
-        ctx = ctx.with_characteristic_name(char_name);
-    }
+    // Create control using service
+    let input = CreateControl {
+        title: title.clone(),
+        author: config.author(),
+        control_type,
+        control_category,
+        description,
+        characteristic,
+        process: process_id,
+        feature: feature_id,
+        ..Default::default()
+    };
 
-    let mut yaml_content = generator
-        .generate_control(&ctx)
+    let control = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Apply wizard values via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Detailed description of this control plan item\n  # Include what is being controlled and why",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref cat) = control_category {
-            yaml_content = yaml_content.replace(
-                "control_category: variable",
-                &format!("control_category: {}", cat),
-            );
-        }
-        if let Some(ref plan) = reaction_plan {
-            if !plan.is_empty() {
-                let indented = plan
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "reaction_plan: |\n  # What to do if control limit is exceeded",
-                    &format!("reaction_plan: |\n{}", indented),
-                );
-            }
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("manufacturing/controls");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project
+        .root()
+        .join("manufacturing/controls")
+        .join(format!("{}.tdt.yaml", control.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(control.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -708,8 +642,8 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Output based on format flag
     let extra_info = format!(
         "Type: {} | {}{}",
-        style(&control_type).yellow(),
-        style(&title).white(),
+        style(control.control_type.to_string()).yellow(),
+        style(&control.title).white(),
         if args.critical {
             format!(" {}", style("[CTQ]").red().bold())
         } else {
@@ -717,11 +651,11 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         }
     );
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &control.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,
-        &title,
+        &control.title,
         Some(&extra_info),
         &added_links,
         global,

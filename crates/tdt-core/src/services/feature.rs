@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::core::cache::{CachedFeature, EntityCache};
-use crate::core::entity::{Entity, Status};
+use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
@@ -19,7 +19,7 @@ use crate::entities::feature::{
 use crate::entities::stackup::Distribution;
 use crate::services::base::ServiceBase;
 use crate::services::common::{
-    CommonFilter, NoneLast, ServiceError, ServiceResult, SortDirection, SortKey, Sortable,
+    CommonFilter, ServiceError, ServiceResult, SortDirection, SortKey, Sortable,
 };
 
 /// Filter options for listing features

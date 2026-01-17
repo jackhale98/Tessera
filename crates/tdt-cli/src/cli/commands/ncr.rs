@@ -3,7 +3,6 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::helpers::format_short_id;
@@ -15,11 +14,12 @@ use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::ncr::{
-    Disposition, DispositionDecision, Ncr, NcrCategory, NcrSeverity, NcrStatus, NcrType,
+    DispositionDecision, Ncr, NcrCategory, NcrSeverity, NcrStatus, NcrType,
 };
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::NcrService;
+use tdt_core::services::{
+    CommonFilter, CreateNcr, NcrFilter, NcrService, NcrSortField, SortDirection,
+};
 
 /// CLI-friendly NCR type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -402,200 +402,92 @@ pub fn run(cmd: NcrCommands, global: &GlobalOpts) -> Result<()> {
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let ncr_dir = project.root().join("manufacturing/ncrs");
-
-    if !ncr_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No NCRs found.");
-        }
-        return Ok(());
-    }
-
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
+/// Build a NcrFilter from CLI ListArgs
+fn build_ncr_filter(args: &ListArgs) -> NcrFilter {
+    // Map NCR type
+    let ncr_type = match args.r#type {
+        NcrTypeFilter::Internal => Some(NcrType::Internal),
+        NcrTypeFilter::Supplier => Some(NcrType::Supplier),
+        NcrTypeFilter::Customer => Some(NcrType::Customer),
+        NcrTypeFilter::All => None,
     };
 
-    // Fast path: use cache when possible
-    let can_use_cache = !args.recent
-        && args.search.is_none()
-        && !args.open
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    // Map severity
+    let severity = match args.severity {
+        SeverityFilter::Minor => Some(NcrSeverity::Minor),
+        SeverityFilter::Major => Some(NcrSeverity::Major),
+        SeverityFilter::Critical => Some(NcrSeverity::Critical),
+        SeverityFilter::All => None,
+    };
 
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            // Build filters for cache query
-            let ncr_type_filter = match args.r#type {
-                NcrTypeFilter::Internal => Some("internal"),
-                NcrTypeFilter::Supplier => Some("supplier"),
-                NcrTypeFilter::Customer => Some("customer"),
-                NcrTypeFilter::All => None,
-            };
+    // Map NCR status
+    let ncr_status = match args.ncr_status {
+        NcrStatusFilter::Open => Some(NcrStatus::Open),
+        NcrStatusFilter::Containment => Some(NcrStatus::Containment),
+        NcrStatusFilter::Investigation => Some(NcrStatus::Investigation),
+        NcrStatusFilter::Disposition => Some(NcrStatus::Disposition),
+        NcrStatusFilter::Closed => Some(NcrStatus::Closed),
+        NcrStatusFilter::All => None,
+    };
 
-            let severity_filter = match args.severity {
-                SeverityFilter::Minor => Some("minor"),
-                SeverityFilter::Major => Some("major"),
-                SeverityFilter::Critical => Some("critical"),
-                SeverityFilter::All => None,
-            };
-
-            let ncr_status_filter = match args.ncr_status {
-                NcrStatusFilter::Open => Some("open"),
-                NcrStatusFilter::Containment => Some("containment"),
-                NcrStatusFilter::Investigation => Some("investigation"),
-                NcrStatusFilter::Disposition => Some("disposition"),
-                NcrStatusFilter::Closed => Some("closed"),
-                NcrStatusFilter::All => None,
-            };
-
-            let mut ncrs = cache.list_ncrs(
-                None, // entity status (draft/active/etc)
-                ncr_type_filter,
-                severity_filter,
-                ncr_status_filter,
-                None, // category
-                args.author.as_deref(),
-                None, // limit - apply after sorting
-            );
-
-            // Sort
-            match args.sort {
-                ListColumn::Id => ncrs.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Title => ncrs.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::NcrType => ncrs.sort_by(|a, b| {
-                    a.ncr_type
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.ncr_type.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Severity => ncrs.sort_by(|a, b| {
-                    a.severity
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.severity.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Status => ncrs.sort_by(|a, b| {
-                    a.ncr_status
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.ncr_status.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Author => ncrs.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => ncrs.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                ncrs.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                ncrs.truncate(limit);
-            }
-
-            // Update short ID index
-            let mut short_ids = ShortIdIndex::load(&project);
-            short_ids.ensure_all(ncrs.iter().map(|n| n.id.clone()));
-            super::utils::save_short_ids(&mut short_ids, &project);
-
-            return output_cached_ncrs(&ncrs, &args, &short_ids, format);
-        }
+    NcrFilter {
+        common: CommonFilter {
+            author: args.author.clone(),
+            search: args.search.clone(),
+            limit: None, // Apply limit after sorting
+            ..Default::default()
+        },
+        ncr_type,
+        severity,
+        ncr_status,
+        category: None, // Not exposed in CLI
+        open_only: args.open,
+        recent_days: if args.recent { Some(30) } else { None },
+        sort: build_ncr_sort_field(&args.sort),
+        sort_direction: if args.reverse {
+            SortDirection::Descending
+        } else {
+            SortDirection::Ascending
+        },
     }
+}
 
-    // Slow path: load from files
-    let mut ncrs: Vec<Ncr> = Vec::new();
-
-    for entry in fs::read_dir(&ncr_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(ncr) = serde_yml::from_str::<Ncr>(&content) {
-                ncrs.push(ncr);
-            }
-        }
+/// Convert CLI sort column to NcrSortField
+fn build_ncr_sort_field(col: &ListColumn) -> NcrSortField {
+    match col {
+        ListColumn::Id => NcrSortField::Id,
+        ListColumn::Title => NcrSortField::Title,
+        ListColumn::NcrType => NcrSortField::NcrType,
+        ListColumn::Severity => NcrSortField::Severity,
+        ListColumn::Status => NcrSortField::NcrStatus,
+        ListColumn::Author => NcrSortField::Author,
+        ListColumn::Created => NcrSortField::Created,
     }
+}
 
-    // Apply filters
-    let ncrs: Vec<Ncr> = ncrs
-        .into_iter()
-        .filter(|n| match args.r#type {
-            NcrTypeFilter::Internal => n.ncr_type == NcrType::Internal,
-            NcrTypeFilter::Supplier => n.ncr_type == NcrType::Supplier,
-            NcrTypeFilter::Customer => n.ncr_type == NcrType::Customer,
-            NcrTypeFilter::All => true,
-        })
-        .filter(|n| match args.severity {
-            SeverityFilter::Minor => n.severity == NcrSeverity::Minor,
-            SeverityFilter::Major => n.severity == NcrSeverity::Major,
-            SeverityFilter::Critical => n.severity == NcrSeverity::Critical,
-            SeverityFilter::All => true,
-        })
-        .filter(|n| match args.ncr_status {
-            NcrStatusFilter::Open => n.ncr_status == NcrStatus::Open,
-            NcrStatusFilter::Containment => n.ncr_status == NcrStatus::Containment,
-            NcrStatusFilter::Investigation => n.ncr_status == NcrStatus::Investigation,
-            NcrStatusFilter::Disposition => n.ncr_status == NcrStatus::Disposition,
-            NcrStatusFilter::Closed => n.ncr_status == NcrStatus::Closed,
-            NcrStatusFilter::All => true,
-        })
-        .filter(|n| {
-            if let Some(ref author) = args.author {
-                n.author.to_lowercase().contains(&author.to_lowercase())
-            } else {
-                true
-            }
-        })
-        .filter(|n| {
-            if args.recent {
-                let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
-                n.created >= thirty_days_ago
-            } else {
-                true
-            }
-        })
-        .filter(|n| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                n.title.to_lowercase().contains(&search_lower)
-                    || n.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-                    || n.ncr_number
-                        .as_ref()
-                        .is_some_and(|num| num.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        // Open filter - show NCRs not closed
-        .filter(|n| {
-            if args.open {
-                n.ncr_status != NcrStatus::Closed
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Sort
-    let mut ncrs = ncrs;
+/// Sort cached NCRs according to CLI args
+fn sort_cached_ncrs(ncrs: &mut Vec<CachedNcr>, args: &ListArgs) {
     match args.sort {
-        ListColumn::Id => ncrs.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
+        ListColumn::Id => ncrs.sort_by(|a, b| a.id.cmp(&b.id)),
         ListColumn::Title => ncrs.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::NcrType => {
-            ncrs.sort_by(|a, b| format!("{:?}", a.ncr_type).cmp(&format!("{:?}", b.ncr_type)))
-        }
-        ListColumn::Severity => {
-            ncrs.sort_by(|a, b| format!("{:?}", a.severity).cmp(&format!("{:?}", b.severity)))
-        }
-        ListColumn::Status => {
-            ncrs.sort_by(|a, b| format!("{:?}", a.ncr_status).cmp(&format!("{:?}", b.ncr_status)))
-        }
+        ListColumn::NcrType => ncrs.sort_by(|a, b| {
+            a.ncr_type
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.ncr_type.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Severity => ncrs.sort_by(|a, b| {
+            a.severity
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.severity.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Status => ncrs.sort_by(|a, b| {
+            a.ncr_status
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.ncr_status.as_deref().unwrap_or(""))
+        }),
         ListColumn::Author => ncrs.sort_by(|a, b| a.author.cmp(&b.author)),
         ListColumn::Created => ncrs.sort_by(|a, b| a.created.cmp(&b.created)),
     }
@@ -604,29 +496,37 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         ncrs.reverse();
     }
 
-    // Apply limit
     if let Some(limit) = args.limit {
         ncrs.truncate(limit);
     }
+}
 
-    // Count only
+/// Output full NCR entities
+fn output_ncrs(
+    ncrs: &[Ncr],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
+    if ncrs.is_empty() {
+        if args.count {
+            println!("0");
+        } else {
+            println!("No NCRs found.");
+        }
+        return Ok(());
+    }
+
     if args.count {
         println!("{}", ncrs.len());
         return Ok(());
     }
 
-    // No results
-    if ncrs.is_empty() {
-        println!("No NCRs found.");
-        return Ok(());
-    }
-
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(ncrs.iter().map(|n| n.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    super::utils::save_short_ids(short_ids, project);
 
-    // Output based on format
     match format {
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&ncrs).into_diagnostic()?;
@@ -650,7 +550,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 .collect();
 
             // Build rows
-            let rows: Vec<TableRow> = ncrs.iter().map(|n| ncr_to_row(n, &short_ids)).collect();
+            let rows: Vec<TableRow> = ncrs.iter().map(|n| ncr_to_row(n, short_ids)).collect();
 
             let config = TableConfig {
                 wrap_width: args.wrap,
@@ -660,7 +560,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for ncr in &ncrs {
+            for ncr in ncrs {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&ncr.id.to_string())
@@ -677,15 +577,62 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = NcrService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Build filter from CLI args
+    let filter = build_ncr_filter(&args);
+
+    // Fast path: use cache when possible
+    // Can't use cache for: search (requires description), JSON/YAML (need full entity)
+    let can_use_cache = args.search.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        let mut cached_ncrs = service
+            .list_cached(&filter)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        // Sort and limit
+        sort_cached_ncrs(&mut cached_ncrs, &args);
+
+        // Update short ID index
+        short_ids.ensure_all(cached_ncrs.iter().map(|n| n.id.clone()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        return output_cached_ncrs(&cached_ncrs, &args, &short_ids, format);
+    }
+
+    // Full entity loading path
+    let mut ncrs = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply limit
+    if let Some(limit) = args.limit {
+        ncrs.truncate(limit);
+    }
+
+    output_ncrs(&ncrs, &mut short_ids, &args, format, &project)
+}
+
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let service = NcrService::new(&project, &cache);
 
     let title: String;
-    let ncr_type: String;
-    let severity: String;
-    let category: String;
-    let mut description: Option<String> = None;
+    let ncr_type: NcrType;
+    let severity: NcrSeverity;
+    let category: NcrCategory;
+    let description: Option<String>;
 
     if args.interactive {
         let wizard = SchemaWizard::new();
@@ -697,68 +644,50 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .unwrap_or_else(|| "New NCR".to_string());
         ncr_type = result
             .get_string("ncr_type")
-            .map(String::from)
-            .unwrap_or_else(|| "internal".to_string());
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(NcrType::Internal);
         severity = result
             .get_string("severity")
-            .map(String::from)
-            .unwrap_or_else(|| "minor".to_string());
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(NcrSeverity::Minor);
         category = result
             .get_string("category")
-            .map(String::from)
-            .unwrap_or_else(|| "dimensional".to_string());
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(NcrCategory::Dimensional);
         description = result.get_string("description").map(String::from);
     } else {
         title = args.title.unwrap_or_else(|| "New NCR".to_string());
-        ncr_type = args.r#type.to_string();
-        severity = args.severity.to_string();
-        category = args.category.to_string();
+        ncr_type = NcrType::from(args.r#type);
+        severity = NcrSeverity::from(args.severity);
+        category = NcrCategory::from(args.category);
+        description = None;
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Ncr);
+    // Create NCR via service
+    let input = CreateNcr {
+        title: title.clone(),
+        ncr_number: None,
+        ncr_type,
+        severity,
+        category,
+        description,
+        report_date: None,
+        tags: Vec::new(),
+        status: None,
+        author: config.author(),
+    };
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_ncr_type(&ncr_type)
-        .with_ncr_severity(&severity)
-        .with_ncr_category(&category);
+    let ncr = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    let mut yaml_content = generator
-        .generate_ncr(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Apply interactive mode values
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Describe the non-conformance in detail",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("manufacturing/ncrs");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    // Get file path for the created NCR
+    let file_path = project
+        .root()
+        .join("manufacturing/ncrs")
+        .join(format!("{}.tdt.yaml", ncr.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(ncr.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -772,33 +701,34 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Output based on format flag
     match global.output {
         OutputFormat::Id => {
-            println!("{}", id);
+            println!("{}", ncr.id);
         }
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&id))
+                short_id.clone().unwrap_or_else(|| format_short_id(&ncr.id))
             );
         }
         OutputFormat::Path => {
             println!("{}", file_path.display());
         }
         _ => {
-            let severity_styled = match severity.as_str() {
-                "critical" => style(&severity).red().bold(),
-                "major" => style(&severity).yellow(),
-                _ => style(&severity).white(),
+            let severity_str = ncr.severity.to_string();
+            let severity_styled = match ncr.severity {
+                NcrSeverity::Critical => style(&severity_str).red().bold(),
+                NcrSeverity::Major => style(&severity_str).yellow(),
+                _ => style(&severity_str).white(),
             };
 
             println!(
                 "{} Created NCR {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&id))).cyan()
+                style(short_id.clone().unwrap_or_else(|| format_short_id(&ncr.id))).cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
                 "   {} | {} | {}",
-                style(&ncr_type).yellow(),
+                style(ncr.ncr_type.to_string()).yellow(),
                 severity_styled,
                 style(&title).white()
             );
@@ -809,7 +739,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                     "   {} --[{}]--> {}",
                     style("→").dim(),
                     style(link_type).cyan(),
-                    style(format_short_id(&EntityId::parse(target).unwrap())).yellow()
+                    style(&short_ids.get_short_id(target).unwrap_or_else(|| target.clone())).yellow()
                 );
             }
         }
@@ -1105,43 +1035,26 @@ fn cached_ncr_to_row(ncr: &CachedNcr, short_ids: &ShortIdIndex) -> TableRow {
 
 fn run_close(args: CloseArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = NcrService::new(&project, &cache);
     let config = Config::load();
+    let short_ids = ShortIdIndex::load(&project);
 
     // Resolve short ID if needed
-    let short_ids = ShortIdIndex::load(&project);
     let resolved_id = short_ids
         .resolve(&args.ncr)
         .unwrap_or_else(|| args.ncr.clone());
 
-    // Find the NCR file
-    let ncr_dir = project.root().join("manufacturing/ncrs");
-    let mut found_path = None;
-
-    if ncr_dir.exists() {
-        for entry in fs::read_dir(&ncr_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path = found_path.ok_or_else(|| miette::miette!("No NCR found matching '{}'", args.ncr))?;
-
-    // Read and parse NCR
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let mut ncr: Ncr = serde_yml::from_str(&content).into_diagnostic()?;
-
     // Get display ID for user messages
     let display_id = short_ids
-        .get_short_id(&ncr.id.to_string())
-        .unwrap_or_else(|| format_short_id(&ncr.id));
+        .get_short_id(&resolved_id)
+        .unwrap_or_else(|| args.ncr.clone());
+
+    // Get NCR to validate status and show confirmation
+    let ncr = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No NCR found matching '{}'", args.ncr))?;
 
     // Validate status allows closing
     if ncr.ncr_status == NcrStatus::Closed {
@@ -1195,32 +1108,19 @@ fn run_close(args: CloseArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
-    // Update disposition
-    let today = chrono::Local::now().date_naive();
-    ncr.disposition = Some(Disposition {
-        decision: Some(disposition_decision),
-        decision_date: Some(today),
-        decision_by: Some(config.author().to_string()),
-        justification: args.rationale.clone(),
-        mrb_required: false,
-    });
+    // Use service to close NCR
+    let mut ncr = service
+        .close(&resolved_id, disposition_decision, args.rationale.clone(), config.author())
+        .map_err(|e| miette::miette!("{}", e))?;
 
-    // Update status
-    ncr.ncr_status = NcrStatus::Closed;
-
-    // Add CAPA link if provided
+    // Add CAPA link if provided (separate operation)
     if let Some(ref capa_id) = capa_ref {
         if let Ok(entity_id) = capa_id.parse::<EntityId>() {
-            ncr.links.capa = Some(entity_id);
+            ncr = service
+                .set_capa_link(&ncr.id.to_string(), entity_id)
+                .map_err(|e| miette::miette!("{}", e))?;
         }
     }
-
-    // Increment revision
-    ncr.entity_revision += 1;
-
-    // Write updated NCR
-    let yaml_content = serde_yml::to_string(&ncr).into_diagnostic()?;
-    fs::write(&path, &yaml_content).into_diagnostic()?;
 
     // Output based on format
     match global.output {

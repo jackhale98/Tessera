@@ -3,7 +3,6 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::filters::StatusFilter;
@@ -16,9 +15,10 @@ use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::result::{Result as TestResult, Verdict};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::ResultService;
+use tdt_core::services::{
+    CommonFilter, CreateResult, ResultFilter, ResultService, ResultSortField, SortDirection,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum RsltCommands {
@@ -286,286 +286,123 @@ pub fn run(cmd: RsltCommands, global: &GlobalOpts) -> Result<()> {
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let mut short_ids = ShortIdIndex::load(&project);
+/// Build a ResultFilter from CLI ListArgs
+fn build_rslt_filter(args: &ListArgs, short_ids: &ShortIdIndex) -> ResultFilter {
+    use tdt_core::core::entity::Status;
 
-    // Determine output format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
+    // Map verdict (Issues is handled as post-filter since it's multiple values)
+    let verdict = match args.verdict {
+        VerdictFilter::Pass => Some(Verdict::Pass),
+        VerdictFilter::Fail => Some(Verdict::Fail),
+        VerdictFilter::Conditional => Some(Verdict::Conditional),
+        VerdictFilter::Incomplete => Some(Verdict::Incomplete),
+        VerdictFilter::NotApplicable => Some(Verdict::NotApplicable),
+        VerdictFilter::Issues | VerdictFilter::All => None, // Handled as post-filter
     };
 
-    // Check if we can use the fast cache path:
-    // - No category filter (not in cache)
-    // - No tag filter (not in cache)
-    // - No with_failures filter (requires step_results)
-    // - No with_deviations filter (requires deviations)
-    // - Not JSON/YAML output (need full entity for serialization)
-    let can_use_cache = args.category.is_none()
-        && args.tag.is_none()
-        && !args.with_failures
-        && !args.with_deviations
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    // Map status (Active is handled as post-filter since it's "all non-obsolete")
+    let status = match args.status {
+        StatusFilter::Draft => Some(vec![Status::Draft]),
+        StatusFilter::Review => Some(vec![Status::Review]),
+        StatusFilter::Approved => Some(vec![Status::Approved]),
+        StatusFilter::Released => Some(vec![Status::Released]),
+        StatusFilter::Obsolete => Some(vec![Status::Obsolete]),
+        StatusFilter::Active | StatusFilter::All => None, // Handled as post-filter or no filter
+    };
 
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            let status_filter = match args.status {
-                StatusFilter::Draft => Some("draft"),
-                StatusFilter::Review => Some("review"),
-                StatusFilter::Approved => Some("approved"),
-                StatusFilter::Released => Some("released"),
-                StatusFilter::Obsolete => Some("obsolete"),
-                StatusFilter::Active | StatusFilter::All => None,
+    // Resolve test ID filter if provided
+    let test_id = args
+        .test
+        .as_ref()
+        .map(|t| short_ids.resolve(t).unwrap_or_else(|| t.clone()));
+
+    ResultFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            tags: args.tag.clone().map(|t| vec![t]),
+            search: args.search.clone(),
+            recent_days: None, // Use result-specific recent_days
+            limit: None,       // Apply limit after post-filters
+            ..Default::default()
+        },
+        verdict,
+        test_id,
+        category: args.category.clone(),
+        executed_by: args.executed_by.clone(),
+        with_failures: args.with_failures,
+        with_deviations: args.with_deviations,
+        recent_days: args.recent,
+        sort: build_rslt_sort_field(&args.sort),
+        sort_direction: if args.reverse {
+            SortDirection::Descending
+        } else {
+            SortDirection::Ascending
+        },
+    }
+}
+
+/// Convert CLI sort column to ResultSortField
+fn build_rslt_sort_field(col: &ListColumn) -> ResultSortField {
+    match col {
+        ListColumn::Short | ListColumn::Id => ResultSortField::Id,
+        ListColumn::Title => ResultSortField::Title,
+        ListColumn::Test => ResultSortField::Test,
+        ListColumn::Verdict => ResultSortField::Verdict,
+        ListColumn::Status => ResultSortField::Status,
+        ListColumn::Author => ResultSortField::Author,
+        ListColumn::Created => ResultSortField::Created,
+    }
+}
+
+/// Sort cached results according to CLI args
+fn sort_cached_results(
+    results: &mut Vec<tdt_core::core::cache::CachedResult>,
+    args: &ListArgs,
+) {
+    match args.sort {
+        ListColumn::Short | ListColumn::Id => results.sort_by(|a, b| a.id.cmp(&b.id)),
+        ListColumn::Title => results.sort_by(|a, b| a.title.cmp(&b.title)),
+        ListColumn::Test => results.sort_by(|a, b| {
+            a.test_id
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.test_id.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Verdict => results.sort_by(|a, b| {
+            let verdict_order = |v: Option<&str>| match v {
+                Some("fail") => 0,
+                Some("conditional") => 1,
+                Some("incomplete") => 2,
+                Some("pass") => 3,
+                _ => 4,
             };
-
-            let verdict_filter = match args.verdict {
-                VerdictFilter::Pass => Some("pass"),
-                VerdictFilter::Fail => Some("fail"),
-                VerdictFilter::Conditional => Some("conditional"),
-                VerdictFilter::Incomplete => Some("incomplete"),
-                VerdictFilter::NotApplicable => Some("not_applicable"),
-                VerdictFilter::Issues | VerdictFilter::All => None,
-            };
-
-            // Resolve test ID filter if provided
-            let test_filter = args
-                .test
-                .as_ref()
-                .map(|t| short_ids.resolve(t).unwrap_or_else(|| t.clone()));
-
-            let mut cached_results = cache.list_results(
-                status_filter,
-                test_filter.as_deref(),
-                verdict_filter,
-                args.author.as_deref(),
-                args.search.as_deref(),
-                None, // Apply limit after additional filtering
-            );
-
-            // Apply filters that need post-processing
-            // Status: Active filter (all non-obsolete)
-            if matches!(args.status, StatusFilter::Active) {
-                cached_results.retain(|r| r.status != tdt_core::core::entity::Status::Obsolete);
-            }
-
-            // Verdict: Issues filter (fail, conditional, incomplete)
-            if matches!(args.verdict, VerdictFilter::Issues) {
-                cached_results.retain(|r| {
-                    r.verdict
-                        .as_deref()
-                        .is_some_and(|v| v == "fail" || v == "conditional" || v == "incomplete")
-                });
-            }
-
-            // Executed by filter (substring match)
-            if let Some(ref exec_filter) = args.executed_by {
-                let exec_lower = exec_filter.to_lowercase();
-                cached_results.retain(|r| {
-                    r.executed_by
-                        .as_ref()
-                        .is_some_and(|e| e.to_lowercase().contains(&exec_lower))
-                });
-            }
-
-            // Recent filter (executed in last N days)
-            if let Some(days) = args.recent {
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-                cached_results.retain(|r| {
-                    r.executed_date.as_ref().is_some_and(|d| {
-                        chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
-                            .map(|nd| nd >= cutoff.date_naive())
-                            .unwrap_or(false)
-                    })
-                });
-            }
-
-            // Sort
-            match args.sort {
-                ListColumn::Short | ListColumn::Id => {
-                    cached_results.sort_by(|a, b| a.id.cmp(&b.id))
-                }
-                ListColumn::Title => cached_results.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::Test => cached_results.sort_by(|a, b| {
-                    a.test_id
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.test_id.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Verdict => cached_results.sort_by(|a, b| {
-                    let verdict_order = |v: Option<&str>| match v {
-                        Some("fail") => 0,
-                        Some("conditional") => 1,
-                        Some("incomplete") => 2,
-                        Some("pass") => 3,
-                        _ => 4,
-                    };
-                    verdict_order(a.verdict.as_deref()).cmp(&verdict_order(b.verdict.as_deref()))
-                }),
-                ListColumn::Status => cached_results.sort_by(|a, b| a.status.cmp(&b.status)),
-                ListColumn::Author => cached_results.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => cached_results.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                cached_results.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                cached_results.truncate(limit);
-            }
-
-            return output_cached_results(&cached_results, &short_ids, &args, format);
-        }
+            verdict_order(a.verdict.as_deref()).cmp(&verdict_order(b.verdict.as_deref()))
+        }),
+        ListColumn::Status => results.sort_by(|a, b| a.status.cmp(&b.status)),
+        ListColumn::Author => results.sort_by(|a, b| a.author.cmp(&b.author)),
+        ListColumn::Created => results.sort_by(|a, b| a.created.cmp(&b.created)),
     }
 
-    // Fall back to full YAML loading
-    // Collect all result files from both verification and validation directories
-    let mut results: Vec<TestResult> = Vec::new();
-
-    // Check verification results
-    let verification_dir = project.root().join("verification/results");
-    if verification_dir.exists() {
-        for entry in walkdir::WalkDir::new(&verification_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            match tdt_core::yaml::parse_yaml_file::<TestResult>(entry.path()) {
-                Ok(result) => results.push(result),
-                Err(e) => {
-                    eprintln!(
-                        "{} Failed to parse {}: {}",
-                        style("!").yellow(),
-                        entry.path().display(),
-                        e
-                    );
-                }
-            }
-        }
+    if args.reverse {
+        results.reverse();
     }
 
-    // Check validation results
-    let validation_dir = project.root().join("validation/results");
-    if validation_dir.exists() {
-        for entry in walkdir::WalkDir::new(&validation_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            match tdt_core::yaml::parse_yaml_file::<TestResult>(entry.path()) {
-                Ok(result) => results.push(result),
-                Err(e) => {
-                    eprintln!(
-                        "{} Failed to parse {}: {}",
-                        style("!").yellow(),
-                        entry.path().display(),
-                        e
-                    );
-                }
-            }
-        }
+    if let Some(limit) = args.limit {
+        results.truncate(limit);
     }
+}
 
-    // Apply filters
-    results.retain(|r| {
-        // Verdict filter
-        let verdict_match = match args.verdict {
-            VerdictFilter::Pass => r.verdict == Verdict::Pass,
-            VerdictFilter::Fail => r.verdict == Verdict::Fail,
-            VerdictFilter::Conditional => r.verdict == Verdict::Conditional,
-            VerdictFilter::Incomplete => r.verdict == Verdict::Incomplete,
-            VerdictFilter::NotApplicable => r.verdict == Verdict::NotApplicable,
-            VerdictFilter::Issues => matches!(
-                r.verdict,
-                Verdict::Fail | Verdict::Conditional | Verdict::Incomplete
-            ),
-            VerdictFilter::All => true,
-        };
-
-        // Status filter
-        let status_match = match args.status {
-            StatusFilter::Draft => r.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => r.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => r.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => r.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => r.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => r.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        };
-
-        // Test ID filter
-        let test_match = args.test.as_ref().is_none_or(|test_query| {
-            let test_id = r.test_id.to_string();
-            test_id.contains(test_query) || test_id.starts_with(test_query)
-        });
-
-        // Category filter (case-insensitive)
-        let category_match = args.category.as_ref().is_none_or(|cat| {
-            r.category
-                .as_ref()
-                .is_some_and(|c| c.to_lowercase() == cat.to_lowercase())
-        });
-
-        // Tag filter (case-insensitive)
-        let tag_match = args.tag.as_ref().is_none_or(|tag| {
-            r.tags
-                .iter()
-                .any(|tg| tg.to_lowercase() == tag.to_lowercase())
-        });
-
-        // Executed by filter
-        let executed_by_match = args
-            .executed_by
-            .as_ref()
-            .is_none_or(|ex| r.executed_by.to_lowercase().contains(&ex.to_lowercase()));
-
-        // Author filter
-        let author_match = args
-            .author
-            .as_ref()
-            .is_none_or(|author| r.author.to_lowercase().contains(&author.to_lowercase()));
-
-        // Search filter
-        let search_match = args.search.as_ref().is_none_or(|search| {
-            let search_lower = search.to_lowercase();
-            r.title
-                .as_ref()
-                .is_some_and(|t| t.to_lowercase().contains(&search_lower))
-                || r.notes
-                    .as_ref()
-                    .is_some_and(|n| n.to_lowercase().contains(&search_lower))
-        });
-
-        // Failures filter
-        let failures_match = !args.with_failures || r.has_failures();
-
-        // Deviations filter
-        let deviations_match = !args.with_deviations || r.has_deviations();
-
-        // Recent filter (executed in last N days)
-        let recent_match = args.recent.is_none_or(|days| {
-            let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-            r.executed_date >= cutoff
-        });
-
-        verdict_match
-            && status_match
-            && test_match
-            && category_match
-            && tag_match
-            && executed_by_match
-            && author_match
-            && search_match
-            && failures_match
-            && deviations_match
-            && recent_match
-    });
-
+/// Output full result entities
+fn output_results(
+    results: &[TestResult],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
     if results.is_empty() {
-        match global.output {
+        match format {
             OutputFormat::Json => println!("[]"),
             OutputFormat::Yaml => println!("[]"),
             _ => {
@@ -577,56 +414,14 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    // Sort by specified column
-    match args.sort {
-        ListColumn::Short | ListColumn::Id => {
-            results.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string()))
-        }
-        ListColumn::Title => results.sort_by(|a, b| {
-            a.title
-                .as_deref()
-                .unwrap_or("")
-                .cmp(b.title.as_deref().unwrap_or(""))
-        }),
-        ListColumn::Test => {
-            results.sort_by(|a, b| a.test_id.to_string().cmp(&b.test_id.to_string()))
-        }
-        ListColumn::Verdict => results.sort_by(|a, b| {
-            let verdict_order = |v: &Verdict| match v {
-                Verdict::Fail => 0,
-                Verdict::Conditional => 1,
-                Verdict::Incomplete => 2,
-                Verdict::Pass => 3,
-                Verdict::NotApplicable => 4,
-            };
-            verdict_order(&a.verdict).cmp(&verdict_order(&b.verdict))
-        }),
-        ListColumn::Status => {
-            results.sort_by(|a, b| a.status.to_string().cmp(&b.status.to_string()))
-        }
-        ListColumn::Author => results.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => results.sort_by(|a, b| a.created.cmp(&b.created)),
-    }
-
-    // Reverse if requested
-    if args.reverse {
-        results.reverse();
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        results.truncate(limit);
-    }
-
-    // Just count?
     if args.count {
         println!("{}", results.len());
         return Ok(());
     }
 
-    // Update short ID index with current results (preserves other entity types)
+    // Update short ID index with current results
     short_ids.ensure_all(results.iter().map(|r| r.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
         OutputFormat::Json => {
@@ -643,7 +438,6 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            // Build column list from args (filter out "short" since it's added automatically)
             let columns: Vec<&str> = args
                 .columns
                 .iter()
@@ -651,10 +445,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 .map(|c| c.to_string().leak() as &str)
                 .collect();
 
-            // Build rows
             let rows: Vec<TableRow> = results
                 .iter()
-                .map(|r| result_to_row(r, &short_ids))
+                .map(|r| result_to_row(r, short_ids))
                 .collect();
 
             let config = TableConfig {
@@ -665,7 +458,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for result in &results {
+            for result in results {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&result.id.to_string())
@@ -680,6 +473,85 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let mut short_ids = ShortIdIndex::load(&project);
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = ResultService::new(&project, &cache);
+
+    // Determine output format
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Build filter from CLI args
+    let filter = build_rslt_filter(&args, &short_ids);
+
+    // Determine if we can use fast cache path:
+    // - No with_failures filter (requires step_results)
+    // - No with_deviations filter (requires deviations)
+    // - No tag filter (requires full entity)
+    // - Not JSON/YAML output (need full entity for serialization)
+    let can_use_cache = !args.with_failures
+        && !args.with_deviations
+        && args.tag.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        // Fast path using cache
+        let mut cached_results = service
+            .list_cached(&filter)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        // Apply post-filters not handled by cache:
+        // Status: Active filter (all non-obsolete)
+        if matches!(args.status, StatusFilter::Active) {
+            cached_results.retain(|r| r.status != tdt_core::core::entity::Status::Obsolete);
+        }
+
+        // Verdict: Issues filter (fail, conditional, incomplete)
+        if matches!(args.verdict, VerdictFilter::Issues) {
+            cached_results.retain(|r| {
+                r.verdict
+                    .as_deref()
+                    .is_some_and(|v| v == "fail" || v == "conditional" || v == "incomplete")
+            });
+        }
+
+        // Sort and limit
+        sort_cached_results(&mut cached_results, &args);
+
+        return output_cached_results(&cached_results, &short_ids, &args, format);
+    }
+
+    // Full entity loading path
+    let mut results = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply post-filters not handled by service:
+    // Status: Active filter (all non-obsolete)
+    if matches!(args.status, StatusFilter::Active) {
+        results.retain(|r| r.status != tdt_core::core::entity::Status::Obsolete);
+    }
+
+    // Verdict: Issues filter (fail, conditional, incomplete)
+    if matches!(args.verdict, VerdictFilter::Issues) {
+        results.retain(|r| {
+            matches!(
+                r.verdict,
+                Verdict::Fail | Verdict::Conditional | Verdict::Incomplete
+            )
+        });
+    }
+
+    // Apply limit (service already sorted)
+    if let Some(limit) = args.limit {
+        results.truncate(limit);
+    }
+
+    output_results(&results, &mut short_ids, &args, format, &project)
 }
 
 /// Output cached results (fast path - no YAML parsing needed)
@@ -792,7 +664,12 @@ fn cached_result_to_row(
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let service = ResultService::new(&project, &cache);
+
+    // Load short IDs early for test resolution
+    let mut short_ids = ShortIdIndex::load(&project);
 
     // Determine values - either from schema-driven wizard or args
     let (test_id, verdict, title, category, executed_by, verdict_rationale, duration, notes) =
@@ -809,7 +686,10 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             let test_id = if test_id_str.is_empty() {
                 return Err(miette::miette!("Test ID is required"));
             } else {
-                EntityId::parse(&test_id_str)
+                let resolved = short_ids
+                    .resolve(&test_id_str)
+                    .unwrap_or_else(|| test_id_str.clone());
+                EntityId::parse(&resolved)
                     .map_err(|e| miette::miette!("Invalid test ID: {}", e))?
             };
 
@@ -826,10 +706,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
             let title = result.get_string("title").map(String::from);
 
-            let category = result
-                .get_string("category")
-                .map(String::from)
-                .unwrap_or_default();
+            let category = result.get_string("category").map(String::from);
 
             let executed_by = result
                 .get_string("executed_by")
@@ -854,7 +731,6 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             // Default mode - use args with defaults
             let test_id = if let Some(test_query) = &args.test {
                 // Try to resolve the test ID
-                let short_ids = ShortIdIndex::load(&project);
                 let resolved = short_ids
                     .resolve(test_query)
                     .unwrap_or_else(|| test_query.clone());
@@ -865,21 +741,21 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             };
 
             let verdict = match args.verdict.to_lowercase().as_str() {
-            "pass" => Verdict::Pass,
-            "fail" => Verdict::Fail,
-            "conditional" => Verdict::Conditional,
-            "incomplete" => Verdict::Incomplete,
-            "not_applicable" | "na" | "n/a" => Verdict::NotApplicable,
-            v => {
-                return Err(miette::miette!(
-                    "Invalid verdict: '{}'. Use 'pass', 'fail', 'conditional', 'incomplete', or 'not_applicable'",
-                    v
-                ))
-            }
-        };
+                "pass" => Verdict::Pass,
+                "fail" => Verdict::Fail,
+                "conditional" => Verdict::Conditional,
+                "incomplete" => Verdict::Incomplete,
+                "not_applicable" | "na" | "n/a" => Verdict::NotApplicable,
+                v => {
+                    return Err(miette::miette!(
+                        "Invalid verdict: '{}'. Use 'pass', 'fail', 'conditional', 'incomplete', or 'not_applicable'",
+                        v
+                    ))
+                }
+            };
 
             let title = args.title;
-            let category = args.category.unwrap_or_default();
+            let category = args.category;
             let executed_by = args.executed_by.unwrap_or_else(|| config.author());
 
             (
@@ -894,78 +770,32 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             )
         };
 
-    // Determine test type by looking up the test
-    let test_type = determine_test_type(&project, &test_id)?;
+    // Create result via service
+    let input = CreateResult {
+        test_id: test_id.clone(),
+        test_revision: None,
+        title,
+        verdict,
+        verdict_rationale,
+        category,
+        tags: Vec::new(),
+        executed_by: executed_by.clone(),
+        executed_date: None,
+        sample_info: None,
+        environment: None,
+        duration,
+        notes,
+        status: None,
+        author: config.author(),
+    };
 
-    // Generate entity ID and create from template
-    let id = EntityId::new(EntityPrefix::Rslt);
-    let author = config.author();
+    let rslt = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), author)
-        .with_test_id(test_id.clone())
-        .with_verdict(verdict.to_string())
-        .with_executed_by(&executed_by)
-        .with_category(&category);
-
-    if let Some(ref t) = title {
-        ctx = ctx.with_title(t);
-    }
-
-    let mut yaml_content = generator
-        .generate_result(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Apply wizard values via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref rationale) = verdict_rationale {
-            if !rationale.is_empty() {
-                let indented = rationale
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "verdict_rationale: |\n  # Explain the verdict\n  # Especially important for fail or conditional results",
-                    &format!("verdict_rationale: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref dur) = duration {
-            yaml_content =
-                yaml_content.replace("duration: null", &format!("duration: \"{}\"", dur));
-        }
-        if let Some(ref n) = notes {
-            if !n.is_empty() {
-                let indented = n
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "notes: |\n  # Additional notes about this test execution",
-                    &format!("notes: |\n{}", indented),
-                );
-            }
-        }
-    }
-
-    // Determine output directory based on test type
-    let output_dir = project.result_directory(&test_type);
-
-    // Ensure directory exists
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-
-    // Write file
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    // Get file path for the created result (service determines correct directory)
+    let file_path = service.get_file_path(&rslt);
 
     // Add to short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(rslt.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -979,12 +809,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Output based on format flag
     match global.output {
         OutputFormat::Id => {
-            println!("{}", id);
+            println!("{}", rslt.id);
         }
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&id))
+                short_id.clone().unwrap_or_else(|| format_short_id(&rslt.id))
             );
         }
         OutputFormat::Path => {
@@ -994,16 +824,16 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created result {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&id))).cyan()
+                style(short_id.clone().unwrap_or_else(|| format_short_id(&rslt.id))).cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
                 "   Test: {} | Verdict: {}",
                 style(format_short_id(&test_id)).yellow(),
-                match verdict {
-                    Verdict::Pass => style(verdict.to_string()).green(),
-                    Verdict::Fail => style(verdict.to_string()).red(),
-                    _ => style(verdict.to_string()).yellow(),
+                match rslt.verdict {
+                    Verdict::Pass => style(rslt.verdict.to_string()).green(),
+                    Verdict::Fail => style(rslt.verdict.to_string()).red(),
+                    _ => style(rslt.verdict.to_string()).yellow(),
                 }
             );
 
@@ -1013,7 +843,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                     "   {} --[{}]--> {}",
                     style("→").dim(),
                     style(link_type).cyan(),
-                    style(format_short_id(&EntityId::parse(target).unwrap())).yellow()
+                    style(&short_ids.get_short_id(target).unwrap_or_else(|| target.clone())).yellow()
                 );
             }
         }
@@ -1227,17 +1057,34 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_edit(args: EditArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
 
-    // Find the result by ID prefix match
-    let result = find_result(&project, &args.id)?;
+    // Resolve short ID if needed
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
 
-    // Determine test type to find correct directory
-    let test_type = determine_test_type(&project, &result.test_id)?;
+    // Use ResultService to get the entity
+    let service = ResultService::new(&project, &cache);
+    let result = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No result found matching '{}'", args.id))?;
 
-    let file_path = project
-        .root()
-        .join(format!("{}/results/{}.tdt.yaml", test_type, result.id));
+    // Get file path from cache
+    let file_path = if let Some(cached) = cache.get_entity(&result.id.to_string()) {
+        if cached.file_path.is_absolute() {
+            cached.file_path.clone()
+        } else {
+            project.root().join(&cached.file_path)
+        }
+    } else {
+        // Fallback: compute path from test type
+        let test_type = determine_test_type(&project, &result.test_id)?;
+        project.root().join(format!("{}/results/{}.tdt.yaml", test_type, result.id))
+    };
 
     if !file_path.exists() {
         return Err(miette::miette!("File not found: {}", file_path.display()));
@@ -1260,124 +1107,6 @@ fn run_delete(args: DeleteArgs) -> Result<()> {
 
 fn run_archive(args: ArchiveArgs) -> Result<()> {
     crate::cli::commands::utils::run_delete(&args.id, RESULT_DIRS, args.force, true, args.quiet)
-}
-
-/// Find a result by ID prefix match or short ID (@N)
-fn find_result(project: &Project, id_query: &str) -> Result<TestResult> {
-    use tdt_core::core::cache::EntityCache;
-
-    // Try cache-based lookup first (O(1) via SQLite)
-    if let Ok(cache) = EntityCache::open(project) {
-        // Resolve short ID if needed
-        let full_id = if id_query.contains('@') {
-            cache.resolve_short_id(id_query)
-        } else {
-            None
-        };
-
-        let lookup_id = full_id.as_deref().unwrap_or(id_query);
-
-        // Try exact match via cache
-        if let Some(entity) = cache.get_entity(lookup_id) {
-            if entity.prefix == "RSLT" {
-                if let Ok(result) = tdt_core::yaml::parse_yaml_file::<TestResult>(&entity.file_path) {
-                    return Ok(result);
-                }
-            }
-        }
-
-        // Try prefix match via cache
-        if lookup_id.starts_with("RSLT-") {
-            let filter = tdt_core::core::EntityFilter {
-                prefix: Some(tdt_core::core::EntityPrefix::Rslt),
-                search: Some(lookup_id.to_string()),
-                ..Default::default()
-            };
-            let matches: Vec<_> = cache.list_entities(&filter);
-            if matches.len() == 1 {
-                if let Ok(result) =
-                    tdt_core::yaml::parse_yaml_file::<TestResult>(&matches[0].file_path)
-                {
-                    return Ok(result);
-                }
-            } else if matches.len() > 1 {
-                println!("{} Multiple matches found:", style("!").yellow());
-                for entity in &matches {
-                    let short_id = cache
-                        .get_short_id(&entity.id)
-                        .unwrap_or_else(|| entity.id.clone());
-                    println!("  {} - {}", short_id, entity.title);
-                }
-                return Err(miette::miette!(
-                    "Ambiguous query '{}'. Please be more specific.",
-                    id_query
-                ));
-            }
-        }
-    }
-
-    // Fallback: filesystem search (for title matches or if cache unavailable)
-    let short_ids = ShortIdIndex::load(project);
-    let resolved_query = short_ids
-        .resolve(id_query)
-        .unwrap_or_else(|| id_query.to_string());
-
-    let mut matches: Vec<(TestResult, std::path::PathBuf)> = Vec::new();
-
-    // Search both verification and validation directories
-    for subdir in &["verification/results", "validation/results"] {
-        let dir = project.root().join(subdir);
-        if !dir.exists() {
-            continue;
-        }
-
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(result) = tdt_core::yaml::parse_yaml_file::<TestResult>(entry.path()) {
-                // Check if ID matches (prefix or full)
-                let id_str = result.id.to_string();
-                if id_str.starts_with(&resolved_query) || id_str == resolved_query {
-                    matches.push((result, entry.path().to_path_buf()));
-                }
-                // Also check title for fuzzy match (only if not a short ID lookup)
-                else if !id_query.starts_with('@')
-                    && !id_query.chars().all(|c| c.is_ascii_digit())
-                {
-                    if let Some(ref title) = result.title {
-                        if title
-                            .to_lowercase()
-                            .contains(&resolved_query.to_lowercase())
-                        {
-                            matches.push((result, entry.path().to_path_buf()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    match matches.len() {
-        0 => Err(miette::miette!("No result found matching '{}'", id_query)),
-        1 => Ok(matches.remove(0).0),
-        _ => {
-            println!("{} Multiple matches found:", style("!").yellow());
-            for (result, _path) in &matches {
-                println!(
-                    "  {} - {}",
-                    format_short_id(&result.id),
-                    result.title.as_deref().unwrap_or("Untitled")
-                );
-            }
-            Err(miette::miette!(
-                "Ambiguous query '{}'. Please be more specific.",
-                id_query
-            ))
-        }
-    }
 }
 
 fn run_summary(args: SummaryArgs, global: &GlobalOpts) -> Result<()> {

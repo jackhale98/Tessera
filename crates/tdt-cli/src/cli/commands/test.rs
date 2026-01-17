@@ -11,7 +11,7 @@ use crate::cli::helpers::{format_short_id, truncate_str};
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::entity::Priority;
+use tdt_core::core::entity::{Priority, Status};
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -19,9 +19,10 @@ use tdt_core::core::CachedTest;
 use tdt_core::core::Config;
 use tdt_core::entities::result::{Result as TestResult, StepResult, StepResultRecord, Verdict};
 use tdt_core::entities::test::{Test, TestLevel, TestMethod, TestType};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::TestService;
+use tdt_core::services::{
+    CommonFilter, CreateTest, SortDirection, TestFilter, TestService, TestSortField,
+};
 
 /// CLI-friendly test type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -484,7 +485,12 @@ fn run_archive_cmd(args: ArchiveArgs) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let short_ids = ShortIdIndex::load(&project);
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = TestService::new(&project, &cache);
+
+    // Build filter and sort from CLI args
+    let filter = build_test_filter(&args);
+    let (sort_field, sort_dir) = build_test_sort(&args);
 
     // Determine output format
     let format = match global.output {
@@ -492,403 +498,274 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         f => f,
     };
 
-    // Check if we can use the fast cache path:
-    // - No complex filters that require full YAML (orphans, tag, no_results, last_failed)
-    // - Not JSON/YAML output (which needs full entity serialization)
-    let can_use_cache = !args.orphans
-        && args.tag.is_none()
-        && !args.no_results
-        && !args.last_failed
-        && args.recent.is_none()
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    // Determine if we need full entities
+    let needs_full_output = matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    let needs_result_filters = args.no_results || args.last_failed;
+    let needs_full_entities = needs_full_output || needs_result_filters || args.tag.is_some();
 
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            // Convert filter enums to strings for cache query
-            let status_filter = match args.status {
-                StatusFilter::Draft => Some("draft"),
-                StatusFilter::Review => Some("review"),
-                StatusFilter::Approved => Some("approved"),
-                StatusFilter::Released => Some("released"),
-                StatusFilter::Obsolete => Some("obsolete"),
-                StatusFilter::Active | StatusFilter::All => None,
-            };
-            let type_filter = match args.r#type {
-                TestTypeFilter::Verification => Some("verification"),
-                TestTypeFilter::Validation => Some("validation"),
-                TestTypeFilter::All => None,
-            };
-            let level_filter = match args.level {
-                TestLevelFilter::Unit => Some("unit"),
-                TestLevelFilter::Integration => Some("integration"),
-                TestLevelFilter::System => Some("system"),
-                TestLevelFilter::Acceptance => Some("acceptance"),
-                TestLevelFilter::All => None,
-            };
-            let method_filter = match args.method {
-                TestMethodFilter::Inspection => Some("inspection"),
-                TestMethodFilter::Analysis => Some("analysis"),
-                TestMethodFilter::Demonstration => Some("demonstration"),
-                TestMethodFilter::Test => Some("test"),
-                TestMethodFilter::All => None,
+    if needs_full_entities {
+        // Load full entities via service
+        let result = service
+            .list(&filter, sort_field, sort_dir)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        let mut tests = result.items;
+
+        // Apply result-based filters (require cross-entity queries)
+        if needs_result_filters {
+            let results = load_all_results(&project);
+
+            use std::collections::{HashMap, HashSet};
+            let tests_with_results: HashSet<&EntityId> = results.iter().map(|r| &r.test_id).collect();
+
+            let last_failed_tests: HashSet<&EntityId> = {
+                let mut latest_by_test: HashMap<&EntityId, &tdt_core::entities::result::Result> = HashMap::new();
+                for r in &results {
+                    latest_by_test
+                        .entry(&r.test_id)
+                        .and_modify(|existing| {
+                            if r.executed_date > existing.executed_date {
+                                *existing = r;
+                            }
+                        })
+                        .or_insert(r);
+                }
+                latest_by_test
+                    .into_iter()
+                    .filter(|(_, r)| r.verdict == Verdict::Fail)
+                    .map(|(id, _)| id)
+                    .collect()
             };
 
-            let mut tests = cache.list_tests(
-                status_filter,
-                type_filter,
-                level_filter,
-                method_filter,
-                args.priority.as_deref(),
-                args.category.as_deref(),
-                args.author.as_deref(),
-                args.search.as_deref(),
-                None, // We'll apply limit after sorting
-            );
-
-            // Handle 'active' status filter (exclude obsolete)
-            if matches!(args.status, StatusFilter::Active) {
-                tests.retain(|t| t.status != tdt_core::core::entity::Status::Obsolete);
-            }
-
-            // Sort
-            match args.sort {
-                ListColumn::Id => tests.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Type => tests.sort_by(|a, b| {
-                    a.test_type
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.test_type.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Level => tests.sort_by(|a, b| {
-                    let level_order = |l: Option<&str>| match l {
-                        Some("unit") => 0,
-                        Some("integration") => 1,
-                        Some("system") => 2,
-                        Some("acceptance") => 3,
-                        _ => 4,
-                    };
-                    level_order(a.level.as_deref()).cmp(&level_order(b.level.as_deref()))
-                }),
-                ListColumn::Method => tests.sort_by(|a, b| {
-                    a.method
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.method.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Title => tests.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::Status => tests.sort_by(|a, b| a.status.cmp(&b.status)),
-                ListColumn::Priority => tests.sort_by(|a, b| {
-                    use tdt_core::core::entity::Priority;
-                    let priority_order = |p: Option<Priority>| match p {
-                        Some(Priority::Critical) => 0,
-                        Some(Priority::High) => 1,
-                        Some(Priority::Medium) => 2,
-                        Some(Priority::Low) => 3,
-                        None => 4,
-                    };
-                    priority_order(a.priority).cmp(&priority_order(b.priority))
-                }),
-                ListColumn::Category => tests.sort_by(|a, b| {
-                    a.category
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.category.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Author => tests.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => tests.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                tests.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                tests.truncate(limit);
-            }
-
-            return output_cached_tests(&tests, &short_ids, &args, format);
+            tests.retain(|t| {
+                let no_results_match = !args.no_results || !tests_with_results.contains(&t.id);
+                let last_failed_match = !args.last_failed || last_failed_tests.contains(&t.id);
+                no_results_match && last_failed_match
+            });
         }
-    }
 
-    // Fall back to full YAML loading for complex filters or JSON/YAML output
-    // Pre-load results if needed for result-based filters
-    let results: Vec<tdt_core::entities::result::Result> = if args.no_results || args.last_failed {
-        load_all_results(&project)
+        // Apply tag filter (not in cache)
+        if let Some(ref tag) = args.tag {
+            let tag_lower = tag.to_lowercase();
+            tests.retain(|t| t.tags.iter().any(|tg| tg.to_lowercase() == tag_lower));
+        }
+
+        // Apply limit
+        if let Some(limit) = args.limit {
+            tests.truncate(limit);
+        }
+
+        // Handle count-only mode
+        if args.count {
+            println!("{}", tests.len());
+            return Ok(());
+        }
+
+        if tests.is_empty() {
+            match global.output {
+                OutputFormat::Json => println!("[]"),
+                OutputFormat::Yaml => println!("[]"),
+                _ => {
+                    println!("No tests found.");
+                    println!();
+                    println!("Create one with: {}", style("tdt test new").yellow());
+                }
+            }
+            return Ok(());
+        }
+
+        // Update short ID index
+        let mut short_ids = ShortIdIndex::load(&project);
+        short_ids.ensure_all(tests.iter().map(|t| t.id.to_string()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        // Output based on format
+        output_tests(&tests, &short_ids, &args, format)
     } else {
-        Vec::new()
+        // Fast path: use cache via service
+        let result = service
+            .list_cached(&filter)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        let mut tests = result.items;
+
+        // Sort cached results
+        sort_cached_tests(&mut tests, &args);
+
+        // Apply limit
+        if let Some(limit) = args.limit {
+            tests.truncate(limit);
+        }
+
+        // Handle count-only mode
+        if args.count {
+            println!("{}", tests.len());
+            return Ok(());
+        }
+
+        if tests.is_empty() {
+            println!("No tests found.");
+            println!();
+            println!("Create one with: {}", style("tdt test new").yellow());
+            return Ok(());
+        }
+
+        // Update short ID index
+        let mut short_ids = ShortIdIndex::load(&project);
+        short_ids.ensure_all(tests.iter().map(|t| t.id.clone()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        output_cached_tests(&tests, &short_ids, &args, format)
+    }
+}
+
+/// Build TestFilter from CLI args
+fn build_test_filter(args: &ListArgs) -> TestFilter {
+    // Convert status filter
+    let status = match args.status {
+        StatusFilter::Draft => Some(vec![Status::Draft]),
+        StatusFilter::Review => Some(vec![Status::Review]),
+        StatusFilter::Approved => Some(vec![Status::Approved]),
+        StatusFilter::Released => Some(vec![Status::Released]),
+        StatusFilter::Obsolete => Some(vec![Status::Obsolete]),
+        StatusFilter::Active | StatusFilter::All => None,
     };
 
-    // Pre-compute HashSets for O(1) lookups instead of O(n) iterations per test
-    use std::collections::{HashMap, HashSet};
-    let tests_with_results: HashSet<&tdt_core::core::identity::EntityId> =
-        results.iter().map(|r| &r.test_id).collect();
-
-    // For last_failed: find most recent result per test and check if it's Fail
-    let last_failed_tests: HashSet<&tdt_core::core::identity::EntityId> = {
-        // Group results by test_id, keeping only the most recent
-        let mut latest_by_test: HashMap<
-            &tdt_core::core::identity::EntityId,
-            &tdt_core::entities::result::Result,
-        > = HashMap::new();
-        for r in &results {
-            latest_by_test
-                .entry(&r.test_id)
-                .and_modify(|existing| {
-                    if r.executed_date > existing.executed_date {
-                        *existing = r;
-                    }
-                })
-                .or_insert(r);
+    // Convert priority filter
+    let priority = args.priority.as_ref().and_then(|p| {
+        match p.to_lowercase().as_str() {
+            "low" => Some(Priority::Low),
+            "medium" => Some(Priority::Medium),
+            "high" => Some(Priority::High),
+            "critical" => Some(Priority::Critical),
+            _ => None,
         }
-        // Collect test IDs where latest result is Fail
-        latest_by_test
-            .into_iter()
-            .filter(|(_, r)| r.verdict == tdt_core::entities::result::Verdict::Fail)
-            .map(|(id, _)| id)
-            .collect()
-    };
-
-    // Collect all test files from both verification and validation directories
-    let mut tests: Vec<Test> = Vec::new();
-
-    // Check verification protocols
-    let verification_dir = project.root().join("verification/protocols");
-    if verification_dir.exists() {
-        for entry in walkdir::WalkDir::new(&verification_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            match tdt_core::yaml::parse_yaml_file::<Test>(entry.path()) {
-                Ok(test) => tests.push(test),
-                Err(e) => {
-                    eprintln!(
-                        "{} Failed to parse {}: {}",
-                        style("!").yellow(),
-                        entry.path().display(),
-                        e
-                    );
-                }
-            }
-        }
-    }
-
-    // Check validation protocols
-    let validation_dir = project.root().join("validation/protocols");
-    if validation_dir.exists() {
-        for entry in walkdir::WalkDir::new(&validation_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            match tdt_core::yaml::parse_yaml_file::<Test>(entry.path()) {
-                Ok(test) => tests.push(test),
-                Err(e) => {
-                    eprintln!(
-                        "{} Failed to parse {}: {}",
-                        style("!").yellow(),
-                        entry.path().display(),
-                        e
-                    );
-                }
-            }
-        }
-    }
-
-    // Apply filters
-    tests.retain(|t| {
-        // Type filter
-        let type_match = match args.r#type {
-            TestTypeFilter::Verification => t.test_type == TestType::Verification,
-            TestTypeFilter::Validation => t.test_type == TestType::Validation,
-            TestTypeFilter::All => true,
-        };
-
-        // Level filter
-        let level_match = match args.level {
-            TestLevelFilter::Unit => t.test_level == Some(TestLevel::Unit),
-            TestLevelFilter::Integration => t.test_level == Some(TestLevel::Integration),
-            TestLevelFilter::System => t.test_level == Some(TestLevel::System),
-            TestLevelFilter::Acceptance => t.test_level == Some(TestLevel::Acceptance),
-            TestLevelFilter::All => true,
-        };
-
-        // Method filter
-        let method_match = match args.method {
-            TestMethodFilter::Inspection => t.test_method == Some(TestMethod::Inspection),
-            TestMethodFilter::Analysis => t.test_method == Some(TestMethod::Analysis),
-            TestMethodFilter::Demonstration => t.test_method == Some(TestMethod::Demonstration),
-            TestMethodFilter::Test => t.test_method == Some(TestMethod::Test),
-            TestMethodFilter::All => true,
-        };
-
-        // Status filter
-        let status_match = match args.status {
-            StatusFilter::Draft => t.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => t.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => t.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => t.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => t.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => t.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        };
-
-        // Priority filter
-        let priority_match = args
-            .priority
-            .as_ref()
-            .is_none_or(|p| t.priority.to_string().to_lowercase() == p.to_lowercase());
-
-        // Category filter (case-insensitive)
-        let category_match = args.category.as_ref().is_none_or(|cat| {
-            t.category
-                .as_ref()
-                .is_some_and(|c| c.to_lowercase() == cat.to_lowercase())
-        });
-
-        // Tag filter (case-insensitive)
-        let tag_match = args.tag.as_ref().is_none_or(|tag| {
-            t.tags
-                .iter()
-                .any(|tg| tg.to_lowercase() == tag.to_lowercase())
-        });
-
-        // Author filter
-        let author_match = args
-            .author
-            .as_ref()
-            .is_none_or(|author| t.author.to_lowercase().contains(&author.to_lowercase()));
-
-        // Search filter
-        let search_match = args.search.as_ref().is_none_or(|search| {
-            let search_lower = search.to_lowercase();
-            t.title.to_lowercase().contains(&search_lower)
-                || t.objective.to_lowercase().contains(&search_lower)
-        });
-
-        // Orphans filter (no linked requirements)
-        let orphans_match =
-            !args.orphans || (t.links.verifies.is_empty() && t.links.validates.is_empty());
-
-        // Recent filter (created in last N days)
-        let recent_match = args.recent.is_none_or(|days| {
-            let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-            t.created >= cutoff
-        });
-
-        // No results filter - tests with no results recorded (O(1) lookup)
-        let no_results_match = if args.no_results {
-            !tests_with_results.contains(&t.id)
-        } else {
-            true
-        };
-
-        // Last failed filter - tests where most recent result is fail (O(1) lookup)
-        let last_failed_match = if args.last_failed {
-            last_failed_tests.contains(&t.id)
-        } else {
-            true
-        };
-
-        type_match
-            && level_match
-            && method_match
-            && status_match
-            && priority_match
-            && category_match
-            && tag_match
-            && author_match
-            && search_match
-            && orphans_match
-            && recent_match
-            && no_results_match
-            && last_failed_match
     });
 
-    if tests.is_empty() {
-        match global.output {
-            OutputFormat::Json => println!("[]"),
-            OutputFormat::Yaml => println!("[]"),
-            _ => {
-                println!("No tests found.");
-                println!();
-                println!("Create one with: {}", style("tdt test new").yellow());
-            }
-        }
-        return Ok(());
-    }
+    // Convert type filter
+    let test_type = match args.r#type {
+        TestTypeFilter::Verification => Some(TestType::Verification),
+        TestTypeFilter::Validation => Some(TestType::Validation),
+        TestTypeFilter::All => None,
+    };
 
-    // Sort by specified column
-    match args.sort {
-        ListColumn::Id => tests.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Type => {
-            tests.sort_by(|a, b| a.test_type.to_string().cmp(&b.test_type.to_string()))
+    // Convert level filter
+    let test_level = match args.level {
+        TestLevelFilter::Unit => Some(TestLevel::Unit),
+        TestLevelFilter::Integration => Some(TestLevel::Integration),
+        TestLevelFilter::System => Some(TestLevel::System),
+        TestLevelFilter::Acceptance => Some(TestLevel::Acceptance),
+        TestLevelFilter::All => None,
+    };
+
+    // Convert method filter
+    let test_method = match args.method {
+        TestMethodFilter::Inspection => Some(TestMethod::Inspection),
+        TestMethodFilter::Analysis => Some(TestMethod::Analysis),
+        TestMethodFilter::Demonstration => Some(TestMethod::Demonstration),
+        TestMethodFilter::Test => Some(TestMethod::Test),
+        TestMethodFilter::All => None,
+    };
+
+    TestFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: None, // Apply limit after all filters
+            ..Default::default()
+        },
+        test_type,
+        test_level,
+        test_method,
+        priority,
+        category: args.category.clone(),
+        orphans_only: args.orphans,
+        no_results: false, // Handled as post-filter with result loading
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_test_sort(args: &ListArgs) -> (TestSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => TestSortField::Id,
+        ListColumn::Type => TestSortField::Type,
+        ListColumn::Level => TestSortField::Level,
+        ListColumn::Method => TestSortField::Method,
+        ListColumn::Title => TestSortField::Title,
+        ListColumn::Status => TestSortField::Status,
+        ListColumn::Priority => TestSortField::Priority,
+        ListColumn::Category => TestSortField::Category,
+        ListColumn::Author => TestSortField::Author,
+        ListColumn::Created => TestSortField::Created,
+    };
+
+    let direction = if args.reverse {
+        match field {
+            TestSortField::Created | TestSortField::Priority => SortDirection::Ascending,
+            _ => SortDirection::Descending,
         }
+    } else {
+        match field {
+            TestSortField::Created | TestSortField::Priority => SortDirection::Descending,
+            _ => SortDirection::Ascending,
+        }
+    };
+
+    (field, direction)
+}
+
+/// Sort cached tests based on CLI args
+fn sort_cached_tests(tests: &mut Vec<CachedTest>, args: &ListArgs) {
+    match args.sort {
+        ListColumn::Id => tests.sort_by(|a, b| a.id.cmp(&b.id)),
+        ListColumn::Type => tests.sort_by(|a, b| {
+            a.test_type.as_deref().unwrap_or("").cmp(b.test_type.as_deref().unwrap_or(""))
+        }),
         ListColumn::Level => tests.sort_by(|a, b| {
-            let level_order = |l: &Option<TestLevel>| match l {
-                Some(TestLevel::Unit) => 0,
-                Some(TestLevel::Integration) => 1,
-                Some(TestLevel::System) => 2,
-                Some(TestLevel::Acceptance) => 3,
-                None => 4,
+            let level_order = |l: Option<&str>| match l {
+                Some("unit") => 0, Some("integration") => 1, Some("system") => 2, Some("acceptance") => 3, _ => 4,
             };
-            level_order(&a.test_level).cmp(&level_order(&b.test_level))
+            level_order(a.level.as_deref()).cmp(&level_order(b.level.as_deref()))
         }),
         ListColumn::Method => tests.sort_by(|a, b| {
-            let method_str = |m: &Option<TestMethod>| m.map(|m| m.to_string()).unwrap_or_default();
-            method_str(&a.test_method).cmp(&method_str(&b.test_method))
+            a.method.as_deref().unwrap_or("").cmp(b.method.as_deref().unwrap_or(""))
         }),
         ListColumn::Title => tests.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::Status => tests.sort_by(|a, b| a.status.to_string().cmp(&b.status.to_string())),
+        ListColumn::Status => tests.sort_by(|a, b| a.status.cmp(&b.status)),
         ListColumn::Priority => tests.sort_by(|a, b| {
-            let priority_order = |p: &tdt_core::core::entity::Priority| match p {
-                tdt_core::core::entity::Priority::Critical => 0,
-                tdt_core::core::entity::Priority::High => 1,
-                tdt_core::core::entity::Priority::Medium => 2,
-                tdt_core::core::entity::Priority::Low => 3,
+            let priority_order = |p: Option<Priority>| match p {
+                Some(Priority::Critical) => 0, Some(Priority::High) => 1, Some(Priority::Medium) => 2, Some(Priority::Low) => 3, None => 4,
             };
-            priority_order(&a.priority).cmp(&priority_order(&b.priority))
+            priority_order(a.priority).cmp(&priority_order(b.priority))
         }),
         ListColumn::Category => tests.sort_by(|a, b| {
-            a.category
-                .as_deref()
-                .unwrap_or("")
-                .cmp(b.category.as_deref().unwrap_or(""))
+            a.category.as_deref().unwrap_or("").cmp(b.category.as_deref().unwrap_or(""))
         }),
         ListColumn::Author => tests.sort_by(|a, b| a.author.cmp(&b.author)),
         ListColumn::Created => tests.sort_by(|a, b| a.created.cmp(&b.created)),
     }
 
-    // Reverse if requested
     if args.reverse {
         tests.reverse();
     }
+}
 
-    // Apply limit
-    if let Some(limit) = args.limit {
-        tests.truncate(limit);
-    }
-
-    // Just count?
-    if args.count {
-        println!("{}", tests.len());
-        return Ok(());
-    }
-
-    // Update short ID index with current tests (preserves other entity types)
-    let mut short_ids = short_ids;
-    short_ids.ensure_all(tests.iter().map(|t| t.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
+/// Output full tests
+fn output_tests(
+    tests: &[Test],
+    short_ids: &ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+) -> Result<()> {
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&tests).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(tests).into_diagnostic()?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&tests).into_diagnostic()?;
+            let yaml = serde_yml::to_string(tests).into_diagnostic()?;
             print!("{}", yaml);
         }
         OutputFormat::Csv
@@ -897,34 +774,23 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            // Build column list from args
             let mut columns: Vec<&str> = args
                 .columns
                 .iter()
                 .map(|c| c.to_string().leak() as &str)
                 .collect();
-
-            // Add Id column if --show-id flag is set
             if args.show_id && !columns.contains(&"id") {
                 columns.insert(0, "id");
             }
-
-            // Build rows
-            let rows: Vec<TableRow> = tests.iter().map(|t| test_to_row(t, &short_ids)).collect();
-
-            let config = TableConfig {
-                wrap_width: args.wrap,
-                show_summary: true,
-            };
+            let rows: Vec<TableRow> = tests.iter().map(|t| test_to_row(t, short_ids)).collect();
+            let config = TableConfig { wrap_width: args.wrap, show_summary: true };
             let formatter = TableFormatter::new(TEST_COLUMNS, "test", "TEST").with_config(config);
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for test in &tests {
+            for test in tests {
                 if format == OutputFormat::ShortId {
-                    let short_id = short_ids
-                        .get_short_id(&test.id.to_string())
-                        .unwrap_or_default();
+                    let short_id = short_ids.get_short_id(&test.id.to_string()).unwrap_or_default();
                     println!("{}", short_id);
                 } else {
                     println!("{}", test.id);
@@ -933,7 +799,6 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Auto | OutputFormat::Path => unreachable!(),
     }
-
     Ok(())
 }
 
@@ -1058,8 +923,20 @@ fn cached_test_to_row(test: &CachedTest, short_ids: &ShortIdIndex) -> TableRow {
         .cell("created", CellValue::Date(test.created))
 }
 
+/// Convert string to Priority
+fn parse_priority(s: &str) -> Priority {
+    match s.to_lowercase().as_str() {
+        "low" => Priority::Low,
+        "high" => Priority::High,
+        "critical" => Priority::Critical,
+        _ => Priority::Medium,
+    }
+}
+
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = TestService::new(&project, &cache);
     let config = Config::load();
 
     // Determine values - either from schema-driven wizard or args
@@ -1102,18 +979,18 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 .map(String::from)
                 .unwrap_or_else(|| "New Test Protocol".to_string());
 
-            let category = result
-                .get_string("category")
-                .map(String::from)
-                .unwrap_or_default();
+            let category = result.get_string("category").map(String::from);
 
             let priority = result
                 .get_string("priority")
-                .map(String::from)
-                .unwrap_or_else(|| "medium".to_string());
+                .map(|s| parse_priority(s))
+                .unwrap_or(Priority::Medium);
 
             // Extract text fields
-            let objective = result.get_string("objective").map(String::from);
+            let objective = result
+                .get_string("objective")
+                .map(String::from)
+                .unwrap_or_default();
             let description = result.get_string("description").map(String::from);
 
             (
@@ -1134,8 +1011,8 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             let title = args
                 .title
                 .unwrap_or_else(|| "New Test Protocol".to_string());
-            let category = args.category.unwrap_or_default();
-            let priority = args.priority.to_string();
+            let category = args.category;
+            let priority: Priority = args.priority.into();
 
             (
                 test_type,
@@ -1144,80 +1021,43 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 title,
                 category,
                 priority,
-                None,
+                String::new(), // Default empty objective
                 None,
             )
         };
 
-    // Generate entity ID and create from template
-    let id = EntityId::new(EntityPrefix::Test);
-    let author = config.author();
+    // Create test using service
+    let input = CreateTest {
+        title: title.clone(),
+        author: config.author(),
+        test_type,
+        test_level: Some(test_level),
+        test_method: Some(test_method),
+        objective,
+        description,
+        category,
+        priority,
+        ..Default::default()
+    };
 
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), author)
-        .with_title(&title)
-        .with_test_type(test_type.to_string())
-        .with_test_level(test_level.to_string())
-        .with_test_method(test_method.to_string())
-        .with_category(&category)
-        .with_priority(&priority);
-
-    let mut yaml_content = generator
-        .generate_test(&ctx)
+    let test = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Apply wizard text values via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref obj) = objective {
-            if !obj.is_empty() {
-                let indented = obj
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "objective: |\n  # What does this test verify or validate?\n  # Be specific about success criteria",
-                    &format!("objective: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Detailed description of the test\n  # Include any background or context",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-    }
-
     // Determine output directory based on type
-    let output_dir = project.test_directory(&test_type.to_string());
-
-    // Ensure directory exists
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-
-    // Write file
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project
+        .test_directory(&test.test_type.to_string())
+        .join(format!("{}.tdt.yaml", test.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(test.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --verifies and --mitigates flags by updating the file with links
     if !args.verifies.is_empty() || !args.mitigates.is_empty() {
         // Parse the test we just created
-        let mut test: Test = tdt_core::yaml::parse_yaml_file(&file_path)
+        let mut test_entity: Test = tdt_core::yaml::parse_yaml_file(&file_path)
             .map_err(|e| miette::miette!("Failed to parse created test: {}", e))?;
 
         // Resolve short IDs and add verifies links
@@ -1233,8 +1073,8 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             };
             let entity_id = EntityId::parse(&full_id)
                 .map_err(|_| miette::miette!("Invalid entity ID: {}", full_id))?;
-            if !test.links.verifies.contains(&entity_id) {
-                test.links.verifies.push(entity_id);
+            if !test_entity.links.verifies.contains(&entity_id) {
+                test_entity.links.verifies.push(entity_id);
             }
         }
 
@@ -1249,13 +1089,13 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             };
             let entity_id = EntityId::parse(&full_id)
                 .map_err(|_| miette::miette!("Invalid entity ID: {}", full_id))?;
-            if !test.links.mitigates.contains(&entity_id) {
-                test.links.mitigates.push(entity_id);
+            if !test_entity.links.mitigates.contains(&entity_id) {
+                test_entity.links.mitigates.push(entity_id);
             }
         }
 
         // Write back the updated test
-        let updated_yaml = serde_yml::to_string(&test).into_diagnostic()?;
+        let updated_yaml = serde_yml::to_string(&test_entity).into_diagnostic()?;
         fs::write(&file_path, &updated_yaml).into_diagnostic()?;
     }
 
@@ -1270,12 +1110,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Output based on format flag
     match global.output {
         OutputFormat::Id => {
-            println!("{}", id);
+            println!("{}", test.id);
         }
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&id))
+                short_id.clone().unwrap_or_else(|| format_short_id(&test.id))
             );
         }
         OutputFormat::Path => {
@@ -1285,14 +1125,14 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created test {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&id))).cyan()
+                style(short_id.clone().unwrap_or_else(|| format_short_id(&test.id))).cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
                 "   Type: {} | Level: {} | Method: {}",
-                style(test_type.to_string()).yellow(),
-                style(test_level.to_string()).yellow(),
-                style(test_method.to_string()).yellow()
+                style(test.test_type.to_string()).yellow(),
+                style(test.test_level.map_or("".to_string(), |l| l.to_string())).yellow(),
+                style(test.test_method.map_or("".to_string(), |m| m.to_string())).yellow()
             );
 
             // Show linked entities if any
@@ -1502,19 +1342,37 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_edit(args: EditArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
 
-    // Find the test by ID prefix match
-    let test = find_test(&project, &args.id)?;
+    // Resolve short ID if needed
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
 
-    // Get the file path based on test type
-    let test_type = match test.test_type {
-        TestType::Verification => "verification",
-        TestType::Validation => "validation",
+    // Use TestService to get the entity
+    let service = TestService::new(&project, &cache);
+    let test = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No test found matching '{}'", args.id))?;
+
+    // Get file path from cache
+    let file_path = if let Some(cached) = cache.get_entity(&test.id.to_string()) {
+        if cached.file_path.is_absolute() {
+            cached.file_path.clone()
+        } else {
+            project.root().join(&cached.file_path)
+        }
+    } else {
+        // Fallback: compute path from entity type
+        let test_type = match test.test_type {
+            TestType::Verification => "verification",
+            TestType::Validation => "validation",
+        };
+        project.root().join(format!("{}/protocols/{}.tdt.yaml", test_type, test.id))
     };
-    let file_path = project
-        .root()
-        .join(format!("{}/protocols/{}.tdt.yaml", test_type, test.id));
 
     if !file_path.exists() {
         return Err(miette::miette!("File not found: {}", file_path.display()));
@@ -1529,113 +1387,6 @@ fn run_edit(args: EditArgs) -> Result<()> {
     config.run_editor(&file_path).into_diagnostic()?;
 
     Ok(())
-}
-
-/// Find a test by ID prefix match or short ID (@N)
-fn find_test(project: &Project, id_query: &str) -> Result<Test> {
-    use tdt_core::core::cache::EntityCache;
-
-    // Try cache-based lookup first (O(1) via SQLite)
-    if let Ok(cache) = EntityCache::open(project) {
-        // Resolve short ID if needed
-        let full_id = if id_query.contains('@') {
-            cache.resolve_short_id(id_query)
-        } else {
-            None
-        };
-
-        let lookup_id = full_id.as_deref().unwrap_or(id_query);
-
-        // Try exact match via cache
-        if let Some(entity) = cache.get_entity(lookup_id) {
-            if entity.prefix == "TEST" {
-                if let Ok(test) = tdt_core::yaml::parse_yaml_file::<Test>(&entity.file_path) {
-                    return Ok(test);
-                }
-            }
-        }
-
-        // Try prefix match via cache
-        if lookup_id.starts_with("TEST-") {
-            let filter = tdt_core::core::EntityFilter {
-                prefix: Some(tdt_core::core::EntityPrefix::Test),
-                search: Some(lookup_id.to_string()),
-                ..Default::default()
-            };
-            let matches: Vec<_> = cache.list_entities(&filter);
-            if matches.len() == 1 {
-                if let Ok(test) = tdt_core::yaml::parse_yaml_file::<Test>(&matches[0].file_path) {
-                    return Ok(test);
-                }
-            } else if matches.len() > 1 {
-                println!("{} Multiple matches found:", style("!").yellow());
-                for entity in &matches {
-                    let short_id = cache
-                        .get_short_id(&entity.id)
-                        .unwrap_or_else(|| entity.id.clone());
-                    println!("  {} - {}", short_id, entity.title);
-                }
-                return Err(miette::miette!(
-                    "Ambiguous query '{}'. Please be more specific.",
-                    id_query
-                ));
-            }
-        }
-    }
-
-    // Fallback: filesystem search (for title matches or if cache unavailable)
-    let short_ids = ShortIdIndex::load(project);
-    let resolved_query = short_ids
-        .resolve(id_query)
-        .unwrap_or_else(|| id_query.to_string());
-
-    let mut matches: Vec<(Test, std::path::PathBuf)> = Vec::new();
-
-    // Search both verification and validation directories
-    for subdir in &["verification/protocols", "validation/protocols"] {
-        let dir = project.root().join(subdir);
-        if !dir.exists() {
-            continue;
-        }
-
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(test) = tdt_core::yaml::parse_yaml_file::<Test>(entry.path()) {
-                // Check if ID matches (prefix or full) or title fuzzy matches
-                let id_str = test.id.to_string();
-                let id_matches = id_str.starts_with(&resolved_query) || id_str == resolved_query;
-                let title_matches = !id_query.starts_with('@')
-                    && !id_query.chars().all(|c| c.is_ascii_digit())
-                    && test
-                        .title
-                        .to_lowercase()
-                        .contains(&resolved_query.to_lowercase());
-
-                if id_matches || title_matches {
-                    matches.push((test, entry.path().to_path_buf()));
-                }
-            }
-        }
-    }
-
-    match matches.len() {
-        0 => Err(miette::miette!("No test found matching '{}'", id_query)),
-        1 => Ok(matches.remove(0).0),
-        _ => {
-            println!("{} Multiple matches found:", style("!").yellow());
-            for (test, _path) in &matches {
-                println!("  {} - {}", format_short_id(&test.id), test.title);
-            }
-            Err(miette::miette!(
-                "Ambiguous query '{}'. Please be more specific.",
-                id_query
-            ))
-        }
-    }
 }
 
 /// Load all test results from the project

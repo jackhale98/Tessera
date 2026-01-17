@@ -3,21 +3,22 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::helpers::{escape_csv, truncate_str};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::dev::{
     AuthorizationLevel, Dev, DevStatus, DeviationCategory, DeviationType, RiskLevel,
 };
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::DeviationService;
+use tdt_core::services::{
+    CommonFilter, CreateDeviation, DeviationFilter, DeviationService, DeviationSortField,
+    SortDirection,
+};
 
 /// CLI-friendly deviation type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -457,12 +458,65 @@ pub fn run(cmd: DevCommands, global: &GlobalOpts) -> Result<()> {
     }
 }
 
-/// List deviations
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let dev_dir = project.root().join("manufacturing/deviations");
+/// Build a DeviationFilter from CLI ListArgs
+fn build_dev_filter(args: &ListArgs) -> DeviationFilter {
+    // Map dev status
+    let dev_status = match args.status {
+        DevStatusFilter::Pending => Some(DevStatus::Pending),
+        DevStatusFilter::Approved => Some(DevStatus::Approved),
+        DevStatusFilter::Active => Some(DevStatus::Active),
+        DevStatusFilter::Expired => Some(DevStatus::Expired),
+        DevStatusFilter::Closed => Some(DevStatus::Closed),
+        DevStatusFilter::Rejected => Some(DevStatus::Rejected),
+        DevStatusFilter::All => None,
+    };
 
-    if !dev_dir.exists() {
+    DeviationFilter {
+        common: CommonFilter {
+            author: args.author.clone(),
+            search: args.search.clone(),
+            limit: None, // Apply limit after sorting
+            ..Default::default()
+        },
+        dev_status,
+        deviation_type: args.dev_type.map(DeviationType::from),
+        category: args.category.map(DeviationCategory::from),
+        risk_level: args.risk.map(RiskLevel::from),
+        active_only: args.active,
+        recent_days: if args.recent { Some(30) } else { None },
+        sort: build_dev_sort_field(&args.sort),
+        sort_direction: if args.reverse {
+            SortDirection::Descending
+        } else {
+            SortDirection::Ascending
+        },
+    }
+}
+
+/// Convert CLI sort column to DeviationSortField
+fn build_dev_sort_field(col: &ListColumn) -> DeviationSortField {
+    match col {
+        ListColumn::Id => DeviationSortField::Id,
+        ListColumn::Title => DeviationSortField::Title,
+        ListColumn::DevNumber => DeviationSortField::DeviationNumber,
+        ListColumn::DevType => DeviationSortField::DeviationType,
+        ListColumn::Category => DeviationSortField::Category,
+        ListColumn::Risk => DeviationSortField::Risk,
+        ListColumn::DevStatus => DeviationSortField::DevStatus,
+        ListColumn::Author => DeviationSortField::Author,
+        ListColumn::Created => DeviationSortField::Created,
+    }
+}
+
+/// Output full deviation entities
+fn output_deviations(
+    deviations: &[Dev],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
+    if deviations.is_empty() {
         if args.count {
             println!("0");
         } else {
@@ -471,146 +525,15 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
-    };
-
-    // Load from files
-    let mut deviations: Vec<Dev> = Vec::new();
-
-    for entry in fs::read_dir(&dev_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(dev) = serde_yml::from_str::<Dev>(&content) {
-                deviations.push(dev);
-            }
-        }
-    }
-
-    // Apply filters
-    let mut deviations: Vec<Dev> = deviations
-        .into_iter()
-        .filter(|d| match args.status {
-            DevStatusFilter::Pending => d.dev_status == DevStatus::Pending,
-            DevStatusFilter::Approved => d.dev_status == DevStatus::Approved,
-            DevStatusFilter::Active => d.dev_status == DevStatus::Active,
-            DevStatusFilter::Expired => d.dev_status == DevStatus::Expired,
-            DevStatusFilter::Closed => d.dev_status == DevStatus::Closed,
-            DevStatusFilter::Rejected => d.dev_status == DevStatus::Rejected,
-            DevStatusFilter::All => true,
-        })
-        .filter(|d| {
-            args.dev_type
-                .map(|t| d.deviation_type == DeviationType::from(t))
-                .unwrap_or(true)
-        })
-        .filter(|d| {
-            args.category
-                .map(|c| d.category == DeviationCategory::from(c))
-                .unwrap_or(true)
-        })
-        .filter(|d| {
-            args.risk
-                .map(|r| d.risk.level == RiskLevel::from(r))
-                .unwrap_or(true)
-        })
-        .filter(|d| {
-            args.author
-                .as_ref()
-                .map(|a| d.author.to_lowercase().contains(&a.to_lowercase()))
-                .unwrap_or(true)
-        })
-        .filter(|d| {
-            args.search
-                .as_ref()
-                .map(|s| {
-                    let search = s.to_lowercase();
-                    d.title.to_lowercase().contains(&search)
-                        || d.deviation_number
-                            .as_ref()
-                            .map(|n| n.to_lowercase().contains(&search))
-                            .unwrap_or(false)
-                })
-                .unwrap_or(true)
-        })
-        .filter(|d| {
-            if args.active {
-                matches!(
-                    d.dev_status,
-                    DevStatus::Pending | DevStatus::Approved | DevStatus::Active
-                )
-            } else {
-                true
-            }
-        })
-        .filter(|d| {
-            if args.recent {
-                let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
-                d.created >= thirty_days_ago
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Sort
-    deviations.sort_by(|a, b| match args.sort {
-        ListColumn::Id => a.id.to_string().cmp(&b.id.to_string()),
-        ListColumn::Title => a.title.cmp(&b.title),
-        ListColumn::DevNumber => a.deviation_number.cmp(&b.deviation_number),
-        ListColumn::DevType => a
-            .deviation_type
-            .to_string()
-            .cmp(&b.deviation_type.to_string()),
-        ListColumn::Category => a.category.to_string().cmp(&b.category.to_string()),
-        ListColumn::Risk => {
-            let a_ord = match a.risk.level {
-                RiskLevel::High => 0,
-                RiskLevel::Medium => 1,
-                RiskLevel::Low => 2,
-            };
-            let b_ord = match b.risk.level {
-                RiskLevel::High => 0,
-                RiskLevel::Medium => 1,
-                RiskLevel::Low => 2,
-            };
-            a_ord.cmp(&b_ord)
-        }
-        ListColumn::DevStatus => a.dev_status.to_string().cmp(&b.dev_status.to_string()),
-        ListColumn::Author => a.author.cmp(&b.author),
-        ListColumn::Created => a.created.cmp(&b.created),
-    });
-
-    if args.reverse {
-        deviations.reverse();
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        deviations.truncate(limit);
-    }
-
-    // Count mode
     if args.count {
         println!("{}", deviations.len());
         return Ok(());
     }
 
-    if deviations.is_empty() {
-        println!("No deviations found.");
-        return Ok(());
-    }
-
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(deviations.iter().map(|d| d.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    super::utils::save_short_ids(short_ids, project);
 
-    // Output based on format
     match format {
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&deviations).into_diagnostic()?;
@@ -622,7 +545,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Csv => {
             println!("short_id,id,title,dev_number,type,category,risk,dev_status,author");
-            for dev in &deviations {
+            for dev in deviations {
                 let short_id = short_ids
                     .get_short_id(&dev.id.to_string())
                     .unwrap_or_default();
@@ -673,7 +596,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             println!();
 
             // Print rows
-            for dev in &deviations {
+            for dev in deviations {
                 let short_id = short_ids
                     .get_short_id(&dev.id.to_string())
                     .unwrap_or_default();
@@ -742,7 +665,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                     .join(" | ")
             );
 
-            for dev in &deviations {
+            for dev in deviations {
                 let short_id = short_ids
                     .get_short_id(&dev.id.to_string())
                     .unwrap_or_default();
@@ -765,12 +688,12 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
         OutputFormat::Id => {
-            for dev in &deviations {
+            for dev in deviations {
                 println!("{}", dev.id);
             }
         }
         OutputFormat::ShortId => {
-            for dev in &deviations {
+            for dev in deviations {
                 let short_id = short_ids
                     .get_short_id(&dev.id.to_string())
                     .unwrap_or_default();
@@ -779,7 +702,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Path => {
             let dev_dir = project.root().join("manufacturing/deviations");
-            for dev in &deviations {
+            for dev in deviations {
                 let path = dev_dir.join(format!("{}.tdt.yaml", dev.id));
                 println!("{}", path.display());
             }
@@ -789,10 +712,38 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
+/// List deviations
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = DeviationService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Build filter from CLI args
+    let filter = build_dev_filter(&args);
+
+    // Load and filter deviations using service
+    let mut deviations = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply limit
+    if let Some(limit) = args.limit {
+        deviations.truncate(limit);
+    }
+
+    output_deviations(&deviations, &mut short_ids, &args, format, &project)
+}
+
 /// Create a new deviation
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let service = DeviationService::new(&project, &cache);
 
     let title: String;
     let deviation_number: Option<String>;
@@ -829,37 +780,33 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         risk_level = RiskLevel::from(args.risk);
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Dev);
+    // Create deviation via service
+    let input = CreateDeviation {
+        title: title.clone(),
+        deviation_number,
+        deviation_type: dev_type,
+        category,
+        description: None,
+        risk_level,
+        risk_assessment: None,
+        effective_date: None,
+        expiration_date: None,
+        notes: None,
+        status: None,
+        author: config.author(),
+    };
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_dev_type(dev_type.to_string())
-        .with_category(category.to_string())
-        .with_risk_level(risk_level.to_string());
+    let dev = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    if let Some(ref dn) = deviation_number {
-        ctx = ctx.with_deviation_number(dn);
-    }
-
-    let yaml_content = generator
-        .generate_dev(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Write file
-    let output_dir = project.root().join("manufacturing/deviations");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    // Get file path for the created deviation
+    let file_path = project
+        .root()
+        .join("manufacturing/deviations")
+        .join(format!("{}.tdt.yaml", dev.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(dev.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -872,7 +819,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
     // Output
     if !global.quiet {
-        let id_str = id.to_string();
+        let id_str = dev.id.to_string();
         let display_id = short_id.as_deref().unwrap_or(&id_str);
         println!(
             "{} Created deviation {}",
@@ -1087,38 +1034,15 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
 /// Approve a deviation
 fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = DeviationService::new(&project, &cache);
     let config = Config::load();
+    let short_ids = ShortIdIndex::load(&project);
 
     // Resolve short ID if needed
-    let short_ids = ShortIdIndex::load(&project);
     let resolved_id = short_ids
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
-
-    // Find the file
-    let dev_dir = project.root().join("manufacturing/deviations");
-    let mut found_path = None;
-
-    if dev_dir.exists() {
-        for entry in fs::read_dir(&dev_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No deviation found matching '{}'", args.id))?;
-
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let mut dev: Dev = serde_yml::from_str(&content).into_diagnostic()?;
 
     // Get approver
     let approved_by = args.approved_by.unwrap_or_else(|| config.author());
@@ -1126,8 +1050,8 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
     // Confirm
     if !args.yes && !global.quiet {
         let short_id = short_ids
-            .get_short_id(&dev.id.to_string())
-            .unwrap_or_default();
+            .get_short_id(&resolved_id)
+            .unwrap_or_else(|| args.id.clone());
         println!(
             "Approve deviation {} by {}?",
             style(&short_id).cyan(),
@@ -1145,19 +1069,11 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
-    // Update deviation
-    dev.approval.approved_by = Some(approved_by.clone());
-    dev.approval.approval_date = Some(chrono::Utc::now().date_naive());
-    dev.approval.authorization_level = Some(AuthorizationLevel::from(args.authorization));
-    dev.dev_status = if args.activate {
-        DevStatus::Active
-    } else {
-        DevStatus::Approved
-    };
-
-    // Write back
-    let updated_content = serde_yml::to_string(&dev).into_diagnostic()?;
-    fs::write(&path, updated_content).into_diagnostic()?;
+    // Use service to approve
+    let authorization_level = AuthorizationLevel::from(args.authorization);
+    let dev = service
+        .approve(&resolved_id, approved_by.clone(), authorization_level, args.activate)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     if !global.quiet {
         let short_id = short_ids
@@ -1182,43 +1098,20 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
 /// Expire/close a deviation
 fn run_expire(args: ExpireArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = DeviationService::new(&project, &cache);
+    let short_ids = ShortIdIndex::load(&project);
 
     // Resolve short ID if needed
-    let short_ids = ShortIdIndex::load(&project);
     let resolved_id = short_ids
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the file
-    let dev_dir = project.root().join("manufacturing/deviations");
-    let mut found_path = None;
-
-    if dev_dir.exists() {
-        for entry in fs::read_dir(&dev_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No deviation found matching '{}'", args.id))?;
-
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let mut dev: Dev = serde_yml::from_str(&content).into_diagnostic()?;
-
     // Confirm
     if !args.yes && !global.quiet {
         let short_id = short_ids
-            .get_short_id(&dev.id.to_string())
-            .unwrap_or_default();
+            .get_short_id(&resolved_id)
+            .unwrap_or_else(|| args.id.clone());
         println!("Close deviation {}?", style(&short_id).cyan());
         print!("Continue? [y/N] ");
         use std::io::{self, Write};
@@ -1232,18 +1125,10 @@ fn run_expire(args: ExpireArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
-    // Update deviation
-    dev.dev_status = DevStatus::Closed;
-
-    // Add reason to notes if provided
-    if let Some(reason) = args.reason {
-        let note = format!("\n\n## Closure Reason\n{}", reason);
-        dev.notes = Some(dev.notes.unwrap_or_default() + &note);
-    }
-
-    // Write back
-    let updated_content = serde_yml::to_string(&dev).into_diagnostic()?;
-    fs::write(&path, updated_content).into_diagnostic()?;
+    // Use service to close
+    let dev = service
+        .close(&resolved_id, args.reason)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     if !global.quiet {
         let short_id = short_ids

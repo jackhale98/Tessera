@@ -3,21 +3,23 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::filters::StatusFilter;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
+use tdt_core::core::CachedEntity;
 use tdt_core::core::Config;
 use tdt_core::entities::work_instruction::WorkInstruction;
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::WorkInstructionService;
+use tdt_core::services::{
+    CommonFilter, CreateWorkInstruction, SortDirection, WorkInstructionFilter,
+    WorkInstructionService, WorkInstructionSortField,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum WorkCommands {
@@ -211,202 +213,93 @@ const ENTITY_CONFIG: crate::cli::EntityConfig = crate::cli::EntityConfig {
     name_plural: "work instructions",
 };
 
-/// Run a work instruction subcommand
-pub fn run(cmd: WorkCommands, global: &GlobalOpts) -> Result<()> {
-    match cmd {
-        WorkCommands::List(args) => run_list(args, global),
-        WorkCommands::New(args) => run_new(args, global),
-        WorkCommands::Show(args) => run_show(args, global),
-        WorkCommands::Edit(args) => run_edit(args),
-        WorkCommands::Delete(args) => run_delete(args),
-        WorkCommands::Archive(args) => run_archive(args),
+/// Build a WorkInstructionFilter from CLI list arguments
+fn build_work_filter(args: &ListArgs, short_ids: &ShortIdIndex) -> WorkInstructionFilter {
+    // Resolve process ID if provided
+    let process = args
+        .process
+        .as_ref()
+        .map(|p| short_ids.resolve(p).unwrap_or_else(|| p.clone()));
+
+    WorkInstructionFilter {
+        common: CommonFilter {
+            status: crate::cli::entity_cmd::status_filter_to_status(args.status).map(|s| vec![s]),
+            author: args.author.clone(),
+            search: args.search.clone(),
+            limit: if args.recent { Some(10) } else { args.limit },
+            ..Default::default()
+        },
+        process,
+        ..Default::default()
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let short_ids = ShortIdIndex::load(&project);
-
-    // Determine output format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
+/// Build sort field and direction from CLI arguments
+fn build_work_sort(args: &ListArgs) -> (WorkInstructionSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => WorkInstructionSortField::Id,
+        ListColumn::Title => WorkInstructionSortField::Title,
+        ListColumn::DocNumber => WorkInstructionSortField::DocumentNumber,
+        ListColumn::Status => WorkInstructionSortField::Status,
+        ListColumn::Author => WorkInstructionSortField::Author,
+        ListColumn::Created => WorkInstructionSortField::Created,
     };
 
-    // Check if we can use the fast cache path:
-    // - No process filter (link-based)
-    // - No recent filter
-    // - No search filter
-    // - Not JSON/YAML output
-    let can_use_cache = args.process.is_none()
-        && !args.recent
-        && args.search.is_none()
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    let direction = if args.reverse || args.recent {
+        // Recent sorts newest first (descending)
+        SortDirection::Ascending
+    } else {
+        SortDirection::Descending
+    };
 
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            let filter = tdt_core::core::cache::EntityFilter {
-                prefix: Some(EntityPrefix::Work),
-                status: crate::cli::entity_cmd::status_filter_to_status(args.status),
-                author: args.author.clone(),
-                search: None,
-                limit: None,
-                priority: None,
-                entity_type: None,
-                category: None,
-            };
+    // If recent, always sort by created
+    let field = if args.recent {
+        WorkInstructionSortField::Created
+    } else {
+        field
+    };
 
-            let mut entities = cache.list_entities(&filter);
+    (field, direction)
+}
 
-            // Sort
-            match args.sort {
-                ListColumn::Id => entities.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Title => entities.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::DocNumber => entities.sort_by(|a, b| a.id.cmp(&b.id)), // Not in cache
-                ListColumn::Status => entities.sort_by(|a, b| a.status.cmp(&b.status)),
-                ListColumn::Author => entities.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => entities.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                entities.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                entities.truncate(limit);
-            }
-
-            return output_cached_work_instructions(&entities, &short_ids, &args, format);
-        }
-    }
-
-    // Fall back to full YAML loading
-    let work_dir = project.root().join("manufacturing/work_instructions");
-
-    if !work_dir.exists() {
-        if args.count {
-            println!("0");
+/// Sort cached work instructions by the specified column
+fn sort_cached_work_instructions(entities: &mut [CachedEntity], sort: ListColumn, reverse: bool) {
+    entities.sort_by(|a, b| {
+        let cmp = match sort {
+            ListColumn::Id => a.id.cmp(&b.id),
+            ListColumn::Title => a.title.cmp(&b.title),
+            ListColumn::DocNumber => a.id.cmp(&b.id), // Not in cache
+            ListColumn::Status => a.status.cmp(&b.status),
+            ListColumn::Author => a.author.cmp(&b.author),
+            ListColumn::Created => a.created.cmp(&b.created),
+        };
+        if reverse {
+            cmp.reverse()
         } else {
-            println!("No work instructions found.");
+            cmp
         }
-        return Ok(());
-    }
-
-    // Load and parse all work instructions
-    let mut work_instructions: Vec<WorkInstruction> = Vec::new();
-
-    for entry in fs::read_dir(&work_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(work) = serde_yml::from_str::<WorkInstruction>(&content) {
-                work_instructions.push(work);
-            }
-        }
-    }
-
-    // Resolve process filter if provided
-    let process_filter = args.process.as_ref().map(|proc_id| {
-        short_ids
-            .resolve(proc_id)
-            .unwrap_or_else(|| proc_id.clone())
     });
+}
 
-    // Apply filters
-    let work_instructions: Vec<WorkInstruction> = work_instructions
-        .into_iter()
-        .filter(|w| crate::cli::entity_cmd::status_enum_matches_filter(&w.status, args.status))
-        .filter(|w| {
-            if let Some(ref proc_id) = process_filter {
-                w.links
-                    .process
-                    .as_ref()
-                    .is_some_and(|p| p.to_string().contains(proc_id))
-            } else {
-                true
-            }
-        })
-        .filter(|w| {
-            if let Some(ref author) = args.author {
-                w.author.to_lowercase().contains(&author.to_lowercase())
-            } else {
-                true
-            }
-        })
-        .filter(|w| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                w.title.to_lowercase().contains(&search_lower)
-                    || w.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-                    || w.document_number
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Sort
-    let mut work_instructions = work_instructions;
-    match args.sort {
-        ListColumn::Id => work_instructions.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Title => work_instructions.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::DocNumber => work_instructions.sort_by(|a, b| {
-            a.document_number
-                .as_deref()
-                .unwrap_or("")
-                .cmp(b.document_number.as_deref().unwrap_or(""))
-        }),
-        ListColumn::Status => work_instructions
-            .sort_by(|a, b| format!("{:?}", a.status).cmp(&format!("{:?}", b.status))),
-        ListColumn::Author => work_instructions.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => work_instructions.sort_by(|a, b| a.created.cmp(&b.created)),
-    }
-
-    if args.reverse {
-        work_instructions.reverse();
-    }
-
-    // Apply recent filter (last 10 by creation date)
-    if args.recent {
-        work_instructions.sort_by(|a, b| b.created.cmp(&a.created));
-        work_instructions.truncate(10);
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        work_instructions.truncate(limit);
-    }
-
-    // Count only
-    if args.count {
-        println!("{}", work_instructions.len());
-        return Ok(());
-    }
-
-    // No results
-    if work_instructions.is_empty() {
-        println!("No work instructions found.");
-        return Ok(());
-    }
-
+/// Output work instructions in the requested format
+fn output_work_instructions(
+    instructions: &[WorkInstruction],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
     // Update short ID index
-    let mut short_ids = short_ids;
-    short_ids.ensure_all(work_instructions.iter().map(|w| w.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    short_ids.ensure_all(instructions.iter().map(|w| w.id.to_string()));
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&work_instructions).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(&instructions).into_diagnostic()?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&work_instructions).into_diagnostic()?;
+            let yaml = serde_yml::to_string(&instructions).into_diagnostic()?;
             print!("{}", yaml);
         }
         OutputFormat::Tsv
@@ -428,9 +321,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             }
 
             // Convert to TableRows
-            let rows: Vec<TableRow> = work_instructions
+            let rows: Vec<TableRow> = instructions
                 .iter()
-                .map(|work| work_instruction_to_row(work, &short_ids))
+                .map(|work| work_instruction_to_row(work, short_ids))
                 .collect();
 
             // Configure table
@@ -448,6 +341,90 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Run a work instruction subcommand
+pub fn run(cmd: WorkCommands, global: &GlobalOpts) -> Result<()> {
+    match cmd {
+        WorkCommands::List(args) => run_list(args, global),
+        WorkCommands::New(args) => run_new(args, global),
+        WorkCommands::Show(args) => run_show(args, global),
+        WorkCommands::Edit(args) => run_edit(args),
+        WorkCommands::Delete(args) => run_delete(args),
+        WorkCommands::Archive(args) => run_archive(args),
+    }
+}
+
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = WorkInstructionService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    // Determine output format
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Check if we can use the fast cache path:
+    // - No process filter (link-based)
+    // - No recent filter
+    // - No search filter
+    // - Not JSON/YAML output
+    let can_use_cache = args.process.is_none()
+        && !args.recent
+        && args.search.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        // Fast path: use cached entities
+        let mut entities = service.list_cached();
+
+        // Apply status filter manually on cached entities
+        if let Some(status) = crate::cli::entity_cmd::status_filter_to_status(args.status) {
+            entities.retain(|e| e.status == status);
+        }
+
+        // Apply author filter
+        if let Some(ref author_filter) = args.author {
+            let author_lower = author_filter.to_lowercase();
+            entities.retain(|e| e.author.to_lowercase().contains(&author_lower));
+        }
+
+        // Sort
+        sort_cached_work_instructions(&mut entities, args.sort, args.reverse);
+
+        // Apply limit
+        if let Some(limit) = args.limit {
+            entities.truncate(limit);
+        }
+
+        return output_cached_work_instructions(&entities, &short_ids, &args, format);
+    }
+
+    // Full entity loading via service
+    let filter = build_work_filter(&args, &short_ids);
+    let (sort_field, sort_dir) = build_work_sort(&args);
+
+    let result = service
+        .list(&filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
+    let instructions = result.items;
+
+    // Count only
+    if args.count {
+        println!("{}", instructions.len());
+        return Ok(());
+    }
+
+    // No results
+    if instructions.is_empty() {
+        println!("No work instructions found.");
+        return Ok(());
+    }
+
+    output_work_instructions(&instructions, &mut short_ids, &args, format, &project)
 }
 
 /// Convert a WorkInstruction to a TableRow
@@ -528,13 +505,15 @@ fn cached_entity_to_row(entity: &tdt_core::core::CachedEntity, short_ids: &Short
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = WorkInstructionService::new(&project, &cache);
     let config = Config::load();
 
     let title: String;
     let document_number: Option<String>;
-    let mut description: Option<String> = None;
-    let mut revision: Option<String> = None;
-    let mut estimated_duration: Option<f64> = None;
+    let description: Option<String>;
+    let revision: Option<String>;
+    let estimated_duration: Option<f64>;
 
     if args.interactive {
         let wizard = SchemaWizard::new();
@@ -553,10 +532,10 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .title
             .unwrap_or_else(|| "New Work Instruction".to_string());
         document_number = args.doc_number.clone();
+        description = None;
+        revision = None;
+        estimated_duration = None;
     }
-
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Work);
 
     // Resolve linked IDs if provided
     let short_ids = ShortIdIndex::load(&project);
@@ -565,60 +544,30 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         .as_ref()
         .map(|p| short_ids.resolve(p).unwrap_or_else(|| p.clone()));
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), config.author()).with_title(&title);
+    // Create work instruction using service
+    let input = CreateWorkInstruction {
+        title: title.clone(),
+        author: config.author(),
+        document_number,
+        revision,
+        description,
+        process: process_id,
+        estimated_duration_minutes: estimated_duration,
+        ..Default::default()
+    };
 
-    if let Some(ref doc_num) = document_number {
-        ctx = ctx.with_document_number(doc_num);
-    }
-    if let Some(ref proc_id) = process_id {
-        ctx = ctx.with_process_id(proc_id);
-    }
-
-    let mut yaml_content = generator
-        .generate_work_instruction(&ctx)
+    let work = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Apply wizard-collected values via string replacement
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Purpose and scope of this work instruction",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref rev) = revision {
-            yaml_content =
-                yaml_content.replace("revision: \"A\"", &format!("revision: \"{}\"", rev));
-        }
-        if let Some(dur) = estimated_duration {
-            yaml_content = yaml_content.replace(
-                "estimated_duration_minutes: null",
-                &format!("estimated_duration_minutes: {}", dur),
-            );
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("manufacturing/work_instructions");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project
+        .root()
+        .join("manufacturing/work_instructions")
+        .join(format!("{}.tdt.yaml", work.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(work.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -630,21 +579,21 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     );
 
     // Output based on format flag
-    let extra_info = if let Some(ref doc_num) = args.doc_number {
+    let extra_info = if let Some(ref doc_num) = work.document_number {
         format!(
             "{}\n   Doc: {}",
-            style(&title).white(),
+            style(&work.title).white(),
             style(doc_num).yellow()
         )
     } else {
-        format!("{}", style(&title).white())
+        format!("{}", style(&work.title).white())
     };
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &work.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,
-        &title,
+        &work.title,
         Some(&extra_info),
         &added_links,
         global,

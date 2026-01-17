@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::core::cache::{CachedEntity, EntityCache, EntityFilter};
-use crate::core::entity::{Entity, Status};
+use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;

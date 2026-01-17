@@ -3,7 +3,6 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::filters::StatusFilter;
@@ -16,9 +15,10 @@ use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::risk::{Risk, RiskLevel, RiskType};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::RiskService;
+use tdt_core::services::{
+    CommonFilter, CreateRisk, RiskFilter, RiskService, RiskSortField, SortDirection,
+};
 
 /// CLI-friendly risk type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -394,211 +394,21 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = RiskService::new(&project, &cache);
 
-    // Determine if we need full entity loading (for complex filters)
-    let needs_full_entities = args.search.is_some()  // search in description
-        || args.unmitigated
-        || args.open_mitigations
-        || args.tag.is_some();
+    // Build filter from CLI args
+    let filter = build_risk_filter(&args);
 
-    // Collect risks - use cache for basic filtering, full load for complex
-    let mut risks: Vec<Risk> = if needs_full_entities {
-        // Full entity loading (original approach)
-        let mut risks: Vec<Risk> = Vec::new();
+    // Build sort options
+    let (sort_field, sort_dir) = build_risk_sort(&args);
 
-        // Check all risk directories
-        for subdir in RISK_DIRS {
-            let dir = project.root().join(subdir);
-            if dir.exists() {
-                for entry in walkdir::WalkDir::new(&dir)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                    .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-                {
-                    match tdt_core::yaml::parse_yaml_file::<Risk>(entry.path()) {
-                        Ok(risk) => risks.push(risk),
-                        Err(e) => {
-                            eprintln!(
-                                "{} Failed to parse {}: {}",
-                                style("!").yellow(),
-                                entry.path().display(),
-                                e
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        risks
-    } else {
-        // Use cache for basic filtering (faster for large projects)
-        let cache = EntityCache::open(&project)?;
+    // Get results from service
+    let result = service
+        .list(&filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
 
-        // Convert filters to cache-compatible format
-        let status_filter = match args.status {
-            StatusFilter::Draft => Some("draft"),
-            StatusFilter::Review => Some("review"),
-            StatusFilter::Approved => Some("approved"),
-            StatusFilter::Released => Some("released"),
-            StatusFilter::Obsolete => Some("obsolete"),
-            StatusFilter::Active | StatusFilter::All => None,
-        };
-
-        let type_filter = match args.r#type {
-            RiskTypeFilter::Design => Some("design"),
-            RiskTypeFilter::Process => Some("process"),
-            RiskTypeFilter::Use => Some("use"),
-            RiskTypeFilter::Software => Some("software"),
-            RiskTypeFilter::All => None,
-        };
-
-        let level_filter = match args.level {
-            RiskLevelFilter::Low => Some("low"),
-            RiskLevelFilter::Medium => Some("medium"),
-            RiskLevelFilter::High => Some("high"),
-            RiskLevelFilter::Critical => Some("critical"),
-            RiskLevelFilter::Urgent | RiskLevelFilter::All => None,
-        };
-
-        // Effective min RPN
-        let min_rpn = args.above_rpn.or(args.min_rpn).map(|v| v as i32);
-
-        // Query cache with basic filters
-        let cached_risks = cache.list_risks(
-            status_filter,
-            type_filter,
-            level_filter,
-            args.category.as_deref(),
-            min_rpn,
-            args.author.as_deref(),
-            None, // No search (would need description field)
-            None, // No limit yet
-        );
-
-        // Load full entities from cached file paths
-        cached_risks
-            .iter()
-            .filter_map(|cr| {
-                let full_path = project.root().join(&cr.file_path);
-                fs::read_to_string(&full_path)
-                    .ok()
-                    .and_then(|content| serde_yml::from_str::<Risk>(&content).ok())
-            })
-            .collect()
-    };
-
-    // Apply filters
-    risks.retain(|r| {
-        // Type filter
-        let type_match = match args.r#type {
-            RiskTypeFilter::Design => r.risk_type == RiskType::Design,
-            RiskTypeFilter::Process => r.risk_type == RiskType::Process,
-            RiskTypeFilter::Use => r.risk_type == RiskType::Use,
-            RiskTypeFilter::Software => r.risk_type == RiskType::Software,
-            RiskTypeFilter::All => true,
-        };
-
-        // Status filter
-        let status_match = match args.status {
-            StatusFilter::Draft => r.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => r.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => r.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => r.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => r.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => r.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        };
-
-        // Level filter (use computed risk level for accurate filtering)
-        let computed_level = r.get_risk_level();
-        let level_match = match args.level {
-            RiskLevelFilter::All => true,
-            RiskLevelFilter::Urgent => matches!(
-                computed_level,
-                Some(RiskLevel::High) | Some(RiskLevel::Critical)
-            ),
-            RiskLevelFilter::Low => computed_level == Some(RiskLevel::Low),
-            RiskLevelFilter::Medium => computed_level == Some(RiskLevel::Medium),
-            RiskLevelFilter::High => computed_level == Some(RiskLevel::High),
-            RiskLevelFilter::Critical => computed_level == Some(RiskLevel::Critical),
-        };
-
-        // RPN filters (use computed RPN for accurate filtering)
-        let computed_rpn = r.get_rpn().unwrap_or(0);
-        let effective_min_rpn = args.above_rpn.or(args.min_rpn);
-        let min_rpn_match = effective_min_rpn.is_none_or(|min| computed_rpn >= min);
-        let max_rpn_match = args.max_rpn.is_none_or(|max| computed_rpn <= max);
-
-        // Category filter (case-insensitive)
-        let category_match = args.category.as_ref().is_none_or(|cat| {
-            r.category
-                .as_ref()
-                .is_some_and(|c| c.to_lowercase() == cat.to_lowercase())
-        });
-
-        // Tag filter (case-insensitive)
-        let tag_match = args.tag.as_ref().is_none_or(|tag| {
-            r.tags
-                .iter()
-                .any(|t| t.to_lowercase() == tag.to_lowercase())
-        });
-
-        // Author filter
-        let author_match = args
-            .author
-            .as_ref()
-            .is_none_or(|author| r.author.to_lowercase().contains(&author.to_lowercase()));
-
-        // Search filter
-        let search_match = args.search.as_ref().is_none_or(|search| {
-            let search_lower = search.to_lowercase();
-            r.title.to_lowercase().contains(&search_lower)
-                || r.description.to_lowercase().contains(&search_lower)
-        });
-
-        // Unmitigated filter
-        let unmitigated_match = !args.unmitigated || r.mitigations.is_empty();
-
-        // Open mitigations filter (has mitigations but not all completed/verified)
-        let open_mitigations_match = if args.open_mitigations {
-            use tdt_core::entities::risk::MitigationStatus;
-            !r.mitigations.is_empty()
-                && r.mitigations.iter().any(|m| {
-                    match m.status {
-                        Some(MitigationStatus::Completed) | Some(MitigationStatus::Verified) => {
-                            false
-                        }
-                        _ => true, // Proposed, InProgress, or None
-                    }
-                })
-        } else {
-            true
-        };
-
-        // Critical shortcut filter (use computed risk level)
-        let critical_match = !args.critical || computed_level == Some(RiskLevel::Critical);
-
-        // Recent filter (created in last N days)
-        let recent_match = args.recent.is_none_or(|days| {
-            let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-            r.created >= cutoff
-        });
-
-        type_match
-            && status_match
-            && level_match
-            && min_rpn_match
-            && max_rpn_match
-            && category_match
-            && tag_match
-            && author_match
-            && search_match
-            && unmitigated_match
-            && open_mitigations_match
-            && critical_match
-            && recent_match
-    });
+    let risks = result.items;
 
     if risks.is_empty() {
         match global.output {
@@ -613,70 +423,13 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    // Sort by specified column (or RPN if --by-rpn is used)
-    // Use computed values for accurate sorting
-    if args.by_rpn {
-        risks.sort_by_key(|r| std::cmp::Reverse(r.get_rpn().unwrap_or(0)));
-    } else {
-        match args.sort {
-            ListColumn::Id => risks.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-            ListColumn::Type => {
-                risks.sort_by(|a, b| a.risk_type.to_string().cmp(&b.risk_type.to_string()))
-            }
-            ListColumn::Title => risks.sort_by(|a, b| a.title.cmp(&b.title)),
-            ListColumn::Status => {
-                risks.sort_by(|a, b| a.status.to_string().cmp(&b.status.to_string()))
-            }
-            ListColumn::RiskLevel => {
-                let level_order = |l: Option<RiskLevel>| match l {
-                    Some(RiskLevel::Critical) => 0,
-                    Some(RiskLevel::High) => 1,
-                    Some(RiskLevel::Medium) => 2,
-                    Some(RiskLevel::Low) => 3,
-                    None => 4,
-                };
-                risks.sort_by(|a, b| {
-                    level_order(a.get_risk_level()).cmp(&level_order(b.get_risk_level()))
-                });
-            }
-            ListColumn::Severity => {
-                risks.sort_by(|a, b| b.severity.unwrap_or(0).cmp(&a.severity.unwrap_or(0)))
-            }
-            ListColumn::Occurrence => {
-                risks.sort_by(|a, b| b.occurrence.unwrap_or(0).cmp(&a.occurrence.unwrap_or(0)))
-            }
-            ListColumn::Detection => {
-                risks.sort_by(|a, b| b.detection.unwrap_or(0).cmp(&a.detection.unwrap_or(0)))
-            }
-            ListColumn::Rpn => risks.sort_by_key(|r| std::cmp::Reverse(r.get_rpn().unwrap_or(0))),
-            ListColumn::Category => risks.sort_by(|a, b| {
-                a.category
-                    .as_deref()
-                    .unwrap_or("")
-                    .cmp(b.category.as_deref().unwrap_or(""))
-            }),
-            ListColumn::Author => risks.sort_by(|a, b| a.author.cmp(&b.author)),
-            ListColumn::Created => risks.sort_by(|a, b| a.created.cmp(&b.created)),
-        }
-    }
-
-    // Reverse if requested (unless by_rpn which is already reversed)
-    if args.reverse && !args.by_rpn {
-        risks.reverse();
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        risks.truncate(limit);
-    }
-
     // Just count?
     if args.count {
-        println!("{}", risks.len());
+        println!("{}", result.total_count);
         return Ok(());
     }
 
-    // Update short ID index with current risks (preserves other entity types)
+    // Update short ID index with current risks
     let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(risks.iter().map(|r| r.id.to_string()));
     super::utils::save_short_ids(&mut short_ids, &project);
@@ -736,6 +489,108 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
+/// Convert CLI ListArgs to RiskFilter for service
+fn build_risk_filter(args: &ListArgs) -> RiskFilter {
+    use tdt_core::core::entity::Status;
+
+    // Convert status filter
+    let status = match args.status {
+        StatusFilter::Draft => Some(vec![Status::Draft]),
+        StatusFilter::Review => Some(vec![Status::Review]),
+        StatusFilter::Approved => Some(vec![Status::Approved]),
+        StatusFilter::Released => Some(vec![Status::Released]),
+        StatusFilter::Obsolete => Some(vec![Status::Obsolete]),
+        StatusFilter::Active => Some(vec![
+            Status::Draft,
+            Status::Review,
+            Status::Approved,
+            Status::Released,
+        ]),
+        StatusFilter::All => None,
+    };
+
+    // Convert risk type filter
+    let risk_type = match args.r#type {
+        RiskTypeFilter::Design => Some(RiskType::Design),
+        RiskTypeFilter::Process => Some(RiskType::Process),
+        RiskTypeFilter::Use => Some(RiskType::Use),
+        RiskTypeFilter::Software => Some(RiskType::Software),
+        RiskTypeFilter::All => None,
+    };
+
+    // Convert risk level filter (critical flag overrides)
+    let risk_level = if args.critical {
+        Some(vec![RiskLevel::Critical])
+    } else {
+        match args.level {
+            RiskLevelFilter::Low => Some(vec![RiskLevel::Low]),
+            RiskLevelFilter::Medium => Some(vec![RiskLevel::Medium]),
+            RiskLevelFilter::High => Some(vec![RiskLevel::High]),
+            RiskLevelFilter::Critical => Some(vec![RiskLevel::Critical]),
+            RiskLevelFilter::Urgent => Some(vec![RiskLevel::High, RiskLevel::Critical]),
+            RiskLevelFilter::All => None,
+        }
+    };
+
+    RiskFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            tags: args.tag.clone().map(|t| vec![t]),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        risk_type,
+        risk_level,
+        min_rpn: args.above_rpn.or(args.min_rpn).map(|v| v as u16),
+        max_rpn: args.max_rpn.map(|v| v as u16),
+        unmitigated_only: args.unmitigated,
+        needs_mitigation: args.open_mitigations,
+        category: args.category.clone(),
+        ..Default::default()
+    }
+}
+
+/// Convert CLI sort args to service sort options
+fn build_risk_sort(args: &ListArgs) -> (RiskSortField, SortDirection) {
+    let field = if args.by_rpn {
+        RiskSortField::Rpn
+    } else {
+        match args.sort {
+            ListColumn::Id => RiskSortField::Id,
+            ListColumn::Type => RiskSortField::Type,
+            ListColumn::Title => RiskSortField::Title,
+            ListColumn::Status => RiskSortField::Status,
+            ListColumn::RiskLevel => RiskSortField::RiskLevel,
+            ListColumn::Severity => RiskSortField::Severity,
+            ListColumn::Occurrence => RiskSortField::Occurrence,
+            ListColumn::Detection => RiskSortField::Detection,
+            ListColumn::Rpn => RiskSortField::Rpn,
+            ListColumn::Category => RiskSortField::Title, // Category sort not in service, fallback to Title
+            ListColumn::Author => RiskSortField::Author,
+            ListColumn::Created => RiskSortField::Created,
+        }
+    };
+
+    // RPN and severity-like fields default to descending
+    let dir = if args.reverse {
+        SortDirection::Ascending
+    } else {
+        match field {
+            RiskSortField::Rpn
+            | RiskSortField::Severity
+            | RiskSortField::Occurrence
+            | RiskSortField::Detection
+            | RiskSortField::RiskLevel => SortDirection::Descending,
+            _ => SortDirection::Ascending,
+        }
+    };
+
+    (field, dir)
+}
+
 /// Convert a Risk to a TableRow
 fn risk_to_row(risk: &Risk, short_ids: &ShortIdIndex) -> TableRow {
     TableRow::new(risk.id.to_string(), short_ids)
@@ -776,6 +631,8 @@ fn risk_to_row(risk: &Risk, short_ids: &ShortIdIndex) -> TableRow {
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = RiskService::new(&project, &cache);
     let config = Config::load();
 
     // Determine values - either from schema-driven wizard or args
@@ -808,19 +665,19 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .map(String::from)
             .unwrap_or_else(|| "New Risk".to_string());
 
-        let category = result
-            .get_string("category")
-            .map(String::from)
-            .unwrap_or_default();
+        let category = result.get_string("category").map(String::from);
 
-        let severity = result.get_i64("severity").map(|n| n as u8).unwrap_or(5);
+        let severity = result.get_i64("severity").map(|n| n as u8);
 
-        let occurrence = result.get_i64("occurrence").map(|n| n as u8).unwrap_or(5);
+        let occurrence = result.get_i64("occurrence").map(|n| n as u8);
 
-        let detection = result.get_i64("detection").map(|n| n as u8).unwrap_or(5);
+        let detection = result.get_i64("detection").map(|n| n as u8);
 
         // Extract FMEA text fields
-        let description = result.get_string("description").map(String::from);
+        let description = result
+            .get_string("description")
+            .map(String::from)
+            .unwrap_or_default();
         let failure_mode = result.get_string("failure_mode").map(String::from);
         let cause = result.get_string("cause").map(String::from);
         let effect = result.get_string("effect").map(String::from);
@@ -841,115 +698,62 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         // Default mode - use args with defaults
         let risk_type: RiskType = args.r#type.into();
         let title = args.title.unwrap_or_else(|| "New Risk".to_string());
-        let category = args.category.unwrap_or_default();
-        let severity = args.severity.unwrap_or(5);
-        let occurrence = args.occurrence.unwrap_or(5);
-        let detection = args.detection.unwrap_or(5);
+        let category = args.category;
+        let severity = args.severity;
+        let occurrence = args.occurrence;
+        let detection = args.detection;
 
         (
-            risk_type, title, category, severity, occurrence, detection, None, None, None, None,
+            risk_type,
+            title,
+            category,
+            severity,
+            occurrence,
+            detection,
+            String::new(),
+            None,
+            None,
+            None,
         )
     };
 
-    // Calculate RPN and determine risk level
-    let rpn = severity as u16 * occurrence as u16 * detection as u16;
-    let risk_level = match rpn {
-        0..=50 => "low",
-        51..=150 => "medium",
-        151..=400 => "high",
-        _ => "critical",
+    // Create risk using service
+    let input = CreateRisk {
+        risk_type,
+        title: title.clone(),
+        description,
+        author: config.author(),
+        category,
+        failure_mode,
+        cause,
+        effect,
+        severity,
+        occurrence,
+        detection,
+        ..Default::default()
     };
 
-    // Generate entity ID and create from template
-    let id = EntityId::new(EntityPrefix::Risk);
-    let author = config.author();
-
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), author)
-        .with_title(&title)
-        .with_risk_type(risk_type.to_string())
-        .with_category(&category)
-        .with_severity(severity)
-        .with_occurrence(occurrence)
-        .with_detection(detection)
-        .with_risk_level(risk_level);
-
-    let mut yaml_content = generator
-        .generate_risk(&ctx)
+    let risk = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Apply wizard FMEA values via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Describe the risk scenario here\n  # What could go wrong? Under what conditions?",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref fm) = failure_mode {
-            if !fm.is_empty() {
-                let indented = fm
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "failure_mode: |\n  # How does this failure manifest?",
-                    &format!("failure_mode: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref c) = cause {
-            if !c.is_empty() {
-                let indented = c
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "cause: |\n  # What is the root cause or mechanism?",
-                    &format!("cause: |\n{}", indented),
-                );
-            }
-        }
-        if let Some(ref e) = effect {
-            if !e.is_empty() {
-                let indented = e
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "effect: |\n  # What is the impact or consequence?",
-                    &format!("effect: |\n{}", indented),
-                );
-            }
-        }
-    }
+    // Calculate RPN for display
+    let rpn = risk.rpn.unwrap_or(0);
+    let risk_level = risk.risk_level.as_ref().map_or("unknown", |l| match l {
+        RiskLevel::Low => "low",
+        RiskLevel::Medium => "medium",
+        RiskLevel::High => "high",
+        RiskLevel::Critical => "critical",
+    });
 
     // Determine output directory based on type
-    let output_dir = project.risk_directory(&risk_type.to_string());
-
-    // Ensure directory exists
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-
-    // Write file
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project
+        .risk_directory(&risk.risk_type.to_string())
+        .join(format!("{}.tdt.yaml", risk.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(risk.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -963,12 +767,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Output based on format flag
     match global.output {
         OutputFormat::Id => {
-            println!("{}", id);
+            println!("{}", risk.id);
         }
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&id))
+                short_id.clone().unwrap_or_else(|| format_short_id(&risk.id))
             );
         }
         OutputFormat::Path => {
@@ -978,7 +782,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created risk {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&id))).cyan()
+                style(short_id.clone().unwrap_or_else(|| format_short_id(&risk.id))).cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!("   RPN: {} ({})", style(rpn).yellow(), risk_level);
@@ -1206,21 +1010,39 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_edit(args: EditArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
 
-    // Find the risk by ID prefix match
-    let risk = find_risk(&project, &args.id)?;
+    // Resolve short ID if needed
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
 
-    // Get the file path
-    let risk_type = match risk.risk_type {
-        RiskType::Design => "design",
-        RiskType::Process => "process",
-        RiskType::Use => "use",
-        RiskType::Software => "software",
+    // Use RiskService to get the entity
+    let service = RiskService::new(&project, &cache);
+    let risk = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No risk found matching '{}'", args.id))?;
+
+    // Get file path from cache
+    let file_path = if let Some(cached) = cache.get_entity(&risk.id.to_string()) {
+        if cached.file_path.is_absolute() {
+            cached.file_path.clone()
+        } else {
+            project.root().join(&cached.file_path)
+        }
+    } else {
+        // Fallback: compute path from risk type
+        let risk_type = match risk.risk_type {
+            RiskType::Design => "design",
+            RiskType::Process => "process",
+            RiskType::Use => "use",
+            RiskType::Software => "software",
+        };
+        project.root().join(format!("risks/{}/{}.tdt.yaml", risk_type, risk.id))
     };
-    let file_path = project
-        .root()
-        .join(format!("risks/{}/{}.tdt.yaml", risk_type, risk.id));
 
     if !file_path.exists() {
         return Err(miette::miette!("File not found: {}", file_path.display()));
@@ -1237,179 +1059,42 @@ fn run_edit(args: EditArgs) -> Result<()> {
     Ok(())
 }
 
-/// Find a risk by ID prefix match or short ID (@N)
-fn find_risk(project: &Project, id_query: &str) -> Result<Risk> {
-    use tdt_core::core::cache::EntityCache;
-
-    // Try cache-based lookup first (O(1) via SQLite)
-    if let Ok(cache) = EntityCache::open(project) {
-        // Resolve short ID if needed
-        let full_id = if id_query.contains('@') {
-            cache.resolve_short_id(id_query)
-        } else {
-            None
-        };
-
-        let lookup_id = full_id.as_deref().unwrap_or(id_query);
-
-        // Try exact match via cache
-        if let Some(entity) = cache.get_entity(lookup_id) {
-            if entity.prefix == "RISK" {
-                if let Ok(risk) = tdt_core::yaml::parse_yaml_file::<Risk>(&entity.file_path) {
-                    return Ok(risk);
-                }
-            }
-        }
-
-        // Try prefix match via cache
-        if lookup_id.starts_with("RISK-") {
-            let filter = tdt_core::core::EntityFilter {
-                prefix: Some(tdt_core::core::EntityPrefix::Risk),
-                search: Some(lookup_id.to_string()),
-                ..Default::default()
-            };
-            let matches: Vec<_> = cache.list_entities(&filter);
-            if matches.len() == 1 {
-                if let Ok(risk) = tdt_core::yaml::parse_yaml_file::<Risk>(&matches[0].file_path) {
-                    return Ok(risk);
-                }
-            } else if matches.len() > 1 {
-                println!("{} Multiple matches found:", style("!").yellow());
-                for entity in &matches {
-                    let short_id = cache
-                        .get_short_id(&entity.id)
-                        .unwrap_or_else(|| entity.id.clone());
-                    println!("  {} - {}", short_id, entity.title);
-                }
-                return Err(miette::miette!(
-                    "Ambiguous query '{}'. Please be more specific.",
-                    id_query
-                ));
-            }
-        }
-    }
-
-    // Fallback: filesystem search (for title matches or if cache unavailable)
-    let short_ids = ShortIdIndex::load(project);
-    let resolved_query = short_ids
-        .resolve(id_query)
-        .unwrap_or_else(|| id_query.to_string());
-
-    let mut matches: Vec<(Risk, std::path::PathBuf)> = Vec::new();
-
-    // Search both design and process directories
-    for subdir in &["design", "process"] {
-        let dir = project.root().join(format!("risks/{}", subdir));
-        if !dir.exists() {
-            continue;
-        }
-
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(risk) = tdt_core::yaml::parse_yaml_file::<Risk>(entry.path()) {
-                // Check if ID matches (prefix or full) or title fuzzy matches
-                let id_str = risk.id.to_string();
-                let id_matches = id_str.starts_with(&resolved_query) || id_str == resolved_query;
-                let title_matches = !id_query.starts_with('@')
-                    && !id_query.chars().all(|c| c.is_ascii_digit())
-                    && risk
-                        .title
-                        .to_lowercase()
-                        .contains(&resolved_query.to_lowercase());
-
-                if id_matches || title_matches {
-                    matches.push((risk, entry.path().to_path_buf()));
-                }
-            }
-        }
-    }
-
-    match matches.len() {
-        0 => Err(miette::miette!("No risk found matching '{}'", id_query)),
-        1 => Ok(matches.remove(0).0),
-        _ => {
-            println!("{} Multiple matches found:", style("!").yellow());
-            for (risk, _path) in &matches {
-                println!("  {} - {}", format_short_id(&risk.id), risk.title);
-            }
-            Err(miette::miette!(
-                "Ambiguous query '{}'. Please be more specific.",
-                id_query
-            ))
-        }
-    }
-}
-
 fn run_summary(args: SummaryArgs, global: &GlobalOpts) -> Result<()> {
     use tdt_core::entities::risk::MitigationStatus;
 
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
-    // Collect all risks
-    let mut risks: Vec<Risk> = Vec::new();
-
-    for subdir in RISK_DIRS {
-        let dir = project.root().join(subdir);
-        if !dir.exists() {
-            continue;
-        }
-
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(risk) = tdt_core::yaml::parse_yaml_file::<Risk>(entry.path()) {
-                risks.push(risk);
-            }
-        }
-    }
+    // Use service to get stats and load all risks
+    let service = RiskService::new(&project, &cache);
+    let stats = service.stats().map_err(|e| miette::miette!("{}", e))?;
+    let risks = service.load_all().map_err(|e| miette::miette!("{}", e))?;
 
     if risks.is_empty() {
         println!("{}", style("No risks found in project.").yellow());
         return Ok(());
     }
 
-    // Calculate metrics
-    let total = risks.len();
+    // Use stats from service
+    let total = stats.total;
+    let avg_rpn = stats.rpn_stats.avg;
+    let max_rpn = stats.rpn_stats.max;
+    let min_rpn = stats.rpn_stats.min;
+    let unmitigated = stats.unmitigated;
 
-    // Count by level (using effective level - either explicit or calculated from RPN)
+    // Build level counts from service stats
     let mut by_level: std::collections::HashMap<RiskLevel, usize> =
         std::collections::HashMap::new();
-    for risk in &risks {
-        let level = risk
-            .risk_level
-            .or_else(|| risk.determine_risk_level())
-            .unwrap_or(RiskLevel::Medium);
-        *by_level.entry(level).or_insert(0) += 1;
-    }
+    by_level.insert(RiskLevel::Critical, stats.by_level.critical);
+    by_level.insert(RiskLevel::High, stats.by_level.high);
+    by_level.insert(RiskLevel::Medium, stats.by_level.medium);
+    by_level.insert(RiskLevel::Low, stats.by_level.low);
 
-    // Count by type
+    // Build type counts from service stats
     let mut by_type: std::collections::HashMap<RiskType, usize> = std::collections::HashMap::new();
-    for risk in &risks {
-        *by_type.entry(risk.risk_type).or_insert(0) += 1;
-    }
-
-    // Calculate RPN statistics (only for risks that have RPN values)
-    let rpns: Vec<u16> = risks.iter().filter_map(|r| r.calculate_rpn()).collect();
-
-    let (avg_rpn, max_rpn, min_rpn) = if rpns.is_empty() {
-        (0.0, 0u16, 0u16)
-    } else {
-        let avg = rpns.iter().map(|&r| r as f64).sum::<f64>() / rpns.len() as f64;
-        let max = *rpns.iter().max().unwrap_or(&0);
-        let min = *rpns.iter().min().unwrap_or(&0);
-        (avg, max, min)
-    };
-
-    // Count unmitigated
-    let unmitigated = risks.iter().filter(|r| r.mitigations.is_empty()).count();
+    by_type.insert(RiskType::Design, stats.by_type.design);
+    by_type.insert(RiskType::Process, stats.by_type.process);
 
     // Count with open mitigations (not all verified)
     let open_mitigations = risks
@@ -1449,7 +1134,7 @@ fn run_summary(args: SummaryArgs, global: &GlobalOpts) -> Result<()> {
                     "average": avg_rpn,
                     "max": max_rpn,
                     "min": min_rpn,
-                    "risks_with_rpn": rpns.len(),
+                    "risks_with_rpn": stats.rpn_stats.count,
                 },
                 "unmitigated": unmitigated,
                 "open_mitigations": open_mitigations,
@@ -1475,7 +1160,7 @@ fn run_summary(args: SummaryArgs, global: &GlobalOpts) -> Result<()> {
 
             // Overview section
             println!("{:<20} {}", style("Total Risks:").bold(), total);
-            if !rpns.is_empty() {
+            if stats.rpn_stats.count > 0 {
                 println!("{:<20} {:.1}", style("Average RPN:").bold(), avg_rpn);
                 println!(
                     "{:<20} {} (max: {})",

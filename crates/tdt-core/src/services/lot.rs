@@ -13,7 +13,7 @@ use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
 use crate::entities::lot::{
-    ExecutionStatus, ExecutionStep, Lot, LotLinks, LotStatus, MaterialUsed, WorkInstructionRef,
+    ExecutionStatus, ExecutionStep, Lot, LotStatus, MaterialUsed, WorkInstructionRef,
 };
 use crate::services::base::ServiceBase;
 use crate::services::common::{

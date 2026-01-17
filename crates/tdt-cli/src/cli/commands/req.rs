@@ -3,23 +3,24 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::filters::StatusFilter;
-use crate::cli::helpers::{format_short_id, resolve_id_arg};
+use crate::cli::helpers::resolve_id_arg;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::entity::Priority;
+use tdt_core::core::entity::{Priority, Status};
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::requirement::{Level, Requirement, RequirementType};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::RequirementService;
+use tdt_core::services::{
+    CommonFilter, CreateRequirement, RequirementFilter, RequirementService, RequirementSortField,
+    SortDirection,
+};
 
 /// CLI-friendly requirement type enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -443,107 +444,113 @@ pub fn run(cmd: ReqCommands, global: &GlobalOpts) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = RequirementService::new(&project, &cache);
 
-    // Determine if we need full entity loading (for complex filters or full output)
+    // Build filter and sort from CLI args
+    let filter = build_req_filter(&args);
+    let (sort_field, sort_dir) = build_req_sort(&args);
+
+    // Determine output format
     let output_format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
     };
+
+    // Determine if we need full entities or can use cached data
     let needs_full_output = matches!(output_format, OutputFormat::Json | OutputFormat::Yaml);
-    let needs_complex_filters = args.search.is_some()  // search in text field
-        || args.orphans
-        || args.unverified
-        || args.untested
-        || args.failed
-        || args.passing
-        || !matches!(args.level, LevelFilter::All); // level not in cache yet
-    let needs_full_entities = needs_full_output || needs_complex_filters;
+    let needs_test_result_filters = args.untested || args.failed || args.passing;
+    let needs_full_entities = needs_full_output || needs_test_result_filters;
 
-    // Pre-load test results if we need verification status filters
-    let results: Vec<tdt_core::entities::result::Result> =
-        if args.untested || args.failed || args.passing {
-            load_all_results(&project)
-        } else {
-            Vec::new()
-        };
+    if needs_full_entities {
+        // Load full entities via service
+        let result = service
+            .list(&filter, sort_field, sort_dir)
+            .map_err(|e| miette::miette!("{}", e))?;
 
-    // Pre-compute HashSets for O(1) lookups instead of O(n) iterations
-    // This changes O(n*m) filter to O(n+m) where n=requirements, m=results
-    use std::collections::HashSet;
-    let tested_test_ids: HashSet<&tdt_core::core::identity::EntityId> =
-        results.iter().map(|r| &r.test_id).collect();
-    let failed_test_ids: HashSet<&tdt_core::core::identity::EntityId> = results
-        .iter()
-        .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Fail)
-        .map(|r| &r.test_id)
-        .collect();
-    let passing_test_ids: HashSet<&tdt_core::core::identity::EntityId> = results
-        .iter()
-        .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Pass)
-        .map(|r| &r.test_id)
-        .collect();
+        let mut reqs = result.items;
 
-    // Fast path: use cache directly for simple list outputs without complex filters
-    if !needs_full_entities {
-        let cache = EntityCache::open(&project)?;
+        // Apply test-result based filters (require cross-entity queries)
+        if needs_test_result_filters {
+            let results = load_all_results(&project);
 
-        // Convert filters to cache-compatible format
-        let status_filter = crate::cli::entity_cmd::status_filter_to_str(args.status);
+            // Pre-compute HashSets for O(1) lookups
+            use std::collections::HashSet;
+            let tested_test_ids: HashSet<&EntityId> = results.iter().map(|r| &r.test_id).collect();
+            let failed_test_ids: HashSet<&EntityId> = results
+                .iter()
+                .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Fail)
+                .map(|r| &r.test_id)
+                .collect();
+            let passing_test_ids: HashSet<&EntityId> = results
+                .iter()
+                .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Pass)
+                .map(|r| &r.test_id)
+                .collect();
 
-        let priority_filter = match args.priority {
-            PriorityFilter::Low => Some("low"),
-            PriorityFilter::Medium => Some("medium"),
-            PriorityFilter::High => Some("high"),
-            PriorityFilter::Critical => Some("critical"),
-            PriorityFilter::Urgent | PriorityFilter::All => None,
-        };
+            reqs.retain(|req| {
+                let test_ids = &req.links.verified_by;
 
-        let type_filter = match args.r#type {
-            ReqTypeFilter::Input => Some("input"),
-            ReqTypeFilter::Output => Some("output"),
-            ReqTypeFilter::All => None,
-        };
+                let untested_match = if args.untested {
+                    !test_ids.is_empty()
+                        && !test_ids.iter().any(|tid| tested_test_ids.contains(tid))
+                } else {
+                    true
+                };
 
-        // Query cache with basic filters
-        let mut cached_reqs = cache.list_requirements(
-            status_filter,
-            priority_filter,
-            type_filter,
-            args.category.as_deref(),
-            args.author.as_deref(),
-            None, // No search
-            None, // No limit yet
-        );
+                let failed_match = if args.failed {
+                    test_ids.iter().any(|tid| failed_test_ids.contains(tid))
+                } else {
+                    true
+                };
 
-        // Apply post-filters for Active status and Urgent priority
-        use tdt_core::core::entity::{Priority, Status};
-        cached_reqs.retain(|r| {
-            let status_match = match args.status {
-                StatusFilter::Active => r.status != Status::Obsolete,
-                _ => true,
-            };
-            let priority_match = match args.priority {
-                PriorityFilter::Urgent => {
-                    r.priority == Some(Priority::High) || r.priority == Some(Priority::Critical)
+                let passing_match = if args.passing {
+                    !test_ids.is_empty()
+                        && test_ids.iter().all(|tid| passing_test_ids.contains(tid))
+                } else {
+                    true
+                };
+
+                untested_match && failed_match && passing_match
+            });
+        }
+
+        // Handle count-only mode
+        if args.count {
+            println!("{}", reqs.len());
+            return Ok(());
+        }
+
+        if reqs.is_empty() {
+            match global.output {
+                OutputFormat::Json => println!("[]"),
+                OutputFormat::Yaml => println!("[]"),
+                _ => {
+                    println!("No requirements found matching filters.");
+                    println!();
+                    println!("Create one with: {}", style("tdt req new").yellow());
                 }
-                _ => true,
-            };
-            let tag_match = args.tag.as_ref().is_none_or(|tag| {
-                r.tags
-                    .iter()
-                    .any(|t| t.to_lowercase() == tag.to_lowercase())
-            });
-            let recent_match = args.recent.is_none_or(|days| {
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-                r.created >= cutoff
-            });
-            let needs_review_match = if args.needs_review {
-                r.status == Status::Draft || r.status == Status::Review
-            } else {
-                true
-            };
-            status_match && priority_match && tag_match && recent_match && needs_review_match
-        });
+            }
+            return Ok(());
+        }
+
+        // Update short ID index
+        let mut short_ids = ShortIdIndex::load(&project);
+        short_ids.ensure_all(reqs.iter().map(|r| r.id.to_string()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        // Output based on format
+        output_requirements(&reqs, &short_ids, &args, output_format)
+    } else {
+        // Fast path: use cached data via service
+        let result = service
+            .list_cached(&filter)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        let mut cached_reqs = result.items;
+
+        // Sort cached results (service sorts full entities, but list_cached doesn't sort)
+        sort_cached_requirements(&mut cached_reqs, &args);
 
         // Handle count-only mode
         if args.count {
@@ -558,314 +565,152 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             return Ok(());
         }
 
-        // Sort
-        match args.sort {
-            ListColumn::Id => cached_reqs.sort_by(|a, b| a.id.cmp(&b.id)),
-            ListColumn::Type => cached_reqs.sort_by(|a, b| a.req_type.cmp(&b.req_type)),
-            ListColumn::Level => {} // Level not in cache, uses full entity path when filtered
-            ListColumn::Title => cached_reqs.sort_by(|a, b| a.title.cmp(&b.title)),
-            ListColumn::Status => cached_reqs.sort_by(|a, b| a.status.cmp(&b.status)),
-            ListColumn::Priority => {
-                let priority_order = |p: Option<Priority>| match p {
-                    Some(Priority::Critical) => 0,
-                    Some(Priority::High) => 1,
-                    Some(Priority::Medium) => 2,
-                    Some(Priority::Low) => 3,
-                    None => 4,
-                };
-                cached_reqs
-                    .sort_by(|a, b| priority_order(a.priority).cmp(&priority_order(b.priority)));
-            }
-            ListColumn::Category => cached_reqs.sort_by(|a, b| a.category.cmp(&b.category)),
-            ListColumn::Author => cached_reqs.sort_by(|a, b| a.author.cmp(&b.author)),
-            ListColumn::Created => cached_reqs.sort_by(|a, b| a.created.cmp(&b.created)),
-            ListColumn::Tags => cached_reqs.sort_by(|a, b| a.tags.join(",").cmp(&b.tags.join(","))),
-        }
-
-        if args.reverse {
-            cached_reqs.reverse();
-        }
-
-        if let Some(limit) = args.limit {
-            cached_reqs.truncate(limit);
-        }
-
         // Update short ID index
         let mut short_ids = ShortIdIndex::load(&project);
         short_ids.ensure_all(cached_reqs.iter().map(|r| r.id.clone()));
         super::utils::save_short_ids(&mut short_ids, &project);
 
-        // Output from cached data (no YAML parsing needed!)
-        return output_cached_requirements(&cached_reqs, &short_ids, &args, output_format);
+        output_cached_requirements(&cached_reqs, &short_ids, &args, output_format)
     }
+}
 
-    // Slow path: full entity loading for complex filters or JSON/YAML output
-    let mut reqs: Vec<Requirement> = Vec::new();
+/// Build RequirementFilter from CLI args
+fn build_req_filter(args: &ListArgs) -> RequirementFilter {
+    // Convert status filter
+    let status = match args.status {
+        StatusFilter::Draft => Some(vec![Status::Draft]),
+        StatusFilter::Review => Some(vec![Status::Review]),
+        StatusFilter::Approved => Some(vec![Status::Approved]),
+        StatusFilter::Released => Some(vec![Status::Released]),
+        StatusFilter::Obsolete => Some(vec![Status::Obsolete]),
+        StatusFilter::Active => None, // Active = not Obsolete, handled by service
+        StatusFilter::All => None,
+    };
 
-    for path in project.iter_entity_files(EntityPrefix::Req) {
-        match tdt_core::yaml::parse_yaml_file::<Requirement>(&path) {
-            Ok(req) => reqs.push(req),
-            Err(e) => {
-                eprintln!(
-                    "{} Failed to parse {}: {}",
-                    style("!").yellow(),
-                    path.display(),
-                    e
-                );
-            }
+    // Convert priority filter
+    let priority = match args.priority {
+        PriorityFilter::Low => Some(vec![Priority::Low]),
+        PriorityFilter::Medium => Some(vec![Priority::Medium]),
+        PriorityFilter::High => Some(vec![Priority::High]),
+        PriorityFilter::Critical => Some(vec![Priority::Critical]),
+        PriorityFilter::Urgent => Some(vec![Priority::High, Priority::Critical]),
+        PriorityFilter::All => None,
+    };
+
+    // Convert type filter
+    let req_type = match args.r#type {
+        ReqTypeFilter::Input => Some(RequirementType::Input),
+        ReqTypeFilter::Output => Some(RequirementType::Output),
+        ReqTypeFilter::All => None,
+    };
+
+    // Convert level filter
+    let level = match args.level {
+        LevelFilter::Stakeholder => Some(Level::Stakeholder),
+        LevelFilter::System => Some(Level::System),
+        LevelFilter::Subsystem => Some(Level::Subsystem),
+        LevelFilter::Component => Some(Level::Component),
+        LevelFilter::Detail => Some(Level::Detail),
+        LevelFilter::All => None,
+    };
+
+    RequirementFilter {
+        common: CommonFilter {
+            status,
+            priority,
+            author: args.author.clone(),
+            tags: args.tag.clone().map(|t| vec![t]),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        req_type,
+        level,
+        category: args.category.clone(),
+        orphans_only: args.orphans,
+        needs_review: args.needs_review,
+        unverified_only: args.unverified,
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_req_sort(args: &ListArgs) -> (RequirementSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => RequirementSortField::Id,
+        ListColumn::Type => RequirementSortField::Type,
+        ListColumn::Level => RequirementSortField::Level,
+        ListColumn::Title => RequirementSortField::Title,
+        ListColumn::Status => RequirementSortField::Status,
+        ListColumn::Priority => RequirementSortField::Priority,
+        ListColumn::Category => RequirementSortField::Category,
+        ListColumn::Author => RequirementSortField::Author,
+        ListColumn::Created => RequirementSortField::Created,
+        ListColumn::Tags => RequirementSortField::Title, // Tags sort not supported, fallback to title
+    };
+
+    let direction = if args.reverse {
+        // Reverse the default direction
+        match field {
+            RequirementSortField::Created => SortDirection::Ascending,
+            RequirementSortField::Priority => SortDirection::Ascending,
+            _ => SortDirection::Descending,
         }
-    }
-
-    // Also check outputs directory
-    let outputs_dir = project.root().join("requirements/outputs");
-    if outputs_dir.exists() {
-        for entry in walkdir::WalkDir::new(&outputs_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            match tdt_core::yaml::parse_yaml_file::<Requirement>(entry.path()) {
-                Ok(req) => reqs.push(req),
-                Err(e) => {
-                    eprintln!(
-                        "{} Failed to parse {}: {}",
-                        style("!").yellow(),
-                        entry.path().display(),
-                        e
-                    );
-                }
-            }
+    } else {
+        // Default direction: newest/highest priority first for dates/priority, ascending for others
+        match field {
+            RequirementSortField::Created => SortDirection::Descending,
+            RequirementSortField::Priority => SortDirection::Descending,
+            _ => SortDirection::Ascending,
         }
-    }
+    };
 
-    // Apply filters that need full entity data
-    reqs.retain(|req| {
-        // Type filter (for full entity mode)
-        let type_match = match args.r#type {
-            ReqTypeFilter::Input => req.req_type == RequirementType::Input,
-            ReqTypeFilter::Output => req.req_type == RequirementType::Output,
-            ReqTypeFilter::All => true,
-        };
+    (field, direction)
+}
 
-        // Level filter (V-model hierarchy)
-        let level_match = match args.level {
-            LevelFilter::Stakeholder => req.level == Level::Stakeholder,
-            LevelFilter::System => req.level == Level::System,
-            LevelFilter::Subsystem => req.level == Level::Subsystem,
-            LevelFilter::Component => req.level == Level::Component,
-            LevelFilter::Detail => req.level == Level::Detail,
-            LevelFilter::All => true,
-        };
-
-        // Status filter (for full entity mode and Active filter)
-        let status_match =
-            crate::cli::entity_cmd::status_enum_matches_filter(&req.status, args.status);
-
-        // Priority filter (for full entity mode and Urgent filter)
-        let priority_match = match args.priority {
-            PriorityFilter::Low => req.priority == Priority::Low,
-            PriorityFilter::Medium => req.priority == Priority::Medium,
-            PriorityFilter::High => req.priority == Priority::High,
-            PriorityFilter::Critical => req.priority == Priority::Critical,
-            PriorityFilter::Urgent => {
-                req.priority == Priority::High || req.priority == Priority::Critical
-            }
-            PriorityFilter::All => true,
-        };
-
-        // Category filter (for full entity mode)
-        let category_match = args.category.as_ref().is_none_or(|cat| {
-            req.category
-                .as_ref()
-                .is_some_and(|c| c.to_lowercase() == cat.to_lowercase())
-        });
-
-        // Tag filter
-        let tag_match = args.tag.as_ref().is_none_or(|tag| {
-            req.tags
-                .iter()
-                .any(|t| t.to_lowercase() == tag.to_lowercase())
-        });
-
-        // Author filter (for full entity mode)
-        let author_match = args
-            .author
-            .as_ref()
-            .is_none_or(|author| req.author.to_lowercase().contains(&author.to_lowercase()));
-
-        // Search filter (in title and text)
-        let search_match = args.search.as_ref().is_none_or(|search| {
-            let search_lower = search.to_lowercase();
-            req.title.to_lowercase().contains(&search_lower)
-                || req.text.to_lowercase().contains(&search_lower)
-        });
-
-        // Orphans filter (no satisfied_by or verified_by links)
-        let orphans_match = if args.orphans {
-            req.links.satisfied_by.is_empty() && req.links.verified_by.is_empty()
-        } else {
-            true
-        };
-
-        // Needs review filter (status is draft or review)
-        let needs_review_match = if args.needs_review {
-            req.status == tdt_core::core::entity::Status::Draft
-                || req.status == tdt_core::core::entity::Status::Review
-        } else {
-            true
-        };
-
-        // Recent filter (created in last N days)
-        let recent_match = args.recent.is_none_or(|days| {
-            let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-            req.created >= cutoff
-        });
-
-        // Unverified filter (no verified_by links)
-        let unverified_match = if args.unverified {
-            req.links.verified_by.is_empty()
-        } else {
-            true
-        };
-
-        // For untested/failed/passing, use pre-computed HashSets for O(1) lookups
-        let test_ids = &req.links.verified_by;
-
-        // Untested: has tests linked but no results for those tests
-        let untested_match = if args.untested {
-            if test_ids.is_empty() {
-                false // No tests linked, not "untested" - it's unverified
-            } else {
-                // Check if any linked test has a result (O(1) per test)
-                !test_ids.iter().any(|tid| tested_test_ids.contains(tid))
-            }
-        } else {
-            true
-        };
-
-        // Failed: has test results with verdict=fail (O(1) per test)
-        let failed_match = if args.failed {
-            test_ids.iter().any(|tid| failed_test_ids.contains(tid))
-        } else {
-            true
-        };
-
-        // Passing: all linked tests have results with pass verdict (O(1) per test)
-        let passing_match = if args.passing {
-            if test_ids.is_empty() {
-                false // No tests = can't be passing
-            } else {
-                test_ids.iter().all(|tid| passing_test_ids.contains(tid))
-            }
-        } else {
-            true
-        };
-
-        type_match
-            && level_match
-            && status_match
-            && priority_match
-            && category_match
-            && tag_match
-            && author_match
-            && search_match
-            && orphans_match
-            && needs_review_match
-            && recent_match
-            && unverified_match
-            && untested_match
-            && failed_match
-            && passing_match
-    });
-
-    // Handle count-only mode
-    if args.count {
-        println!("{}", reqs.len());
-        return Ok(());
-    }
-
-    if reqs.is_empty() {
-        match global.output {
-            OutputFormat::Json => println!("[]"),
-            OutputFormat::Yaml => println!("[]"),
-            _ => {
-                println!("No requirements found matching filters.");
-                println!();
-                println!("Create one with: {}", style("tdt req new").yellow());
-            }
-        }
-        return Ok(());
-    }
-
-    // Sort by specified column
+/// Sort cached requirements based on CLI args
+fn sort_cached_requirements(reqs: &mut [tdt_core::core::CachedRequirement], args: &ListArgs) {
     match args.sort {
-        ListColumn::Id => reqs.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Type => {
-            reqs.sort_by(|a, b| a.req_type.to_string().cmp(&b.req_type.to_string()))
-        }
-        ListColumn::Level => {
-            // Sort by V-model level (stakeholder > system > subsystem > component > detail)
-            let level_order = |l: &Level| match l {
-                Level::Stakeholder => 0,
-                Level::System => 1,
-                Level::Subsystem => 2,
-                Level::Component => 3,
-                Level::Detail => 4,
-            };
-            reqs.sort_by(|a, b| level_order(&a.level).cmp(&level_order(&b.level)));
-        }
+        ListColumn::Id => reqs.sort_by(|a, b| a.id.cmp(&b.id)),
+        ListColumn::Type => reqs.sort_by(|a, b| a.req_type.cmp(&b.req_type)),
+        ListColumn::Level => reqs.sort_by(|a, b| a.level.cmp(&b.level)),
         ListColumn::Title => reqs.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::Status => reqs.sort_by(|a, b| a.status.to_string().cmp(&b.status.to_string())),
+        ListColumn::Status => reqs.sort_by(|a, b| a.status.cmp(&b.status)),
         ListColumn::Priority => {
-            // Sort by priority level (critical > high > medium > low)
-            let priority_order = |p: &Priority| match p {
-                Priority::Critical => 0,
-                Priority::High => 1,
-                Priority::Medium => 2,
-                Priority::Low => 3,
+            let priority_order = |p: Option<Priority>| match p {
+                Some(Priority::Critical) => 0,
+                Some(Priority::High) => 1,
+                Some(Priority::Medium) => 2,
+                Some(Priority::Low) => 3,
+                None => 4,
             };
-            reqs.sort_by(|a, b| priority_order(&a.priority).cmp(&priority_order(&b.priority)));
+            reqs.sort_by(|a, b| priority_order(a.priority).cmp(&priority_order(b.priority)));
         }
-        ListColumn::Category => reqs.sort_by(|a, b| {
-            a.category
-                .as_deref()
-                .unwrap_or("")
-                .cmp(b.category.as_deref().unwrap_or(""))
-        }),
+        ListColumn::Category => reqs.sort_by(|a, b| a.category.cmp(&b.category)),
         ListColumn::Author => reqs.sort_by(|a, b| a.author.cmp(&b.author)),
         ListColumn::Created => reqs.sort_by(|a, b| a.created.cmp(&b.created)),
         ListColumn::Tags => reqs.sort_by(|a, b| a.tags.join(",").cmp(&b.tags.join(","))),
     }
 
-    // Reverse if requested
     if args.reverse {
         reqs.reverse();
     }
+}
 
-    // Apply limit
-    if let Some(limit) = args.limit {
-        reqs.truncate(limit);
-    }
-
-    // Update short ID index with current requirements (preserves other entity types)
-    let mut short_ids = ShortIdIndex::load(&project);
-    short_ids.ensure_all(reqs.iter().map(|r| r.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
-    // Output based on format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv, // Default to TSV for list
-        f => f,
-    };
-
+/// Output full requirements
+fn output_requirements(
+    reqs: &[Requirement],
+    short_ids: &ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+) -> Result<()> {
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&reqs).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(reqs).into_diagnostic()?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&reqs).into_diagnostic()?;
+            let yaml = serde_yml::to_string(reqs).into_diagnostic()?;
             print!("{}", yaml);
         }
         OutputFormat::Tsv
@@ -889,7 +734,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             // Convert to TableRows
             let rows: Vec<TableRow> = reqs
                 .iter()
-                .map(|req| requirement_to_row(req, &short_ids))
+                .map(|req| requirement_to_row(req, short_ids))
                 .collect();
 
             // Configure table
@@ -903,7 +748,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 TableFormatter::new(REQ_COLUMNS, "requirement", "REQ").with_config(config);
             formatter.output(rows, format, &visible);
         }
-        OutputFormat::Auto | OutputFormat::Path => unreachable!(), // Already handled above
+        OutputFormat::Auto | OutputFormat::Path => unreachable!(),
     }
 
     Ok(())
@@ -992,6 +837,8 @@ fn cached_requirement_to_row(
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = RequirementService::new(&project, &cache);
     let config = Config::load();
 
     // Determine values - either from schema-driven wizard or args
@@ -1036,10 +883,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 })
                 .unwrap_or(Priority::Medium);
 
-            let category = result
-                .get_string("category")
-                .map(String::from)
-                .unwrap_or_default();
+            let category = result.get_string("category").map(String::from);
 
             let tags: Vec<String> = result
                 .values
@@ -1054,7 +898,10 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 .unwrap_or_default();
 
             // Extract text fields from wizard
-            let text = result.get_string("text").map(String::from);
+            let text = result
+                .get_string("text")
+                .map(String::from)
+                .unwrap_or_default();
             let rationale = result.get_string("rationale").map(String::from);
             let acceptance_criteria: Vec<String> = result
                 .values
@@ -1085,7 +932,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             let level: Level = args.level.into();
             let title = args.title.unwrap_or_else(|| "New Requirement".to_string());
             let priority: Priority = args.priority.into();
-            let category = args.category.unwrap_or_default();
+            let category = args.category;
             let tags = args.tags;
 
             (
@@ -1095,80 +942,39 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 priority,
                 category,
                 tags,
-                None,
+                String::new(), // Default empty text
                 None,
                 vec![],
             )
         };
 
-    // Generate entity ID and create from template
-    let id = EntityId::new(EntityPrefix::Req);
-    let author = config.author();
+    // Create requirement using service
+    let input = CreateRequirement {
+        req_type,
+        title: title.clone(),
+        text,
+        author: config.author(),
+        level,
+        priority,
+        category,
+        tags,
+        rationale,
+        acceptance_criteria,
+        source: None,
+    };
 
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), author)
-        .with_title(&title)
-        .with_req_type(req_type.to_string())
-        .with_level(level.to_string())
-        .with_priority(priority.to_string())
-        .with_category(&category);
-
-    if !tags.is_empty() {
-        ctx = ctx.with_tags(tags);
-    }
-
-    let mut yaml_content = generator
-        .generate_requirement(&ctx)
+    let requirement = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Apply wizard text values via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref text_value) = text {
-            if !text_value.is_empty() {
-                // Indent multi-line text for YAML block scalar
-                let indented_text = text_value
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                // Replace the template's placeholder text block
-                yaml_content = yaml_content.replace(
-                    "text: |\n  # Enter requirement text here\n  # Use clear, testable language:\n  #   - \"shall\" for mandatory requirements\n  #   - \"should\" for recommended requirements\n  #   - \"may\" for optional requirements",
-                    &format!("text: |\n{}", indented_text),
-                );
-            }
-        }
-        if let Some(ref rationale_value) = rationale {
-            if !rationale_value.is_empty() {
-                yaml_content = yaml_content.replace(
-                    "rationale: \"\"",
-                    &format!("rationale: \"{}\"", rationale_value),
-                );
-            }
-        }
-        if !acceptance_criteria.is_empty() {
-            let criteria_yaml = acceptance_criteria
-                .iter()
-                .map(|c| format!("  - \"{}\"", c))
-                .collect::<Vec<_>>()
-                .join("\n");
-            yaml_content = yaml_content.replace(
-                "acceptance_criteria:\n  - \"\"",
-                &format!("acceptance_criteria:\n{}", criteria_yaml),
-            );
-        }
-    }
-
     // Determine output directory based on type
-    let output_dir = project.requirement_directory(&req_type.to_string());
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-
-    // Write file
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project
+        .requirement_directory(&requirement.req_type.to_string())
+        .join(format!("{}.tdt.yaml", requirement.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(requirement.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -1181,11 +987,11 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
     // Output based on format flag
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &requirement.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,
-        &title,
+        &requirement.title,
         None,
         &added_links,
         global,
@@ -1367,119 +1173,6 @@ fn run_edit(args: EditArgs) -> Result<()> {
     // Resolve ID from argument or stdin
     let id = resolve_id_arg(&args.id).map_err(|e| miette::miette!("{}", e))?;
     crate::cli::entity_cmd::run_edit_generic(&id, &ENTITY_CONFIG)
-}
-
-/// Find a requirement by ID prefix match or short ID (@N)
-fn find_requirement(project: &Project, id_query: &str) -> Result<Requirement> {
-    use tdt_core::core::cache::EntityCache;
-
-    // Try cache-based lookup first (O(1) via SQLite)
-    if let Ok(cache) = EntityCache::open(project) {
-        // Resolve short ID if needed
-        let full_id = if id_query.contains('@') {
-            cache.resolve_short_id(id_query)
-        } else {
-            None
-        };
-
-        let lookup_id = full_id.as_deref().unwrap_or(id_query);
-
-        // Try exact match via cache
-        if let Some(entity) = cache.get_entity(lookup_id) {
-            if entity.prefix == "REQ" {
-                // Load full requirement from file
-                if let Ok(req) = tdt_core::yaml::parse_yaml_file::<Requirement>(&entity.file_path) {
-                    return Ok(req);
-                }
-            }
-        }
-
-        // Try prefix match via cache (e.g., "REQ-01KC" matches "REQ-01KC...")
-        if lookup_id.starts_with("REQ-") {
-            let filter = tdt_core::core::EntityFilter {
-                prefix: Some(tdt_core::core::EntityPrefix::Req),
-                search: Some(lookup_id.to_string()),
-                ..Default::default()
-            };
-            let matches: Vec<_> = cache.list_entities(&filter);
-            if matches.len() == 1 {
-                if let Ok(req) = tdt_core::yaml::parse_yaml_file::<Requirement>(&matches[0].file_path)
-                {
-                    return Ok(req);
-                }
-            } else if matches.len() > 1 {
-                println!("{} Multiple matches found:", style("!").yellow());
-                for entity in &matches {
-                    // entity.id is already the full ID string, get short ID from cache
-                    let short_id = cache
-                        .get_short_id(&entity.id)
-                        .unwrap_or_else(|| entity.id.clone());
-                    println!("  {} - {}", short_id, entity.title);
-                }
-                return Err(miette::miette!(
-                    "Ambiguous query '{}'. Please be more specific.",
-                    id_query
-                ));
-            }
-        }
-    }
-
-    // Fallback: filesystem search (for title matches or if cache unavailable)
-    let short_ids = ShortIdIndex::load(project);
-    let resolved_query = short_ids
-        .resolve(id_query)
-        .unwrap_or_else(|| id_query.to_string());
-
-    let mut matches: Vec<(Requirement, std::path::PathBuf)> = Vec::new();
-
-    // Search both inputs and outputs
-    for subdir in &["inputs", "outputs"] {
-        let dir = project.root().join(format!("requirements/{}", subdir));
-        if !dir.exists() {
-            continue;
-        }
-
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(req) = tdt_core::yaml::parse_yaml_file::<Requirement>(entry.path()) {
-                // Check if ID matches (prefix or full) or title fuzzy matches
-                let id_str = req.id.to_string();
-                let id_matches = id_str.starts_with(&resolved_query) || id_str == resolved_query;
-                let title_matches = !id_query.starts_with('@')
-                    && !id_query.chars().all(|c| c.is_ascii_digit())
-                    && req
-                        .title
-                        .to_lowercase()
-                        .contains(&resolved_query.to_lowercase());
-
-                if id_matches || title_matches {
-                    matches.push((req, entry.path().to_path_buf()));
-                }
-            }
-        }
-    }
-
-    match matches.len() {
-        0 => Err(miette::miette!(
-            "No requirement found matching '{}'",
-            id_query
-        )),
-        1 => Ok(matches.remove(0).0),
-        _ => {
-            println!("{} Multiple matches found:", style("!").yellow());
-            for (req, _path) in &matches {
-                println!("  {} - {}", format_short_id(&req.id), req.title);
-            }
-            Err(miette::miette!(
-                "Ambiguous query '{}'. Please be more specific.",
-                id_query
-            ))
-        }
-    }
 }
 
 /// Load all test results from the project

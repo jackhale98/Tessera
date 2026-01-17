@@ -12,15 +12,18 @@ use crate::cli::helpers::resolve_id_arg;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::entity::Status;
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::assembly::{Assembly, ManufacturingConfig};
 use tdt_core::entities::component::{Component, ComponentCategory, MakeBuy};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::ComponentService;
+use tdt_core::services::{
+    CommonFilter, ComponentFilter, ComponentService, ComponentSortField, CreateComponent,
+    QuoteService, SortDirection,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum CmpCommands {
@@ -413,67 +416,159 @@ pub fn run(cmd: CmpCommands, global: &GlobalOpts) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = ComponentService::new(&project, &cache);
 
-    // Determine if we need full entity loading (for complex filters or full output)
+    // Build filter and sort from CLI args
+    let filter = build_cmp_filter(&args);
+    let (sort_field, sort_dir) = build_cmp_sort(&args);
+
+    // Determine output format
     let output_format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
     };
+
+    // Determine if we need full entities (complex filters or full output)
     let needs_full_output = matches!(output_format, OutputFormat::Json | OutputFormat::Yaml);
-    let needs_complex_filters = args.search.is_some()  // search in description
-        || args.long_lead.is_some()  // needs supplier data
-        || args.single_source        // needs supplier data
-        || args.no_quote             // needs quote data
-        || args.high_cost.is_some()  // needs unit_cost
-        || args.assembly.is_some(); // needs assembly BOM traversal
-    let needs_full_entities = needs_full_output || needs_complex_filters;
+    let needs_special_filters = args.long_lead.is_some()
+        || args.single_source
+        || args.no_quote
+        || args.high_cost.is_some()
+        || args.assembly.is_some();
+    let needs_full_entities = needs_full_output || needs_special_filters;
 
-    // Pre-load quotes if needed for no_quote filter
-    let quotes: Vec<tdt_core::entities::quote::Quote> = if args.no_quote {
-        load_all_quotes(&project)
+    if needs_full_entities {
+        // Load full entities via service
+        let result = service
+            .list(&filter, sort_field, sort_dir)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        let mut components = result.items;
+
+        // Apply special filters that require full entity data
+        if needs_special_filters {
+            // Pre-load quotes if needed for no_quote filter
+            let quotes: Vec<tdt_core::entities::quote::Quote> = if args.no_quote {
+                load_all_quotes(&project)
+            } else {
+                Vec::new()
+            };
+
+            components.retain(|c| {
+                // Long lead time filter
+                let long_lead_match = args.long_lead.is_none_or(|threshold| {
+                    c.suppliers
+                        .iter()
+                        .any(|s| s.lead_time_days.is_some_and(|days| days > threshold))
+                });
+
+                // Single source filter
+                let single_source_match = !args.single_source || c.suppliers.len() == 1;
+
+                // No quote filter
+                let no_quote_match = if args.no_quote {
+                    let cid_str = c.id.to_string();
+                    !quotes
+                        .iter()
+                        .any(|q| q.component.as_ref() == Some(&cid_str))
+                } else {
+                    true
+                };
+
+                // High cost filter
+                let high_cost_match = args
+                    .high_cost
+                    .is_none_or(|threshold| c.unit_cost.is_some_and(|cost| cost > threshold));
+
+                long_lead_match && single_source_match && no_quote_match && high_cost_match
+            });
+
+            // Filter by parent assembly (components in BOM only)
+            if let Some(ref parent_asm) = args.assembly {
+                let short_ids_tmp = ShortIdIndex::load(&project);
+                let parent_id = short_ids_tmp
+                    .resolve(parent_asm)
+                    .unwrap_or_else(|| parent_asm.clone());
+
+                let assemblies = load_all_assemblies(&project);
+                let assembly_map: std::collections::HashMap<String, &Assembly> =
+                    assemblies.iter().map(|a| (a.id.to_string(), a)).collect();
+
+                if let Some(parent) = assembly_map.get(&parent_id) {
+                    let mut bom_component_ids: HashSet<String> = HashSet::new();
+                    let mut visited: HashSet<String> = HashSet::new();
+                    visited.insert(parent_id.clone());
+                    collect_bom_component_ids(
+                        parent,
+                        &assembly_map,
+                        &mut bom_component_ids,
+                        &mut visited,
+                    );
+                    components.retain(|c| bom_component_ids.contains(&c.id.to_string()));
+                } else {
+                    eprintln!(
+                        "Warning: Assembly '{}' not found, showing all components",
+                        parent_asm
+                    );
+                }
+            }
+        }
+
+        // Handle count-only mode
+        if args.count {
+            println!("{}", components.len());
+            return Ok(());
+        }
+
+        if components.is_empty() {
+            match global.output {
+                OutputFormat::Json => println!("[]"),
+                OutputFormat::Yaml => println!("[]"),
+                _ => println!("No components found."),
+            }
+            return Ok(());
+        }
+
+        // Update short ID index
+        let mut short_ids = ShortIdIndex::load(&project);
+        short_ids.ensure_all(components.iter().map(|c| c.id.to_string()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        // Output based on format
+        output_components(&components, &short_ids, &args, output_format)
     } else {
-        Vec::new()
-    };
-
-    // Fast path: use cache directly for simple list outputs
-    if !needs_full_entities {
-        let cache = EntityCache::open(&project)?;
-
-        // Convert filters to cache-compatible format
-        let status_filter = crate::cli::entity_cmd::status_filter_to_str(args.status);
-
-        let make_buy_filter = match args.make_buy {
-            MakeBuyFilter::Make => Some("make"),
-            MakeBuyFilter::Buy => Some("buy"),
-            MakeBuyFilter::All => None,
-        };
-
-        let category_filter = match args.category {
-            CategoryFilter::Mechanical => Some("mechanical"),
-            CategoryFilter::Electrical => Some("electrical"),
-            CategoryFilter::Software => Some("software"),
-            CategoryFilter::Fastener => Some("fastener"),
-            CategoryFilter::Consumable => Some("consumable"),
-            CategoryFilter::All => None,
-        };
-
-        // Query cache with basic filters
+        // Fast path: use cache for simple list outputs
         let mut cached_cmps = cache.list_components(
-            status_filter,
-            make_buy_filter,
-            category_filter,
+            crate::cli::entity_cmd::status_filter_to_str(args.status),
+            match args.make_buy {
+                MakeBuyFilter::Make => Some("make"),
+                MakeBuyFilter::Buy => Some("buy"),
+                MakeBuyFilter::All => None,
+            },
+            match args.category {
+                CategoryFilter::Mechanical => Some("mechanical"),
+                CategoryFilter::Electrical => Some("electrical"),
+                CategoryFilter::Software => Some("software"),
+                CategoryFilter::Fastener => Some("fastener"),
+                CategoryFilter::Consumable => Some("consumable"),
+                CategoryFilter::All => None,
+            },
             args.author.as_deref(),
-            None, // No search
-            None, // No limit yet
+            args.search.as_deref(),
+            None,
         );
 
-        // Apply post-filters
+        // Apply additional filters
         cached_cmps.retain(|c| {
             args.recent.is_none_or(|days| {
                 let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
                 c.created >= cutoff
             })
         });
+
+        // Sort cached results
+        sort_cached_components(&mut cached_cmps, &args);
 
         // Handle count-only mode
         if args.count {
@@ -486,233 +581,125 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             return Ok(());
         }
 
-        // Sort
-        match args.sort {
-            ListColumn::Id => cached_cmps.sort_by(|a, b| a.id.cmp(&b.id)),
-            ListColumn::PartNumber => cached_cmps.sort_by(|a, b| a.part_number.cmp(&b.part_number)),
-            ListColumn::Revision => cached_cmps.sort_by(|a, b| a.revision.cmp(&b.revision)),
-            ListColumn::Title => cached_cmps.sort_by(|a, b| a.title.cmp(&b.title)),
-            ListColumn::MakeBuy => cached_cmps.sort_by(|a, b| a.make_buy.cmp(&b.make_buy)),
-            ListColumn::Category => cached_cmps.sort_by(|a, b| a.category.cmp(&b.category)),
-            ListColumn::Status => cached_cmps.sort_by(|a, b| a.status.cmp(&b.status)),
-            ListColumn::Author => cached_cmps.sort_by(|a, b| a.author.cmp(&b.author)),
-            ListColumn::Created => cached_cmps.sort_by(|a, b| a.created.cmp(&b.created)),
-        }
-
-        if args.reverse {
-            cached_cmps.reverse();
-        }
-
-        if let Some(limit) = args.limit {
-            cached_cmps.truncate(limit);
-        }
-
         // Update short ID index
         let mut short_ids = ShortIdIndex::load(&project);
         short_ids.ensure_all(cached_cmps.iter().map(|c| c.id.clone()));
         super::utils::save_short_ids(&mut short_ids, &project);
 
-        // Output from cached data
-        return output_cached_components(&cached_cmps, &short_ids, &args, output_format);
+        output_cached_components(&cached_cmps, &short_ids, &args, output_format)
     }
+}
 
-    // Slow path: full entity loading
-    let cmp_dir = project.root().join("bom/components");
-
-    if !cmp_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No components found.");
-        }
-        return Ok(());
-    }
-
-    // Load and parse all components
-    let mut components: Vec<Component> = Vec::new();
-
-    for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(cmp) = serde_yml::from_str::<Component>(&content) {
-                components.push(cmp);
-            }
-        }
-    }
-
-    // Apply filters
-    let components: Vec<Component> = components
-        .into_iter()
-        .filter(|c| match args.make_buy {
-            MakeBuyFilter::Make => c.make_buy == MakeBuy::Make,
-            MakeBuyFilter::Buy => c.make_buy == MakeBuy::Buy,
-            MakeBuyFilter::All => true,
-        })
-        .filter(|c| match args.category {
-            CategoryFilter::Mechanical => c.category == ComponentCategory::Mechanical,
-            CategoryFilter::Electrical => c.category == ComponentCategory::Electrical,
-            CategoryFilter::Software => c.category == ComponentCategory::Software,
-            CategoryFilter::Fastener => c.category == ComponentCategory::Fastener,
-            CategoryFilter::Consumable => c.category == ComponentCategory::Consumable,
-            CategoryFilter::All => true,
-        })
-        .filter(|c| crate::cli::entity_cmd::status_enum_matches_filter(&c.status, args.status))
-        .filter(|c| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                c.part_number.to_lowercase().contains(&search_lower)
-                    || c.title.to_lowercase().contains(&search_lower)
-                    || c.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|c| {
-            args.author
-                .as_ref()
-                .is_none_or(|author| c.author.to_lowercase().contains(&author.to_lowercase()))
-        })
-        .filter(|c| {
-            args.recent.is_none_or(|days| {
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-                c.created >= cutoff
-            })
-        })
-        // Long lead time filter - check if any supplier has lead_time_days > threshold
-        .filter(|c| {
-            args.long_lead.is_none_or(|threshold| {
-                c.suppliers
-                    .iter()
-                    .any(|s| s.lead_time_days.is_some_and(|days| days > threshold))
-            })
-        })
-        // Single source filter - exactly one supplier
-        .filter(|c| {
-            if args.single_source {
-                c.suppliers.len() == 1
-            } else {
-                true
-            }
-        })
-        // No quote filter - component not referenced by any quote
-        .filter(|c| {
-            if args.no_quote {
-                let cid_str = c.id.to_string();
-                !quotes
-                    .iter()
-                    .any(|q| q.component.as_ref() == Some(&cid_str))
-            } else {
-                true
-            }
-        })
-        // High cost filter
-        .filter(|c| {
-            args.high_cost
-                .is_none_or(|threshold| c.unit_cost.is_some_and(|cost| cost > threshold))
-        })
-        .collect();
-
-    // Filter by parent assembly (components in BOM only)
-    let components = if let Some(ref parent_asm) = args.assembly {
-        let short_ids_tmp = ShortIdIndex::load(&project);
-        let parent_id = short_ids_tmp
-            .resolve(parent_asm)
-            .unwrap_or_else(|| parent_asm.clone());
-
-        // Load all assemblies for recursive BOM traversal
-        let assemblies = load_all_assemblies(&project);
-        let assembly_map: std::collections::HashMap<String, &Assembly> =
-            assemblies.iter().map(|a| (a.id.to_string(), a)).collect();
-
-        // Find the parent assembly
-        if let Some(parent) = assembly_map.get(&parent_id) {
-            // Collect all component IDs in the BOM recursively
-            let mut bom_component_ids: HashSet<String> = HashSet::new();
-            let mut visited: HashSet<String> = HashSet::new();
-            visited.insert(parent_id.clone());
-
-            collect_bom_component_ids(parent, &assembly_map, &mut bom_component_ids, &mut visited);
-
-            // Filter to only components in the BOM
-            components
-                .into_iter()
-                .filter(|c| bom_component_ids.contains(&c.id.to_string()))
-                .collect()
-        } else {
-            eprintln!(
-                "Warning: Assembly '{}' not found, showing all components",
-                parent_asm
-            );
-            components
-        }
-    } else {
-        components
+/// Build ComponentFilter from CLI args
+fn build_cmp_filter(args: &ListArgs) -> ComponentFilter {
+    // Convert status filter
+    let status = match args.status {
+        StatusFilter::Draft => Some(vec![Status::Draft]),
+        StatusFilter::Review => Some(vec![Status::Review]),
+        StatusFilter::Approved => Some(vec![Status::Approved]),
+        StatusFilter::Released => Some(vec![Status::Released]),
+        StatusFilter::Obsolete => Some(vec![Status::Obsolete]),
+        StatusFilter::Active | StatusFilter::All => None,
     };
 
-    // Sort
-    let mut components = components;
+    // Convert make/buy filter
+    let make_buy = match args.make_buy {
+        MakeBuyFilter::Make => Some(MakeBuy::Make),
+        MakeBuyFilter::Buy => Some(MakeBuy::Buy),
+        MakeBuyFilter::All => None,
+    };
+
+    // Convert category filter
+    let category = match args.category {
+        CategoryFilter::Mechanical => Some(ComponentCategory::Mechanical),
+        CategoryFilter::Electrical => Some(ComponentCategory::Electrical),
+        CategoryFilter::Software => Some(ComponentCategory::Software),
+        CategoryFilter::Fastener => Some(ComponentCategory::Fastener),
+        CategoryFilter::Consumable => Some(ComponentCategory::Consumable),
+        CategoryFilter::All => None,
+    };
+
+    ComponentFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        make_buy,
+        category,
+        ..Default::default()
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_cmp_sort(args: &ListArgs) -> (ComponentSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => ComponentSortField::Id,
+        ListColumn::PartNumber => ComponentSortField::PartNumber,
+        ListColumn::Revision => ComponentSortField::Title, // No Revision sort, fallback to Title
+        ListColumn::Title => ComponentSortField::Title,
+        ListColumn::MakeBuy => ComponentSortField::MakeBuy,
+        ListColumn::Category => ComponentSortField::Category,
+        ListColumn::Status => ComponentSortField::Status,
+        ListColumn::Author => ComponentSortField::Author,
+        ListColumn::Created => ComponentSortField::Created,
+    };
+
+    let direction = if args.reverse {
+        match field {
+            ComponentSortField::Created => SortDirection::Ascending,
+            _ => SortDirection::Descending,
+        }
+    } else {
+        match field {
+            ComponentSortField::Created => SortDirection::Descending,
+            _ => SortDirection::Ascending,
+        }
+    };
+
+    (field, direction)
+}
+
+/// Sort cached components based on CLI args
+fn sort_cached_components(cmps: &mut Vec<tdt_core::core::CachedComponent>, args: &ListArgs) {
     match args.sort {
-        ListColumn::Id => components.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::PartNumber => components.sort_by(|a, b| a.part_number.cmp(&b.part_number)),
-        ListColumn::Revision => components.sort_by(|a, b| a.revision.cmp(&b.revision)),
-        ListColumn::Title => components.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::MakeBuy => {
-            components.sort_by(|a, b| format!("{:?}", a.make_buy).cmp(&format!("{:?}", b.make_buy)))
-        }
-        ListColumn::Category => {
-            components.sort_by(|a, b| format!("{:?}", a.category).cmp(&format!("{:?}", b.category)))
-        }
-        ListColumn::Status => {
-            components.sort_by(|a, b| format!("{:?}", a.status).cmp(&format!("{:?}", b.status)))
-        }
-        ListColumn::Author => components.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => components.sort_by(|a, b| a.created.cmp(&b.created)),
+        ListColumn::Id => cmps.sort_by(|a, b| a.id.cmp(&b.id)),
+        ListColumn::PartNumber => cmps.sort_by(|a, b| a.part_number.cmp(&b.part_number)),
+        ListColumn::Revision => cmps.sort_by(|a, b| a.revision.cmp(&b.revision)),
+        ListColumn::Title => cmps.sort_by(|a, b| a.title.cmp(&b.title)),
+        ListColumn::MakeBuy => cmps.sort_by(|a, b| a.make_buy.cmp(&b.make_buy)),
+        ListColumn::Category => cmps.sort_by(|a, b| a.category.cmp(&b.category)),
+        ListColumn::Status => cmps.sort_by(|a, b| a.status.cmp(&b.status)),
+        ListColumn::Author => cmps.sort_by(|a, b| a.author.cmp(&b.author)),
+        ListColumn::Created => cmps.sort_by(|a, b| a.created.cmp(&b.created)),
     }
 
     if args.reverse {
-        components.reverse();
+        cmps.reverse();
     }
 
-    // Apply limit
     if let Some(limit) = args.limit {
-        components.truncate(limit);
+        cmps.truncate(limit);
     }
+}
 
-    // Count only
-    if args.count {
-        println!("{}", components.len());
-        return Ok(());
-    }
-
-    // No results
-    if components.is_empty() {
-        println!("No components found.");
-        return Ok(());
-    }
-
-    // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
-    short_ids.ensure_all(components.iter().map(|c| c.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
-    // Output based on format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
-    };
-
+/// Output full components
+fn output_components(
+    components: &[Component],
+    short_ids: &ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+) -> Result<()> {
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&components).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(components).into_diagnostic()?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&components).into_diagnostic()?;
+            let yaml = serde_yml::to_string(components).into_diagnostic()?;
             print!("{}", yaml);
         }
         OutputFormat::Tsv
@@ -723,7 +710,6 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            // Build visible columns list
             let mut visible: Vec<&str> = args
                 .columns
                 .iter()
@@ -733,13 +719,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 visible.insert(0, "id");
             }
 
-            // Convert to TableRows
             let rows: Vec<TableRow> = components
                 .iter()
-                .map(|cmp| component_to_row(cmp, &short_ids))
+                .map(|cmp| component_to_row(cmp, short_ids))
                 .collect();
 
-            // Configure table
             let config = if let Some(width) = args.wrap {
                 TableConfig::with_wrap(width)
             } else {
@@ -840,12 +824,14 @@ fn cached_component_to_row(
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = ComponentService::new(&project, &cache);
     let config = Config::load();
 
     let part_number: String;
     let title: String;
-    let make_buy: String;
-    let category: String;
+    let make_buy: MakeBuy;
+    let category: ComponentCategory;
     let material: Option<String>;
     let description: Option<String>;
     let mass_kg: Option<f64>;
@@ -869,13 +855,13 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
         make_buy = result
             .get_string("make_buy")
-            .map(String::from)
-            .unwrap_or_else(|| "buy".to_string());
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(MakeBuy::Buy);
 
         category = result
             .get_string("category")
-            .map(String::from)
-            .unwrap_or_else(|| "mechanical".to_string());
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(ComponentCategory::Mechanical);
 
         // Extract additional fields from wizard
         revision = result.get_string("revision").map(String::from);
@@ -935,8 +921,16 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         title = args
             .title
             .ok_or_else(|| miette::miette!("Title is required (use --title or -t)"))?;
-        make_buy = args.make_buy.to_string();
-        category = args.category.to_string();
+        make_buy = args
+            .make_buy
+            .to_string()
+            .parse()
+            .unwrap_or(MakeBuy::Buy);
+        category = args
+            .category
+            .to_string()
+            .parse()
+            .unwrap_or(ComponentCategory::Mechanical);
         revision = args.revision.clone();
         material = args.material.clone();
         description = None;
@@ -944,59 +938,33 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         unit_cost = None;
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Cmp);
-
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_part_number(&part_number)
-        .with_make_buy(&make_buy)
-        .with_component_category(&category);
-
-    let ctx = if let Some(ref rev) = revision {
-        ctx.with_part_revision(rev)
-    } else {
-        ctx
+    // Create component using service
+    let input = CreateComponent {
+        part_number: part_number.clone(),
+        title: title.clone(),
+        author: config.author(),
+        make_buy,
+        category,
+        description,
+        revision,
+        material,
+        mass_kg,
+        unit_cost,
+        ..Default::default()
     };
 
-    // Use material from wizard or args
-    let ctx = if let Some(ref mat) = material {
-        ctx.with_material(mat)
-    } else {
-        ctx
-    };
-
-    let yaml_content = generator
-        .generate_component(&ctx)
+    let component = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Parse template and apply wizard values (more robust than string replacement)
-    let mut component: Component = serde_yml::from_str(&yaml_content).into_diagnostic()?;
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                component.description = Some(desc.clone());
-            }
-        }
-        component.mass_kg = mass_kg;
-        component.unit_cost = unit_cost;
-    }
-    let yaml_content = serde_yml::to_string(&component).into_diagnostic()?;
-
-    // Write file
-    let output_dir = project.root().join("bom/components");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project
+        .root()
+        .join("bom/components")
+        .join(format!("{}.tdt.yaml", component.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(component.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -1010,15 +978,15 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Output based on format flag
     let extra_info = format!(
         "Part: {} | {}",
-        style(&part_number).yellow(),
-        style(&title).white()
+        style(&component.part_number).yellow(),
+        style(&component.title).white()
     );
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &component.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,
-        &title,
+        &component.title,
         Some(&extra_info),
         &added_links,
         global,
@@ -1334,24 +1302,25 @@ fn load_all_quotes(project: &Project) -> Vec<tdt_core::entities::quote::Quote> {
 
 fn run_set_quote(args: SetQuoteArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
-    // Resolve component ID
+    // Resolve IDs
     let cmp_id = short_ids
         .resolve(&args.component)
         .unwrap_or_else(|| args.component.clone());
-
-    // Resolve quote ID
     let quote_id = short_ids
         .resolve(&args.quote)
         .unwrap_or_else(|| args.quote.clone());
 
-    // Find and load the quote to validate it exists and is for this component
-    let quotes = load_all_quotes(&project);
-    let quote = quotes
-        .iter()
-        .find(|q| q.id.to_string() == quote_id || q.id.to_string().starts_with(&quote_id))
-        .ok_or_else(|| miette::miette!("Quote '{}' not found", args.quote))?;
+    // Use services
+    let cmp_service = ComponentService::new(&project, &cache);
+    let quote_service = QuoteService::new(&project, &cache);
+
+    // Load quote via service
+    let quote = quote_service
+        .get_required(&quote_id)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Verify quote is for this component
     if let Some(ref quoted_cmp) = quote.component {
@@ -1370,41 +1339,16 @@ fn run_set_quote(args: SetQuoteArgs) -> Result<()> {
         ));
     }
 
-    // Find and load the component
-    let cmp_dir = project.root().join("bom/components");
-    let mut found_path = None;
-    let mut component: Option<Component> = None;
+    // Get old quote before update for display
+    let old_component = cmp_service
+        .get_required(&cmp_id)
+        .map_err(|e| miette::miette!("{}", e))?;
+    let old_quote = old_component.selected_quote.clone();
 
-    if cmp_dir.exists() {
-        for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&cmp_id) || filename.starts_with(&cmp_id) {
-                    let content = fs::read_to_string(&path).into_diagnostic()?;
-                    if let Ok(cmp) = serde_yml::from_str::<Component>(&content) {
-                        component = Some(cmp);
-                        found_path = Some(path);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let mut component =
-        component.ok_or_else(|| miette::miette!("Component '{}' not found", args.component))?;
-    let path = found_path.unwrap();
-
-    // Update the selected_quote field
-    let old_quote = component.selected_quote.clone();
-    component.selected_quote = Some(quote.id.to_string());
-
-    // Save the updated component
-    let yaml = serde_yml::to_string(&component).into_diagnostic()?;
-    fs::write(&path, yaml).into_diagnostic()?;
+    // Set quote via service
+    let component = cmp_service
+        .set_quote(&cmp_id, &quote.id.to_string())
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get display names
     let cmp_display = short_ids
@@ -1452,6 +1396,7 @@ fn run_set_quote(args: SetQuoteArgs) -> Result<()> {
 
 fn run_clear_quote(args: ClearQuoteArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
     // Resolve component ID
@@ -1459,39 +1404,19 @@ fn run_clear_quote(args: ClearQuoteArgs) -> Result<()> {
         .resolve(&args.component)
         .unwrap_or_else(|| args.component.clone());
 
-    // Find and load the component
-    let cmp_dir = project.root().join("bom/components");
-    let mut found_path = None;
-    let mut component: Option<Component> = None;
+    // Use service
+    let service = ComponentService::new(&project, &cache);
 
-    if cmp_dir.exists() {
-        for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&cmp_id) || filename.starts_with(&cmp_id) {
-                    let content = fs::read_to_string(&path).into_diagnostic()?;
-                    if let Ok(cmp) = serde_yml::from_str::<Component>(&content) {
-                        component = Some(cmp);
-                        found_path = Some(path);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let mut component =
-        component.ok_or_else(|| miette::miette!("Component '{}' not found", args.component))?;
-    let path = found_path.unwrap();
+    // Get component to check current state
+    let old_component = service
+        .get_required(&cmp_id)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     let cmp_display = short_ids
-        .get_short_id(&component.id.to_string())
+        .get_short_id(&old_component.id.to_string())
         .unwrap_or_else(|| args.component.clone());
 
-    if component.selected_quote.is_none() {
+    if old_component.selected_quote.is_none() {
         println!(
             "{} {} has no selected quote",
             style("•").dim(),
@@ -1500,11 +1425,12 @@ fn run_clear_quote(args: ClearQuoteArgs) -> Result<()> {
         return Ok(());
     }
 
-    let old_quote = component.selected_quote.take();
+    let old_quote = old_component.selected_quote.clone();
 
-    // Save the updated component
-    let yaml = serde_yml::to_string(&component).into_diagnostic()?;
-    fs::write(&path, yaml).into_diagnostic()?;
+    // Clear quote via service
+    let component = service
+        .clear_quote(&cmp_id)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     println!(
         "{} Cleared quote for {}",

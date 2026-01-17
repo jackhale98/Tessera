@@ -15,13 +15,12 @@ use tdt_core::core::manufacturing::{
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::{Config, Git};
-use tdt_core::entities::assembly::Assembly;
-use tdt_core::entities::component::Component;
 use tdt_core::entities::lot::{ExecutionStatus, Lot, LotStatus, WorkInstructionRef};
 use tdt_core::entities::process::Process;
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::LotService;
+use tdt_core::services::{
+    CommonFilter, CreateLot, LotFilter, LotService, LotSortField, SortDirection,
+};
 use std::collections::HashMap;
 
 /// CLI-friendly lot status enum
@@ -363,11 +362,59 @@ pub fn run(cmd: LotCommands, global: &GlobalOpts) -> Result<()> {
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let lot_dir = project.root().join("manufacturing/lots");
+/// Build a LotFilter from CLI ListArgs
+fn build_lot_filter(args: &ListArgs) -> LotFilter {
+    // Map lot status
+    let lot_status = match args.status {
+        LotStatusFilter::InProgress => Some(LotStatus::InProgress),
+        LotStatusFilter::OnHold => Some(LotStatus::OnHold),
+        LotStatusFilter::Completed => Some(LotStatus::Completed),
+        LotStatusFilter::Scrapped => Some(LotStatus::Scrapped),
+        LotStatusFilter::All => None,
+    };
 
-    if !lot_dir.exists() {
+    LotFilter {
+        common: CommonFilter {
+            author: args.author.clone(),
+            search: args.search.clone(),
+            limit: None, // Apply limit after sorting
+            ..Default::default()
+        },
+        lot_status,
+        product: args.product.clone(),
+        active_only: args.active,
+        recent_days: if args.recent { Some(30) } else { None },
+        sort: build_lot_sort_field(&args.sort),
+        sort_direction: if args.reverse {
+            SortDirection::Descending
+        } else {
+            SortDirection::Ascending
+        },
+    }
+}
+
+/// Convert CLI sort column to LotSortField
+fn build_lot_sort_field(col: &ListColumn) -> LotSortField {
+    match col {
+        ListColumn::Id => LotSortField::Id,
+        ListColumn::Title => LotSortField::Title,
+        ListColumn::LotNumber => LotSortField::LotNumber,
+        ListColumn::Quantity => LotSortField::Quantity,
+        ListColumn::LotStatus => LotSortField::LotStatus,
+        ListColumn::Author => LotSortField::Author,
+        ListColumn::Created => LotSortField::Created,
+    }
+}
+
+/// Output full lot entities
+fn output_lots(
+    lots: &[Lot],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
+    if lots.is_empty() {
         if args.count {
             println!("0");
         } else {
@@ -376,127 +423,15 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
-    };
-
-    // Load from files
-    let mut lots: Vec<Lot> = Vec::new();
-
-    for entry in fs::read_dir(&lot_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(lot) = serde_yml::from_str::<Lot>(&content) {
-                lots.push(lot);
-            }
-        }
-    }
-
-    // Apply filters
-    let lots: Vec<Lot> = lots
-        .into_iter()
-        .filter(|l| match args.status {
-            LotStatusFilter::InProgress => l.lot_status == LotStatus::InProgress,
-            LotStatusFilter::OnHold => l.lot_status == LotStatus::OnHold,
-            LotStatusFilter::Completed => l.lot_status == LotStatus::Completed,
-            LotStatusFilter::Scrapped => l.lot_status == LotStatus::Scrapped,
-            LotStatusFilter::All => true,
-        })
-        .filter(|l| {
-            if let Some(ref author) = args.author {
-                l.author.to_lowercase().contains(&author.to_lowercase())
-            } else {
-                true
-            }
-        })
-        .filter(|l| {
-            if let Some(ref product) = args.product {
-                l.links
-                    .product
-                    .as_ref()
-                    .is_some_and(|p| p.contains(product))
-            } else {
-                true
-            }
-        })
-        .filter(|l| {
-            if args.recent {
-                let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
-                l.created >= thirty_days_ago
-            } else {
-                true
-            }
-        })
-        .filter(|l| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                l.title.to_lowercase().contains(&search_lower)
-                    || l.lot_number
-                        .as_ref()
-                        .is_some_and(|n| n.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|l| {
-            if args.active {
-                l.lot_status == LotStatus::InProgress || l.lot_status == LotStatus::OnHold
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Sort
-    let mut lots = lots;
-    match args.sort {
-        ListColumn::Id => lots.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Title => lots.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::LotNumber => lots.sort_by(|a, b| {
-            a.lot_number
-                .as_deref()
-                .unwrap_or("")
-                .cmp(b.lot_number.as_deref().unwrap_or(""))
-        }),
-        ListColumn::Quantity => lots.sort_by(|a, b| a.quantity.cmp(&b.quantity)),
-        ListColumn::LotStatus => {
-            lots.sort_by(|a, b| format!("{:?}", a.lot_status).cmp(&format!("{:?}", b.lot_status)))
-        }
-        ListColumn::Author => lots.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => lots.sort_by(|a, b| a.created.cmp(&b.created)),
-    }
-
-    if args.reverse {
-        lots.reverse();
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        lots.truncate(limit);
-    }
-
-    // Count only
     if args.count {
         println!("{}", lots.len());
         return Ok(());
     }
 
-    // No results
-    if lots.is_empty() {
-        println!("No lots found.");
-        return Ok(());
-    }
-
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(lots.iter().map(|l| l.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    super::utils::save_short_ids(short_ids, project);
 
-    // Output based on format
     match format {
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&lots).into_diagnostic()?;
@@ -508,7 +443,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         }
         OutputFormat::Csv => {
             println!("short_id,id,title,lot_number,quantity,lot_status,author");
-            for lot in &lots {
+            for lot in lots {
                 let short_id = short_ids
                     .get_short_id(&lot.id.to_string())
                     .unwrap_or_default();
@@ -555,7 +490,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             );
 
             // Print rows
-            for lot in &lots {
+            for lot in lots {
                 let short_id = short_ids
                     .get_short_id(&lot.id.to_string())
                     .unwrap_or_default();
@@ -597,7 +532,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             );
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for lot in &lots {
+            for lot in lots {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&lot.id.to_string())
@@ -611,7 +546,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         OutputFormat::Md => {
             println!("| Short | ID | Title | Lot # | Qty | Status | Author |");
             println!("|---|---|---|---|---|---|---|");
-            for lot in &lots {
+            for lot in lots {
                 let short_id = short_ids
                     .get_short_id(&lot.id.to_string())
                     .unwrap_or_default();
@@ -635,16 +570,44 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = LotService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Build filter from CLI args
+    let filter = build_lot_filter(&args);
+
+    // Load and filter lots using service
+    let mut lots = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply limit
+    if let Some(limit) = args.limit {
+        lots.truncate(limit);
+    }
+
+    output_lots(&lots, &mut short_ids, &args, format, &project)
+}
+
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     let title: String;
     let lot_number: Option<String>;
     let quantity: Option<u32>;
     let product: Option<String>;
-    let lot_status: Option<String>;
     let notes: Option<String>;
+
+    // Load short IDs early since we need them for product resolution
+    let mut short_ids = ShortIdIndex::load(&project);
 
     if args.interactive {
         let wizard = SchemaWizard::new();
@@ -655,10 +618,10 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .map(String::from)
             .unwrap_or_else(|| "New Production Lot".to_string());
         lot_number = result.get_string("lot_number").map(String::from);
-        // Use get_i64 for integer fields instead of parsing from string
         quantity = result.get_i64("quantity").map(|n| n as u32);
-        product = result.get_string("product").map(String::from);
-        lot_status = result.get_string("lot_status").map(String::from);
+        product = result
+            .get_string("product")
+            .map(|p| short_ids.resolve(p).unwrap_or_else(|| p.to_string()));
         notes = result.get_string("notes").map(String::from);
     } else {
         title = args
@@ -666,72 +629,29 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .unwrap_or_else(|| "New Production Lot".to_string());
         lot_number = args.lot_number;
         quantity = args.quantity;
-        product = args.product;
-        lot_status = None;
+        product = args
+            .product
+            .map(|p| short_ids.resolve(&p).unwrap_or(p));
         notes = None;
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Lot);
+    // Create lot via service
+    let service = LotService::new(&project, &cache);
+    let input = CreateLot {
+        title: title.clone(),
+        lot_number: lot_number.clone(),
+        quantity,
+        product: product.clone(),
+        notes,
+        start_date: None,
+        tags: Vec::new(),
+        status: None,
+        author: config.author(),
+    };
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), config.author()).with_title(&title);
-
-    if let Some(ref ln) = lot_number {
-        ctx = ctx.with_lot_number(ln);
-    }
-    if let Some(q) = quantity {
-        ctx = ctx.with_quantity(q);
-    }
-
-    let mut yaml_content = generator
-        .generate_lot(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Add product link if provided
-    if let Some(ref prod) = product {
-        // Resolve short ID if needed
-        let short_ids = ShortIdIndex::load(&project);
-        let resolved = short_ids.resolve(prod).unwrap_or_else(|| prod.clone());
-        yaml_content =
-            yaml_content.replace("  product: null", &format!("  product: \"{}\"", resolved));
-    }
-
-    // Apply wizard-collected values via string replacement
-    if args.interactive {
-        if let Some(ref status) = lot_status {
-            yaml_content = yaml_content.replace(
-                "lot_status: in_progress",
-                &format!("lot_status: {}", status),
-            );
-        }
-        if let Some(ref n) = notes {
-            if !n.is_empty() {
-                let indented = n
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "notes: |\n  # Production notes",
-                    &format!("notes: |\n{}", indented),
-                );
-            }
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("manufacturing/lots");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
-
-    // Load short IDs early since we need them for routing resolution
-    let mut short_ids = ShortIdIndex::load(&project);
+    let lot = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let id = lot.id.clone();
+    let file_path = project.root().join(format!("manufacturing/lots/{}.tdt.yaml", id));
 
     // Handle --from-routing: populate execution steps from product routing
     let mut execution_steps_added = 0;
@@ -744,83 +664,45 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             ));
         }
 
-        // Load the lot we just created
-        let mut lot: Lot = serde_yml::from_str(&yaml_content).into_diagnostic()?;
+        // Use the lot we just created
+        let mut lot = lot.clone();
 
-        // Resolve product ID
-        let prod_id = product.as_ref().unwrap();
-        let resolved_prod = short_ids
-            .resolve(prod_id)
-            .unwrap_or_else(|| prod_id.clone());
+        // Product already resolved
+        let resolved_prod = product.as_ref().unwrap();
 
-        // Try to load as assembly or component
+        // Try to load as assembly or component using services
+        let asm_service = tdt_core::services::AssemblyService::new(&project, &cache);
+        let cmp_service = tdt_core::services::ComponentService::new(&project, &cache);
+
         let routing: Option<Vec<String>> = if resolved_prod.starts_with("ASM-") {
-            // Load assembly
-            let asm_dir = project.root().join("bom/assemblies");
-            let mut found_routing = None;
-            if asm_dir.exists() {
-                for entry in walkdir::WalkDir::new(&asm_dir)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                    .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-                {
-                    if let Ok(content) = fs::read_to_string(entry.path()) {
-                        if let Ok(asm) = serde_yml::from_str::<Assembly>(&content) {
-                            if asm.id.to_string() == resolved_prod {
-                                found_routing = asm.manufacturing.map(|m| m.routing);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            found_routing
+            // Load assembly via service
+            asm_service
+                .get(resolved_prod)
+                .ok()
+                .flatten()
+                .and_then(|asm| asm.manufacturing.map(|m| m.routing))
         } else if resolved_prod.starts_with("CMP-") {
-            // Load component
-            let cmp_dir = project.root().join("bom/components");
-            let mut found_routing = None;
-            if cmp_dir.exists() {
-                for entry in walkdir::WalkDir::new(&cmp_dir)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                    .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-                {
-                    if let Ok(content) = fs::read_to_string(entry.path()) {
-                        if let Ok(cmp) = serde_yml::from_str::<Component>(&content) {
-                            if cmp.id.to_string() == resolved_prod {
-                                found_routing = cmp.manufacturing.map(|m| m.routing);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            found_routing
+            // Load component via service
+            cmp_service
+                .get(resolved_prod)
+                .ok()
+                .flatten()
+                .and_then(|cmp| cmp.manufacturing.map(|m| m.routing))
         } else {
             None
         };
 
         if let Some(routing) = routing {
             if !routing.is_empty() {
-                // Load all processes
-                let mut processes: HashMap<String, Process> = HashMap::new();
-                let proc_dir = project.root().join("manufacturing/processes");
-                if proc_dir.exists() {
-                    for entry in walkdir::WalkDir::new(&proc_dir)
-                        .into_iter()
-                        .filter_map(|e| e.ok())
-                        .filter(|e| e.file_type().is_file())
-                        .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-                    {
-                        if let Ok(content) = fs::read_to_string(entry.path()) {
-                            if let Ok(proc) = serde_yml::from_str::<Process>(&content) {
-                                processes.insert(proc.id.to_string(), proc);
-                            }
-                        }
-                    }
-                }
+                // Load all processes using service
+                let proc_service = tdt_core::services::ProcessService::new(&project, &cache);
+                let all_procs = proc_service
+                    .load_all()
+                    .unwrap_or_default();
+                let processes: HashMap<String, Process> = all_procs
+                    .into_iter()
+                    .map(|p| (p.id.to_string(), p))
+                    .collect();
 
                 // Create execution steps from routing
                 lot.execution = create_execution_steps_from_routing(&routing, &processes);
@@ -843,9 +725,11 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 .unwrap_or(false));
 
     if should_create_branch {
-        // Load the lot to get lot_number for branch name
-        let lot_content = fs::read_to_string(&file_path).into_diagnostic()?;
-        let mut lot: Lot = serde_yml::from_str(&lot_content).into_diagnostic()?;
+        // Reload the lot to get the latest version (may have execution steps added)
+        let lot = service
+            .get(&id.to_string())
+            .map_err(|e| miette::miette!("{}", e))?
+            .ok_or_else(|| miette::miette!("Failed to reload lot"))?;
 
         // Initialize git and workflow
         let git = Git::new(project.root());
@@ -855,10 +739,10 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
             match workflow.init_lot_branch(&lot) {
                 Ok(branch_name) => {
-                    // Update lot with branch name
-                    lot.git_branch = Some(branch_name.clone());
-                    let updated_yaml = serde_yml::to_string(&lot).into_diagnostic()?;
-                    fs::write(&file_path, updated_yaml).into_diagnostic()?;
+                    // Update lot with branch name using service
+                    service
+                        .set_git_branch(&id.to_string(), &branch_name)
+                        .map_err(|e| miette::miette!("{}", e))?;
                     git_branch_created = Some(branch_name);
                 }
                 Err(e) => {

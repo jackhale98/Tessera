@@ -9,15 +9,14 @@ use crate::cli::filters::StatusFilter;
 use crate::cli::helpers::truncate_str;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
-use tdt_core::core::cache::{CachedEntity, EntityCache, EntityFilter};
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::cache::{CachedEntity, EntityCache};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
-use tdt_core::entities::process::{Process, ProcessType};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
+use tdt_core::entities::process::{Process, ProcessType, SkillLevel};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::ProcessService;
+use tdt_core::services::{CommonFilter, CreateProcess, ProcessFilter, ProcessService, ProcessSortField, SortDirection};
 
 /// Column definitions for process list output
 const PROC_COLUMNS: &[ColumnDef] = &[
@@ -337,163 +336,57 @@ pub fn run(cmd: ProcCommands, global: &GlobalOpts) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let proc_dir = project.root().join("manufacturing/processes");
-
-    if !proc_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No processes found.");
-        }
-        return Ok(());
-    }
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = ProcessService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
 
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
     };
 
-    // Fast path: use cache when no domain-specific filters
+    let filter = build_proc_filter(&args);
+
+    // Fast path: use cache when no domain-specific filters need full entities
     let can_use_cache = matches!(args.r#type, ProcessTypeFilter::All)
         && !args.recent
         && args.search.is_none()
         && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
 
     if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            let filter = EntityFilter {
-                prefix: Some(EntityPrefix::Proc),
-                status: crate::cli::entity_cmd::status_filter_to_status(args.status),
-                author: args.author.clone(),
-                search: None,
-                limit: None,
-                priority: None,
-                entity_type: None,
-                category: None,
-            };
+        let mut entities = service.list_cached();
+        sort_cached_processes(&mut entities, &args);
 
-            let mut entities = cache.list_entities(&filter);
-
-            // Sort
-            match args.sort {
-                ListColumn::Id => entities.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Title => entities.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::ProcessType => entities.sort_by(|a, b| {
-                    a.entity_type
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.entity_type.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Operation => {} // Not in cache
-                ListColumn::Status => entities.sort_by(|a, b| a.status.cmp(&b.status)),
-                ListColumn::Author => entities.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => entities.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                entities.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                entities.truncate(limit);
-            }
-
-            // Update short ID index
-            let mut short_ids = ShortIdIndex::load(&project);
-            short_ids.ensure_all(entities.iter().map(|e| e.id.clone()));
-            super::utils::save_short_ids(&mut short_ids, &project);
-
-            return output_cached_processes(&entities, &args, &short_ids, format);
+        if args.reverse {
+            entities.reverse();
         }
+        if let Some(limit) = args.limit {
+            entities.truncate(limit);
+        }
+
+        // Update short ID index
+        short_ids.ensure_all(entities.iter().map(|e| e.id.clone()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        return output_cached_processes(&entities, &args, &short_ids, format);
     }
 
-    // Slow path: load from files
-    let mut processes: Vec<Process> = Vec::new();
+    // Full entity loading path
+    let (sort_field, sort_dir) = build_proc_sort(&args);
+    let result = service.list(&filter, sort_field, sort_dir).map_err(|e| miette::miette!("{}", e))?;
+    let mut processes = result.items;
 
-    for entry in fs::read_dir(&proc_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(proc) = serde_yml::from_str::<Process>(&content) {
-                processes.push(proc);
-            }
-        }
-    }
-
-    // Apply filters
-    let processes: Vec<Process> = processes
-        .into_iter()
-        .filter(|p| match args.r#type {
-            ProcessTypeFilter::Machining => p.process_type == ProcessType::Machining,
-            ProcessTypeFilter::Assembly => p.process_type == ProcessType::Assembly,
-            ProcessTypeFilter::Inspection => p.process_type == ProcessType::Inspection,
-            ProcessTypeFilter::Test => p.process_type == ProcessType::Test,
-            ProcessTypeFilter::Finishing => p.process_type == ProcessType::Finishing,
-            ProcessTypeFilter::Packaging => p.process_type == ProcessType::Packaging,
-            ProcessTypeFilter::Handling => p.process_type == ProcessType::Handling,
-            ProcessTypeFilter::HeatTreat => p.process_type == ProcessType::HeatTreat,
-            ProcessTypeFilter::Welding => p.process_type == ProcessType::Welding,
-            ProcessTypeFilter::Coating => p.process_type == ProcessType::Coating,
-            ProcessTypeFilter::All => true,
-        })
-        .filter(|p| crate::cli::entity_cmd::status_enum_matches_filter(&p.status, args.status))
-        .filter(|p| {
-            if let Some(ref author) = args.author {
-                let author_lower = author.to_lowercase();
-                p.author.to_lowercase().contains(&author_lower)
-            } else {
-                true
-            }
-        })
-        .filter(|p| {
-            if args.recent {
-                let now = chrono::Utc::now();
-                let thirty_days_ago = now - chrono::Duration::days(30);
-                p.created >= thirty_days_ago
-            } else {
-                true
-            }
-        })
-        .filter(|p| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                p.title.to_lowercase().contains(&search_lower)
-                    || p.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Sort
-    let mut processes = processes;
-    match args.sort {
-        ListColumn::Id => processes.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Title => processes.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::ProcessType => processes
-            .sort_by(|a, b| format!("{:?}", a.process_type).cmp(&format!("{:?}", b.process_type))),
-        ListColumn::Operation => processes.sort_by(|a, b| {
-            a.operation_number
-                .as_deref()
-                .unwrap_or("")
+    // Post-sort for Operation column (not in service sort for cached path)
+    if matches!(args.sort, ListColumn::Operation) {
+        processes.sort_by(|a, b| {
+            a.operation_number.as_deref().unwrap_or("")
                 .cmp(b.operation_number.as_deref().unwrap_or(""))
-        }),
-        ListColumn::Status => {
-            processes.sort_by(|a, b| format!("{:?}", a.status).cmp(&format!("{:?}", b.status)))
-        }
-        ListColumn::Author => processes.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => processes.sort_by(|a, b| a.created.cmp(&b.created)),
+        });
     }
 
     if args.reverse {
         processes.reverse();
     }
-
-    // Apply limit
     if let Some(limit) = args.limit {
         processes.truncate(limit);
     }
@@ -504,25 +397,117 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    // No results
+    output_processes(&processes, &mut short_ids, &args, format, &project)
+}
+
+/// Build a ProcessFilter from CLI ListArgs
+fn build_proc_filter(args: &ListArgs) -> ProcessFilter {
+    let process_type = match args.r#type {
+        ProcessTypeFilter::All => None,
+        ProcessTypeFilter::Machining => Some(ProcessType::Machining),
+        ProcessTypeFilter::Assembly => Some(ProcessType::Assembly),
+        ProcessTypeFilter::Inspection => Some(ProcessType::Inspection),
+        ProcessTypeFilter::Test => Some(ProcessType::Test),
+        ProcessTypeFilter::Finishing => Some(ProcessType::Finishing),
+        ProcessTypeFilter::Packaging => Some(ProcessType::Packaging),
+        ProcessTypeFilter::Handling => Some(ProcessType::Handling),
+        ProcessTypeFilter::HeatTreat => Some(ProcessType::HeatTreat),
+        ProcessTypeFilter::Welding => Some(ProcessType::Welding),
+        ProcessTypeFilter::Coating => Some(ProcessType::Coating),
+    };
+
+    let status = match args.status {
+        StatusFilter::All => None,
+        StatusFilter::Draft => Some(vec![tdt_core::core::entity::Status::Draft]),
+        StatusFilter::Review => Some(vec![tdt_core::core::entity::Status::Review]),
+        StatusFilter::Approved => Some(vec![tdt_core::core::entity::Status::Approved]),
+        StatusFilter::Released => Some(vec![tdt_core::core::entity::Status::Released]),
+        StatusFilter::Obsolete => Some(vec![tdt_core::core::entity::Status::Obsolete]),
+        StatusFilter::Active => Some(vec![
+            tdt_core::core::entity::Status::Draft,
+            tdt_core::core::entity::Status::Review,
+            tdt_core::core::entity::Status::Approved,
+            tdt_core::core::entity::Status::Released,
+        ]),
+    };
+
+    let recent_days = if args.recent { Some(30) } else { None };
+
+    ProcessFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days,
+            limit: args.limit,
+            ..Default::default()
+        },
+        process_type,
+        ..Default::default()
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_proc_sort(args: &ListArgs) -> (ProcessSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => ProcessSortField::Id,
+        ListColumn::Title => ProcessSortField::Title,
+        ListColumn::ProcessType => ProcessSortField::ProcessType,
+        ListColumn::Operation => ProcessSortField::OperationNumber,
+        ListColumn::Status => ProcessSortField::Status,
+        ListColumn::Author => ProcessSortField::Author,
+        ListColumn::Created => ProcessSortField::Created,
+    };
+
+    let direction = if args.reverse {
+        SortDirection::Ascending
+    } else {
+        SortDirection::Descending
+    };
+
+    (field, direction)
+}
+
+/// Sort cached processes based on CLI args
+fn sort_cached_processes(entities: &mut [CachedEntity], args: &ListArgs) {
+    match args.sort {
+        ListColumn::Id => entities.sort_by(|a, b| a.id.cmp(&b.id)),
+        ListColumn::Title => entities.sort_by(|a, b| a.title.cmp(&b.title)),
+        ListColumn::ProcessType => entities.sort_by(|a, b| {
+            a.entity_type.as_deref().unwrap_or("")
+                .cmp(b.entity_type.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Operation => {} // Not in cache
+        ListColumn::Status => entities.sort_by(|a, b| a.status.cmp(&b.status)),
+        ListColumn::Author => entities.sort_by(|a, b| a.author.cmp(&b.author)),
+        ListColumn::Created => entities.sort_by(|a, b| a.created.cmp(&b.created)),
+    }
+}
+
+/// Output full Process entities
+fn output_processes(
+    processes: &[Process],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
     if processes.is_empty() {
         println!("No processes found.");
         return Ok(());
     }
 
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(processes.iter().map(|p| p.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
+    super::utils::save_short_ids(short_ids, project);
 
-    // Output based on format
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&processes).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(&processes).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&processes).into_diagnostic()?;
+            let yaml = serde_yml::to_string(&processes).map_err(|e| miette::miette!("{}", e))?;
             print!("{}", yaml);
         }
         OutputFormat::Tsv
@@ -533,27 +518,22 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            // Convert visible columns to keys, optionally including ID
             let mut visible_columns: Vec<&str> = args.columns.iter().map(|c| c.key()).collect();
             if args.show_id && !visible_columns.contains(&"id") {
                 visible_columns.insert(0, "id");
             }
 
-            // Build table rows from full Process entities
             let rows: Vec<TableRow> = processes
                 .iter()
-                .map(|p| process_to_row(p, &short_ids))
+                .map(|p| process_to_row(p, short_ids))
                 .collect();
 
-            // Configure wrapping if requested
             let config = match args.wrap {
                 Some(width) => TableConfig::with_wrap(width),
                 None => TableConfig::default(),
             };
 
-            // Output using TableFormatter
-            let formatter =
-                TableFormatter::new(PROC_COLUMNS, "process", "PROC").with_config(config);
+            let formatter = TableFormatter::new(PROC_COLUMNS, "process", "PROC").with_config(config);
             formatter.output(rows, format, &visible_columns);
         }
         OutputFormat::Auto | OutputFormat::Path => unreachable!(),
@@ -580,17 +560,47 @@ fn process_to_row(proc: &Process, short_ids: &ShortIdIndex) -> TableRow {
         .cell("created", CellValue::DateTime(proc.created))
 }
 
+/// Convert string to SkillLevel, defaulting to Intermediate
+fn parse_skill_level(s: &str) -> SkillLevel {
+    match s.to_lowercase().as_str() {
+        "entry" => SkillLevel::Entry,
+        "intermediate" => SkillLevel::Intermediate,
+        "advanced" => SkillLevel::Advanced,
+        "expert" => SkillLevel::Expert,
+        _ => SkillLevel::default(),
+    }
+}
+
+/// Convert string to ProcessType, defaulting to Machining
+fn parse_process_type(s: &str) -> ProcessType {
+    match s.to_lowercase().as_str() {
+        "machining" => ProcessType::Machining,
+        "assembly" => ProcessType::Assembly,
+        "inspection" => ProcessType::Inspection,
+        "test" => ProcessType::Test,
+        "finishing" => ProcessType::Finishing,
+        "packaging" => ProcessType::Packaging,
+        "handling" => ProcessType::Handling,
+        "heat_treat" => ProcessType::HeatTreat,
+        "welding" => ProcessType::Welding,
+        "coating" => ProcessType::Coating,
+        _ => ProcessType::default(),
+    }
+}
+
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = ProcessService::new(&project, &cache);
     let config = Config::load();
 
     let title: String;
-    let process_type: String;
+    let process_type: ProcessType;
     let operation_number: Option<String>;
     let description: Option<String>;
     let cycle_time: Option<f64>;
     let setup_time: Option<f64>;
-    let operator_skill: Option<String>;
+    let operator_skill: SkillLevel;
 
     if args.interactive {
         let wizard = SchemaWizard::new();
@@ -602,83 +612,51 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .unwrap_or_else(|| "New Process".to_string());
         process_type = result
             .get_string("process_type")
-            .map(String::from)
-            .unwrap_or_else(|| "machining".to_string());
+            .map(|s| parse_process_type(s))
+            .unwrap_or_default();
         operation_number = result.get_string("operation_number").map(String::from);
         description = result.get_string("description").map(String::from);
         cycle_time = result.get_f64("cycle_time_minutes");
         setup_time = result.get_f64("setup_time_minutes");
-        operator_skill = result.get_string("operator_skill").map(String::from);
+        operator_skill = result
+            .get_string("operator_skill")
+            .map(|s| parse_skill_level(s))
+            .unwrap_or_default();
     } else {
         title = args.title.unwrap_or_else(|| "New Process".to_string());
-        process_type = args.r#type.to_string();
+        process_type = args.r#type.into();
         operation_number = args.op_number.clone();
         description = None;
         cycle_time = args.cycle_time;
         setup_time = args.setup_time;
-        operator_skill = None;
+        operator_skill = SkillLevel::default();
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Proc);
+    // Create process using service
+    let input = CreateProcess {
+        title: title.clone(),
+        author: config.author(),
+        process_type,
+        operation_number,
+        description,
+        cycle_time_minutes: cycle_time,
+        setup_time_minutes: setup_time,
+        operator_skill,
+        ..Default::default()
+    };
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let mut ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_process_type(&process_type);
-
-    if let Some(ref op) = operation_number {
-        ctx = ctx.with_operation_number(op);
-    }
-    if let Some(cycle) = cycle_time {
-        ctx = ctx.with_cycle_time(cycle);
-    }
-    if let Some(setup) = setup_time {
-        ctx = ctx.with_setup_time(setup);
-    }
-
-    let mut yaml_content = generator
-        .generate_process(&ctx)
+    let process = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Apply wizard-collected operator_skill via string replacement
-    if let Some(ref skill) = operator_skill {
-        yaml_content = yaml_content.replace(
-            "operator_skill: entry",
-            &format!("operator_skill: {}", skill),
-        );
-    }
-
-    // Apply wizard description via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Detailed description of this manufacturing process\n  # Include key steps and requirements",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("manufacturing/processes");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project
+        .root()
+        .join("manufacturing/processes")
+        .join(format!("{}.tdt.yaml", process.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(process.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -691,15 +669,15 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
     // Output based on format flag
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &process.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,
-        &title,
+        &process.title,
         Some(&format!(
             "Type: {} | {}",
-            style(&process_type).yellow(),
-            style(&title).white()
+            style(process.process_type.to_string()).yellow(),
+            style(&process.title).white()
         )),
         &added_links,
         global,

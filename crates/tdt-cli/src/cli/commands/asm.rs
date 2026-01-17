@@ -12,15 +12,18 @@ use crate::cli::helpers::{escape_csv, truncate_str};
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::entity::Status;
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
-use tdt_core::entities::assembly::Assembly;
+use tdt_core::entities::assembly::{Assembly, BomItem};
 use tdt_core::entities::component::Component;
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::AssemblyService;
+use tdt_core::services::{
+    AssemblyFilter, AssemblyService, AssemblySortField, CommonFilter, ComponentService,
+    CreateAssembly, SortDirection, UpdateAssembly,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum AsmCommands {
@@ -426,119 +429,42 @@ fn run_routing(cmd: RoutingCommands) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let asm_dir = project.root().join("bom/assemblies");
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = AssemblyService::new(&project, &cache);
 
-    if !asm_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No assemblies found.");
-        }
-        return Ok(());
-    }
+    // Build filter and sort from CLI args
+    let filter = build_asm_filter(&args);
+    let (sort_field, sort_dir) = build_asm_sort(&args);
 
-    // Load and parse all assemblies
-    let mut assemblies: Vec<Assembly> = Vec::new();
+    // Get assemblies via service
+    let result = service
+        .list(&filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
 
-    for entry in fs::read_dir(&asm_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
+    let mut assemblies = result.items;
 
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(asm) = serde_yml::from_str::<Assembly>(&content) {
-                assemblies.push(asm);
-            }
-        }
-    }
-
-    // Apply filters
-    let assemblies: Vec<Assembly> = assemblies
-        .into_iter()
-        .filter(|a| match args.status {
-            StatusFilter::Draft => a.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => a.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => a.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => a.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => a.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => a.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        })
-        .filter(|a| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                a.part_number.to_lowercase().contains(&search_lower)
-                    || a.title.to_lowercase().contains(&search_lower)
-                    || a.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|a| {
-            if let Some(ref author) = args.author {
-                let author_lower = author.to_lowercase();
-                a.author.to_lowercase().contains(&author_lower)
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Filter by parent assembly (sub-assemblies only)
-    let assemblies = if let Some(ref parent_asm) = args.assembly {
+    // Filter by parent assembly (sub-assemblies only) - post-filter
+    if let Some(ref parent_asm) = args.assembly {
         let short_ids_tmp = ShortIdIndex::load(&project);
         let parent_id = short_ids_tmp
             .resolve(parent_asm)
             .unwrap_or_else(|| parent_asm.clone());
 
-        // Build assembly map for recursive lookup
         let assembly_map: std::collections::HashMap<String, &Assembly> =
             assemblies.iter().map(|a| (a.id.to_string(), a)).collect();
 
-        // Find the parent assembly
         if let Some(parent) = assembly_map.get(&parent_id) {
-            // Collect all sub-assembly IDs recursively
             let mut sub_asm_ids: HashSet<String> = HashSet::new();
             let mut visited: HashSet<String> = HashSet::new();
             visited.insert(parent_id.clone());
-
             collect_subassembly_ids(parent, &assembly_map, &mut sub_asm_ids, &mut visited);
-
-            // Filter to only those sub-assemblies
-            assemblies
-                .into_iter()
-                .filter(|a| sub_asm_ids.contains(&a.id.to_string()))
-                .collect()
+            assemblies.retain(|a| sub_asm_ids.contains(&a.id.to_string()));
         } else {
             eprintln!(
                 "Warning: Assembly '{}' not found, showing all assemblies",
                 parent_asm
             );
-            assemblies
         }
-    } else {
-        assemblies
-    };
-
-    // Sort
-    let mut assemblies = assemblies;
-    match args.sort {
-        ListColumn::Short | ListColumn::Id => {
-            assemblies.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string()))
-        }
-        ListColumn::PartNumber => assemblies.sort_by(|a, b| a.part_number.cmp(&b.part_number)),
-        ListColumn::Title => assemblies.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::Status => {
-            assemblies.sort_by(|a, b| format!("{:?}", a.status).cmp(&format!("{:?}", b.status)))
-        }
-        ListColumn::Author => assemblies.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => assemblies.sort_by(|a, b| a.created.cmp(&b.created)),
-    }
-
-    if args.reverse {
-        assemblies.reverse();
     }
 
     // Apply recent filter (show 10 most recent)
@@ -552,15 +478,18 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         assemblies.truncate(limit);
     }
 
-    // Count only
+    // Handle count-only mode
     if args.count {
         println!("{}", assemblies.len());
         return Ok(());
     }
 
-    // No results
     if assemblies.is_empty() {
-        println!("No assemblies found.");
+        match global.output {
+            OutputFormat::Json => println!("[]"),
+            OutputFormat::Yaml => println!("[]"),
+            _ => println!("No assemblies found."),
+        }
         return Ok(());
     }
 
@@ -569,16 +498,65 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     short_ids.ensure_all(assemblies.iter().map(|a| a.id.to_string()));
     super::utils::save_short_ids(&mut short_ids, &project);
 
-    // Build rows for table output
-    let rows: Vec<TableRow> = assemblies
-        .iter()
-        .map(|asm| asm_to_row(asm, &short_ids))
-        .collect();
-
-    // Map ListColumn to column name strings
-    let columns: Vec<&str> = args.columns.iter().map(|c| c.as_str()).collect();
-
     // Output based on format
+    output_assemblies(&assemblies, &short_ids, &args, global)
+}
+
+/// Build AssemblyFilter from CLI args
+fn build_asm_filter(args: &ListArgs) -> AssemblyFilter {
+    let status = match args.status {
+        StatusFilter::Draft => Some(vec![Status::Draft]),
+        StatusFilter::Review => Some(vec![Status::Review]),
+        StatusFilter::Approved => Some(vec![Status::Approved]),
+        StatusFilter::Released => Some(vec![Status::Released]),
+        StatusFilter::Obsolete => Some(vec![Status::Obsolete]),
+        StatusFilter::Active | StatusFilter::All => None,
+    };
+
+    AssemblyFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            search: args.search.clone(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_asm_sort(args: &ListArgs) -> (AssemblySortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Short | ListColumn::Id => AssemblySortField::Id,
+        ListColumn::PartNumber => AssemblySortField::PartNumber,
+        ListColumn::Title => AssemblySortField::Title,
+        ListColumn::Status => AssemblySortField::Status,
+        ListColumn::Author => AssemblySortField::Author,
+        ListColumn::Created => AssemblySortField::Created,
+    };
+
+    let direction = if args.reverse {
+        match field {
+            AssemblySortField::Created => SortDirection::Ascending,
+            _ => SortDirection::Descending,
+        }
+    } else {
+        match field {
+            AssemblySortField::Created => SortDirection::Descending,
+            _ => SortDirection::Ascending,
+        }
+    };
+
+    (field, direction)
+}
+
+/// Output assemblies in the requested format
+fn output_assemblies(
+    assemblies: &[Assembly],
+    short_ids: &ShortIdIndex,
+    args: &ListArgs,
+    global: &GlobalOpts,
+) -> Result<()> {
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
@@ -586,15 +564,15 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&assemblies).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(assemblies).into_diagnostic()?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&assemblies).into_diagnostic()?;
+            let yaml = serde_yml::to_string(assemblies).into_diagnostic()?;
             print!("{}", yaml);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for asm in &assemblies {
+            for asm in assemblies {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&asm.id.to_string())
@@ -611,6 +589,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
+            let rows: Vec<TableRow> = assemblies
+                .iter()
+                .map(|asm| asm_to_row(asm, short_ids))
+                .collect();
+            let columns: Vec<&str> = args.columns.iter().map(|c| c.as_str()).collect();
             let config = TableConfig {
                 wrap_width: args.wrap,
                 show_summary: true,
@@ -637,15 +620,18 @@ fn asm_to_row(asm: &Assembly, short_ids: &ShortIdIndex) -> TableRow {
 }
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
-    use tdt_core::entities::assembly::BomItem;
-
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let service = AssemblyService::new(&project, &cache);
 
     let part_number: String;
     let title: String;
     let description: Option<String>;
     let revision: Option<String>;
+
+    // Load short IDs early for BOM item resolution
+    let mut short_ids = ShortIdIndex::load(&project);
 
     if args.interactive {
         // Use schema-driven wizard
@@ -675,54 +661,48 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         revision = args.revision.clone();
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Asm);
+    // Parse BOM items from --bom flags
+    let bom_items: Vec<BomItem> = args
+        .bom
+        .iter()
+        .filter_map(|item_str| {
+            let (component_id, qty) = parse_bom_item(item_str).ok()?;
+            let resolved_id = short_ids
+                .resolve(&component_id)
+                .unwrap_or_else(|| component_id.clone());
+            Some(BomItem {
+                component_id: resolved_id,
+                quantity: qty,
+                reference_designators: Vec::new(),
+                notes: None,
+            })
+        })
+        .collect();
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_part_number(&part_number);
+    let bom_count = bom_items.len();
 
-    let ctx = if let Some(ref rev) = revision {
-        ctx.with_part_revision(rev)
-    } else {
-        ctx
+    // Create assembly via service
+    let input = CreateAssembly {
+        part_number: part_number.clone(),
+        title: title.clone(),
+        author: config.author(),
+        revision,
+        description,
+        bom: bom_items,
+        subassemblies: Vec::new(),
+        tags: Vec::new(),
     };
 
-    let mut yaml_content = generator
-        .generate_assembly(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
+    let assembly = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    // Apply wizard description via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Detailed description of this assembly\n  # Include key specifications and assembly requirements",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("bom/assemblies");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    // Get file path for the created assembly
+    let file_path = project
+        .root()
+        .join("bom/assemblies")
+        .join(format!("{}.tdt.yaml", assembly.id));
 
     // Add to short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(assembly.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -740,7 +720,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         style(&title).white()
     );
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &assembly.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,
@@ -750,40 +730,13 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         global,
     );
 
-    // Handle BOM items if provided
-    if !args.bom.is_empty() {
-        // Load the assembly we just created
-        let content = fs::read_to_string(&file_path).into_diagnostic()?;
-        let mut assembly: Assembly = serde_yml::from_str(&content).into_diagnostic()?;
-
-        let mut added_count = 0;
-        for item_str in &args.bom {
-            let (component_id, qty) = parse_bom_item(item_str)?;
-
-            // Resolve short ID
-            let resolved_id = short_ids
-                .resolve(&component_id)
-                .unwrap_or_else(|| component_id.clone());
-
-            // Add to BOM
-            assembly.bom.push(BomItem {
-                component_id: resolved_id.clone(),
-                quantity: qty,
-                reference_designators: Vec::new(),
-                notes: None,
-            });
-            added_count += 1;
-        }
-
-        // Save the updated assembly
-        let updated_yaml = serde_yml::to_string(&assembly).into_diagnostic()?;
-        fs::write(&file_path, updated_yaml).into_diagnostic()?;
-
+    // Report BOM items if any were added
+    if bom_count > 0 {
         println!(
             "   {} Added {} BOM item{}",
             style("→").dim(),
-            style(added_count).cyan(),
-            if added_count == 1 { "" } else { "s" }
+            style(bom_count).cyan(),
+            if bom_count == 1 { "" } else { "s" }
         );
     }
 
@@ -933,6 +886,7 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
 
 fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -940,49 +894,21 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find and load the assembly
-    let asm_dir = project.root().join("bom/assemblies");
-    let mut found_asm = None;
+    // Use services
+    let asm_service = AssemblyService::new(&project, &cache);
+    let cmp_service = ComponentService::new(&project, &cache);
 
-    if asm_dir.exists() {
-        for entry in fs::read_dir(&asm_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
+    // Load assembly via service
+    let assembly = asm_service
+        .get_required(&resolved_id)
+        .map_err(|_| miette::miette!("No assembly found matching '{}'", args.id))?;
 
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    let content = fs::read_to_string(&path).into_diagnostic()?;
-                    if let Ok(asm) = serde_yml::from_str::<Assembly>(&content) {
-                        found_asm = Some(asm);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let assembly =
-        found_asm.ok_or_else(|| miette::miette!("No assembly found matching '{}'", args.id))?;
-
-    // Load component index for resolving names
-    let cmp_dir = project.root().join("bom/components");
-    let mut components: std::collections::HashMap<String, Component> =
-        std::collections::HashMap::new();
-
-    if cmp_dir.exists() {
-        for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let content = fs::read_to_string(&path).into_diagnostic()?;
-                if let Ok(cmp) = serde_yml::from_str::<Component>(&content) {
-                    components.insert(cmp.id.to_string(), cmp);
-                }
-            }
-        }
-    }
+    // Load all components for name lookup
+    let all_components = cmp_service.load_all().unwrap_or_default();
+    let components: std::collections::HashMap<String, Component> = all_components
+        .into_iter()
+        .map(|c| (c.id.to_string(), c))
+        .collect();
 
     // Display BOM
     let format = match global.output {
@@ -1086,9 +1012,8 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
 }
 
 fn run_add_component(args: AddComponentArgs) -> Result<()> {
-    use tdt_core::entities::assembly::BomItem;
-
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
     if args.components.is_empty() {
@@ -1099,42 +1024,21 @@ fn run_add_component(args: AddComponentArgs) -> Result<()> {
         ));
     }
 
-    // Resolve assembly ID
+    // Use services
+    let asm_service = AssemblyService::new(&project, &cache);
+    let cmp_service = ComponentService::new(&project, &cache);
+
+    // Resolve assembly ID and load via service
     let asm_id = short_ids
         .resolve(&args.assembly)
         .unwrap_or_else(|| args.assembly.clone());
 
-    // Find and load the assembly
-    let asm_dir = project.root().join("bom/assemblies");
-    let mut found_path = None;
-    let mut assembly: Option<Assembly> = None;
-
-    if asm_dir.exists() {
-        for entry in fs::read_dir(&asm_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&asm_id) || filename.starts_with(&asm_id) {
-                    let content = fs::read_to_string(&path).into_diagnostic()?;
-                    if let Ok(asm) = serde_yml::from_str::<Assembly>(&content) {
-                        assembly = Some(asm);
-                        found_path = Some(path);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let mut assembly = assembly.ok_or_else(|| {
+    let mut assembly = asm_service.get_required(&asm_id).map_err(|_| {
         miette::miette!(
             "Assembly '{}' not found. Create it first with: tdt asm new",
             args.assembly
         )
     })?;
-    let path = found_path.unwrap();
 
     // Determine if we're in single-component mode (with --qty, --refs, --notes) or multi-component mode
     let single_component_mode = args.components.len() == 1 && !args.components[0].contains(':');
@@ -1155,30 +1059,8 @@ fn run_add_component(args: AddComponentArgs) -> Result<()> {
             .resolve(&component_input)
             .unwrap_or_else(|| component_input.clone());
 
-        // Try to validate component exists and get info
-        let cmp_dir = project.root().join("bom/components");
-        let mut component_info: Option<Component> = None;
-
-        if cmp_dir.exists() {
-            for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-                let entry = entry.into_diagnostic()?;
-                let entry_path = entry.path();
-
-                if entry_path.extension().is_some_and(|e| e == "yaml") {
-                    let filename = entry_path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("");
-                    if filename.contains(&cmp_id) || filename.starts_with(&cmp_id) {
-                        let content = fs::read_to_string(&entry_path).into_diagnostic()?;
-                        if let Ok(cmp) = serde_yml::from_str::<Component>(&content) {
-                            component_info = Some(cmp);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        // Load component via service to validate and get info
+        let component_info = cmp_service.get(&cmp_id).ok().flatten();
 
         // Get the full component ID (use resolved or original)
         let full_cmp_id = component_info
@@ -1259,9 +1141,14 @@ fn run_add_component(args: AddComponentArgs) -> Result<()> {
         }
     }
 
-    // Save the updated assembly
-    let yaml = serde_yml::to_string(&assembly).into_diagnostic()?;
-    fs::write(&path, yaml).into_diagnostic()?;
+    // Save via service update
+    let update_input = UpdateAssembly {
+        bom: Some(assembly.bom.clone()),
+        ..Default::default()
+    };
+    let assembly = asm_service
+        .update(&asm_id, update_input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     if !single_component_mode {
         println!();
@@ -1292,63 +1179,29 @@ fn run_add_component(args: AddComponentArgs) -> Result<()> {
 
 fn run_remove_component(args: RemoveComponentArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
-    // Resolve assembly ID
+    // Resolve IDs
     let asm_id = short_ids
         .resolve(&args.assembly)
         .unwrap_or_else(|| args.assembly.clone());
-
-    // Resolve component ID
     let cmp_id = short_ids
         .resolve(&args.component)
         .unwrap_or_else(|| args.component.clone());
 
-    // Find and load the assembly
-    let asm_dir = project.root().join("bom/assemblies");
-    let mut found_path = None;
-    let mut assembly: Option<Assembly> = None;
+    // Use service
+    let service = AssemblyService::new(&project, &cache);
 
-    if asm_dir.exists() {
-        for entry in fs::read_dir(&asm_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&asm_id) || filename.starts_with(&asm_id) {
-                    let content = fs::read_to_string(&path).into_diagnostic()?;
-                    if let Ok(asm) = serde_yml::from_str::<Assembly>(&content) {
-                        assembly = Some(asm);
-                        found_path = Some(path);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let mut assembly =
-        assembly.ok_or_else(|| miette::miette!("Assembly '{}' not found", args.assembly))?;
-    let path = found_path.unwrap();
-
-    // Find and remove the component
-    let original_len = assembly.bom.len();
-    assembly
-        .bom
-        .retain(|item| !item.component_id.contains(&cmp_id));
-
-    if assembly.bom.len() == original_len {
-        return Err(miette::miette!(
+    // Try to remove via service - it handles the validation
+    let assembly = service.remove_component(&asm_id, &cmp_id).map_err(|_| {
+        // Convert service error to user-friendly message
+        miette::miette!(
             "Component '{}' not found in assembly '{}' BOM",
             args.component,
             args.assembly
-        ));
-    }
-
-    // Save the updated assembly
-    let yaml = serde_yml::to_string(&assembly).into_diagnostic()?;
-    fs::write(&path, yaml).into_diagnostic()?;
+        )
+    })?;
 
     println!(
         "{} Removed {} from {}",

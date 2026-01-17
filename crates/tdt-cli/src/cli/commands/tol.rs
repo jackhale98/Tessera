@@ -1,6 +1,5 @@
 //! `tdt tol` command - Stackup/tolerance analysis management
 
-use chrono::{Duration, Utc};
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
@@ -23,9 +22,10 @@ use tdt_core::entities::stackup::{
     Analysis3DResults, Contributor, Direction, Disposition, FeatureRef, FunctionalProjection,
     Stackup,
 };
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::StackupService;
+use tdt_core::services::{
+    CommonFilter, CreateStackup, StackupFilter, StackupService, StackupSortField, SortDirection,
+};
 
 /// Visualization mode for 3D stackup analysis
 #[derive(Debug, Clone, Copy, ValueEnum, Default, PartialEq)]
@@ -409,181 +409,26 @@ pub fn run(cmd: TolCommands, global: &GlobalOpts) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let tol_dir = project.root().join("tolerances/stackups");
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = StackupService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
 
-    if !tol_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No stackups found.");
-        }
-        return Ok(());
-    }
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
 
-    // Load and parse all stackups
-    let mut stackups: Vec<Stackup> = Vec::new();
+    let filter = build_tol_filter(&args);
+    let mut stackups = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
 
-    for entry in fs::read_dir(&tol_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(stackup) = serde_yml::from_str::<Stackup>(&content) {
-                stackups.push(stackup);
-            }
-        }
-    }
-
-    // Apply filters
-    let stackups: Vec<Stackup> = stackups
-        .into_iter()
-        .filter(|s| match args.disposition {
-            DispositionFilter::UnderReview => s.disposition == Disposition::UnderReview,
-            DispositionFilter::Approved => s.disposition == Disposition::Approved,
-            DispositionFilter::Rejected => s.disposition == Disposition::Rejected,
-            DispositionFilter::All => true,
-        })
-        .filter(|s| match args.status {
-            StatusFilter::Draft => s.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => s.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => s.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => s.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => s.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => s.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        })
-        .filter(|s| {
-            if let Some(ref result_filter) = args.result {
-                if let Some(ref wc) = s.analysis_results.worst_case {
-                    match result_filter {
-                        ResultFilter::Pass => {
-                            wc.result == tdt_core::entities::stackup::AnalysisResult::Pass
-                        }
-                        ResultFilter::Marginal => {
-                            wc.result == tdt_core::entities::stackup::AnalysisResult::Marginal
-                        }
-                        ResultFilter::Fail => {
-                            wc.result == tdt_core::entities::stackup::AnalysisResult::Fail
-                        }
-                        ResultFilter::All => true,
-                    }
-                } else {
-                    false // No analysis yet
-                }
-            } else {
-                true
-            }
-        })
-        .filter(|s| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                s.title.to_lowercase().contains(&search_lower)
-                    || s.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|s| {
-            if args.critical {
-                s.target.critical
-            } else {
-                true
-            }
-        })
-        .filter(|s| {
-            if let Some(ref author_filter) = args.author {
-                let author_lower = author_filter.to_lowercase();
-                s.author.to_lowercase().contains(&author_lower)
-            } else {
-                true
-            }
-        })
-        .filter(|s| {
-            if let Some(days) = args.recent {
-                let cutoff = Utc::now() - Duration::days(days as i64);
-                s.created >= cutoff
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Apply sorting
-    let mut stackups = stackups;
-    if let Some(sort_col) = args.sort {
+    // Post-sort for Critical column (not in service sort fields)
+    if let Some(ListColumn::Critical) = args.sort {
         stackups.sort_by(|a, b| {
-            let cmp = match sort_col {
-                ListColumn::Id => a.id.to_string().cmp(&b.id.to_string()),
-                ListColumn::Title => a.title.cmp(&b.title),
-                ListColumn::Disposition => {
-                    format!("{}", a.disposition).cmp(&format!("{}", b.disposition))
-                }
-                ListColumn::Status => a.status().cmp(b.status()),
-                ListColumn::Result => {
-                    let a_result = a
-                        .analysis_results
-                        .worst_case
-                        .as_ref()
-                        .map(|wc| format!("{}", wc.result))
-                        .unwrap_or_else(|| "zzz".to_string()); // Sort missing results last
-                    let b_result = b
-                        .analysis_results
-                        .worst_case
-                        .as_ref()
-                        .map(|wc| format!("{}", wc.result))
-                        .unwrap_or_else(|| "zzz".to_string());
-                    a_result.cmp(&b_result)
-                }
-                ListColumn::Cpk => {
-                    let a_cpk = a
-                        .analysis_results
-                        .rss
-                        .as_ref()
-                        .map(|r| r.cpk)
-                        .unwrap_or(-999.0);
-                    let b_cpk = b
-                        .analysis_results
-                        .rss
-                        .as_ref()
-                        .map(|r| r.cpk)
-                        .unwrap_or(-999.0);
-                    b_cpk
-                        .partial_cmp(&a_cpk)
-                        .unwrap_or(std::cmp::Ordering::Equal) // Higher Cpk first
-                }
-                ListColumn::Yield => {
-                    let a_yield = a
-                        .analysis_results
-                        .monte_carlo
-                        .as_ref()
-                        .map(|m| m.yield_percent)
-                        .unwrap_or(-999.0);
-                    let b_yield = b
-                        .analysis_results
-                        .monte_carlo
-                        .as_ref()
-                        .map(|m| m.yield_percent)
-                        .unwrap_or(-999.0);
-                    b_yield
-                        .partial_cmp(&a_yield)
-                        .unwrap_or(std::cmp::Ordering::Equal) // Higher yield first
-                }
-                ListColumn::Critical => b.target.critical.cmp(&a.target.critical), // Critical first
-                ListColumn::Author => a.author.cmp(&b.author),
-                ListColumn::Created => a.created.cmp(&b.created),
-            };
-            if args.reverse {
-                cmp.reverse()
-            } else {
-                cmp
-            }
+            let cmp = b.target.critical.cmp(&a.target.critical);
+            if args.reverse { cmp.reverse() } else { cmp }
         });
     }
 
-    // Apply limit
     if let Some(limit) = args.limit {
         stackups.truncate(limit);
     }
@@ -594,30 +439,110 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    // No results
+    output_stackups(&stackups, &mut short_ids, &args, format, &project)
+}
+
+/// Build a StackupFilter from CLI ListArgs
+fn build_tol_filter(args: &ListArgs) -> StackupFilter {
+    use tdt_core::entities::stackup::AnalysisResult;
+
+    let disposition = match args.disposition {
+        DispositionFilter::All => None,
+        DispositionFilter::UnderReview => Some(Disposition::UnderReview),
+        DispositionFilter::Approved => Some(Disposition::Approved),
+        DispositionFilter::Rejected => Some(Disposition::Rejected),
+    };
+
+    let result = args.result.as_ref().and_then(|r| match r {
+        ResultFilter::All => None,
+        ResultFilter::Pass => Some(AnalysisResult::Pass),
+        ResultFilter::Marginal => Some(AnalysisResult::Marginal),
+        ResultFilter::Fail => Some(AnalysisResult::Fail),
+    });
+
+    let status = match args.status {
+        StatusFilter::All => None,
+        StatusFilter::Draft => Some(vec![tdt_core::core::entity::Status::Draft]),
+        StatusFilter::Review => Some(vec![tdt_core::core::entity::Status::Review]),
+        StatusFilter::Approved => Some(vec![tdt_core::core::entity::Status::Approved]),
+        StatusFilter::Released => Some(vec![tdt_core::core::entity::Status::Released]),
+        StatusFilter::Obsolete => Some(vec![tdt_core::core::entity::Status::Obsolete]),
+        StatusFilter::Active => Some(vec![
+            tdt_core::core::entity::Status::Draft,
+            tdt_core::core::entity::Status::Review,
+            tdt_core::core::entity::Status::Approved,
+            tdt_core::core::entity::Status::Released,
+        ]),
+    };
+
+    let (sort, sort_direction) = build_tol_sort(args);
+
+    StackupFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        disposition,
+        result,
+        critical_only: args.critical,
+        recent_days: args.recent,
+        sort,
+        sort_direction,
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_tol_sort(args: &ListArgs) -> (StackupSortField, SortDirection) {
+    let field = args.sort.as_ref().map(|col| match col {
+        ListColumn::Id => StackupSortField::Id,
+        ListColumn::Title => StackupSortField::Title,
+        ListColumn::Result => StackupSortField::Result,
+        ListColumn::Cpk => StackupSortField::Cpk,
+        ListColumn::Yield => StackupSortField::Yield,
+        ListColumn::Disposition => StackupSortField::Disposition,
+        ListColumn::Status => StackupSortField::Status,
+        ListColumn::Author => StackupSortField::Author,
+        ListColumn::Created => StackupSortField::Created,
+        ListColumn::Critical => StackupSortField::Created, // Fallback, handled as post-sort
+    }).unwrap_or(StackupSortField::Created);
+
+    let direction = if args.reverse {
+        SortDirection::Ascending
+    } else {
+        SortDirection::Descending
+    };
+
+    (field, direction)
+}
+
+/// Output stackups in the specified format
+fn output_stackups(
+    stackups: &[Stackup],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
     if stackups.is_empty() {
         println!("No stackups found.");
         return Ok(());
     }
 
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
     short_ids.ensure_all(stackups.iter().map(|s| s.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
-    // Output based on format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
-    };
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&stackups).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(&stackups).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&stackups).into_diagnostic()?;
+            let yaml = serde_yml::to_string(&stackups).map_err(|e| miette::miette!("{}", e))?;
             print!("{}", yaml);
         }
         OutputFormat::Csv
@@ -636,7 +561,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             }
             let rows: Vec<TableRow> = stackups
                 .iter()
-                .map(|s| stackup_to_row(s, &short_ids))
+                .map(|s| stackup_to_row(s, short_ids))
                 .collect();
 
             let config = TableConfig {
@@ -647,7 +572,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for s in &stackups {
+            for s in stackups {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&s.id.to_string())
@@ -667,6 +592,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     let title: String;
     let target_name: String;
@@ -725,44 +651,29 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         description = None;
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Tol);
+    // Create stackup via service
+    let service = StackupService::new(&project, &cache);
+    let input = CreateStackup {
+        title: title.clone(),
+        target_name: target_name.clone(),
+        target_nominal,
+        target_upper,
+        target_lower,
+        units: None,
+        critical: false,
+        description,
+        sigma_level: None,
+        mean_shift_k: None,
+        include_gdt: false,
+        tags: Vec::new(),
+        author: config.author(),
+    };
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_target(&target_name, target_nominal, target_upper, target_lower);
-
-    let mut yaml_content = generator
-        .generate_stackup(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    // Apply wizard description via string replacement (for interactive mode)
-    if args.interactive {
-        if let Some(ref desc) = description {
-            if !desc.is_empty() {
-                let indented = desc
-                    .lines()
-                    .map(|line| format!("  {}", line))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                yaml_content = yaml_content.replace(
-                    "description: |\n  # Detailed description of this tolerance stackup\n  # Include the tolerance chain being analyzed",
-                    &format!("description: |\n{}", indented),
-                );
-            }
-        }
-    }
-
-    // Write file
-    let output_dir = project.root().join("tolerances/stackups");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let stackup = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let id = &stackup.id;
+    let file_path = project
+        .root()
+        .join(format!("tolerances/stackups/{}.tdt.yaml", id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);

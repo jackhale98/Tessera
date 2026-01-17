@@ -4,22 +4,23 @@ use clap::{Subcommand, ValueEnum};
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Input};
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::filters::StatusFilter;
 use crate::cli::helpers::truncate_str;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::CachedFeature;
 use tdt_core::core::Config;
-use tdt_core::entities::feature::{DimensionRef, Feature, FeatureType};
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
+use tdt_core::entities::feature::{Dimension, DimensionRef, Feature, FeatureType};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::FeatureService;
+use tdt_core::services::{
+    CommonFilter, CreateFeature, FeatureFilter, FeatureService, FeatureSortField, SortDirection,
+    UpdateFeature,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum FeatCommands {
@@ -309,9 +310,10 @@ pub fn run(cmd: FeatCommands, global: &GlobalOpts) -> Result<()> {
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let short_ids = ShortIdIndex::load(&project);
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = FeatureService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
 
-    // Determine output format
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
@@ -323,177 +325,50 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         .as_ref()
         .map(|c| short_ids.resolve(c).unwrap_or_else(|| c.clone()));
 
-    // Check if we can use the fast cache path:
-    // - No recent filter (would need time-based SQL)
-    // - Not JSON/YAML output (needs full entity serialization)
-    let can_use_cache =
-        args.recent.is_none() && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    let filter = build_feat_filter(&args, component_filter.as_deref());
 
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            let status_filter = match args.status {
-                StatusFilter::Draft => Some("draft"),
-                StatusFilter::Review => Some("review"),
-                StatusFilter::Approved => Some("approved"),
-                StatusFilter::Released => Some("released"),
-                StatusFilter::Obsolete => Some("obsolete"),
-                StatusFilter::Active | StatusFilter::All => None,
-            };
+    // Check if we can use the fast cache path
+    let can_use_cache = args.recent.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
 
-            let type_filter = match args.feature_type {
-                TypeFilter::Internal => Some("internal"),
-                TypeFilter::External => Some("external"),
-                TypeFilter::All => None,
-            };
-
-            let mut features = cache.list_features(
-                status_filter,
-                type_filter,
-                component_filter.as_deref(),
-                args.author.as_deref(),
-                args.search.as_deref(),
-                None, // We'll apply limit after sorting
-            );
-
-            // Sort
-            match args.sort {
-                ListColumn::Id => features.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Title => features.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::Description => features.sort_by(|a, b| a.id.cmp(&b.id)), // No desc in cache
-                ListColumn::FeatureType => {
-                    features.sort_by(|a, b| a.feature_type.cmp(&b.feature_type))
-                }
-                ListColumn::Component => {
-                    features.sort_by(|a, b| a.component_id.cmp(&b.component_id))
-                }
-                ListColumn::Status => features.sort_by(|a, b| a.status.cmp(&b.status)),
-                ListColumn::Author => features.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => features.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                features.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                features.truncate(limit);
-            }
-
-            // Build component lookup map for displaying part numbers and titles
-            let component_info: std::collections::HashMap<String, (String, String)> = cache
-                .list_components(None, None, None, None, None, None)
-                .into_iter()
-                .map(|c| {
-                    let pn = c.part_number.unwrap_or_default();
-                    (c.id, (pn, c.title))
-                })
-                .collect();
-
-            return output_cached_features(&features, &short_ids, &args, format, &component_info);
-        }
-    }
-
-    // Fall back to full YAML loading
-    let feat_dir = project.root().join("tolerances/features");
-
-    if !feat_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No features found.");
-        }
-        return Ok(());
-    }
-
-    // Load and parse all features
-    let mut features: Vec<Feature> = Vec::new();
-
-    for entry in fs::read_dir(&feat_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(feat) = serde_yml::from_str::<Feature>(&content) {
-                features.push(feat);
-            }
-        }
-    }
-
-    // Apply filters
-    let features: Vec<Feature> = features
+    // Build component lookup map for displaying part numbers and titles
+    let component_info: std::collections::HashMap<String, (String, String)> = cache
+        .list_components(None, None, None, None, None, None)
         .into_iter()
-        .filter(|f| {
-            if let Some(ref cmp_id) = component_filter {
-                f.component.contains(cmp_id) || f.component == *cmp_id
-            } else {
-                true
-            }
-        })
-        .filter(|f| match args.feature_type {
-            TypeFilter::Internal => f.feature_type == FeatureType::Internal,
-            TypeFilter::External => f.feature_type == FeatureType::External,
-            TypeFilter::All => true,
-        })
-        .filter(|f| match args.status {
-            StatusFilter::Draft => f.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => f.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => f.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => f.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => f.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => f.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        })
-        .filter(|f| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                f.title.to_lowercase().contains(&search_lower)
-                    || f.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|f| {
-            args.author
-                .as_ref()
-                .is_none_or(|author| f.author.to_lowercase().contains(&author.to_lowercase()))
-        })
-        .filter(|f| {
-            args.recent.is_none_or(|days| {
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-                f.created >= cutoff
-            })
+        .map(|c| {
+            let pn = c.part_number.unwrap_or_default();
+            (c.id, (pn, c.title))
         })
         .collect();
 
-    // Sort
-    let mut features = features;
-    match args.sort {
-        ListColumn::Id => features.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Title => features.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::Description => features.sort_by(|a, b| {
-            a.description
-                .as_deref()
-                .unwrap_or("")
-                .cmp(b.description.as_deref().unwrap_or(""))
-        }),
-        ListColumn::FeatureType => features
-            .sort_by(|a, b| format!("{:?}", a.feature_type).cmp(&format!("{:?}", b.feature_type))),
-        ListColumn::Component => features.sort_by(|a, b| a.component.cmp(&b.component)),
-        ListColumn::Status => {
-            features.sort_by(|a, b| format!("{:?}", a.status).cmp(&format!("{:?}", b.status)))
+    if can_use_cache {
+        let mut features = service.list_cached(&filter).map_err(|e| miette::miette!("{}", e))?;
+        sort_cached_features(&mut features, &args);
+
+        if args.reverse {
+            features.reverse();
         }
-        ListColumn::Author => features.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => features.sort_by(|a, b| a.created.cmp(&b.created)),
+        if let Some(limit) = args.limit {
+            features.truncate(limit);
+        }
+
+        return output_cached_features(&features, &short_ids, &args, format, &component_info);
+    }
+
+    // Full entity loading path
+    let mut features = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+
+    // Post-sort for Description column (not in service sort)
+    if matches!(args.sort, ListColumn::Description) {
+        features.sort_by(|a, b| {
+            a.description.as_deref().unwrap_or("")
+                .cmp(b.description.as_deref().unwrap_or(""))
+        });
     }
 
     if args.reverse {
         features.reverse();
     }
-
-    // Apply limit
     if let Some(limit) = args.limit {
         features.truncate(limit);
     }
@@ -504,39 +379,112 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    // No results
+    output_features(&features, &mut short_ids, &args, format, &project, &component_info)
+}
+
+/// Build a FeatureFilter from CLI ListArgs
+fn build_feat_filter(args: &ListArgs, component: Option<&str>) -> FeatureFilter {
+    let feature_type = match args.feature_type {
+        TypeFilter::All => None,
+        TypeFilter::Internal => Some(FeatureType::Internal),
+        TypeFilter::External => Some(FeatureType::External),
+    };
+
+    let status = match args.status {
+        StatusFilter::All => None,
+        StatusFilter::Draft => Some(vec![tdt_core::core::entity::Status::Draft]),
+        StatusFilter::Review => Some(vec![tdt_core::core::entity::Status::Review]),
+        StatusFilter::Approved => Some(vec![tdt_core::core::entity::Status::Approved]),
+        StatusFilter::Released => Some(vec![tdt_core::core::entity::Status::Released]),
+        StatusFilter::Obsolete => Some(vec![tdt_core::core::entity::Status::Obsolete]),
+        StatusFilter::Active => Some(vec![
+            tdt_core::core::entity::Status::Draft,
+            tdt_core::core::entity::Status::Review,
+            tdt_core::core::entity::Status::Approved,
+            tdt_core::core::entity::Status::Released,
+        ]),
+    };
+
+    let (sort, sort_direction) = build_feat_sort(args);
+
+    FeatureFilter {
+        common: CommonFilter {
+            status,
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        feature_type,
+        component: component.map(String::from),
+        sort,
+        sort_direction,
+        ..Default::default()
+    }
+}
+
+/// Build sort field and direction from CLI args
+fn build_feat_sort(args: &ListArgs) -> (FeatureSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => FeatureSortField::Id,
+        ListColumn::Title => FeatureSortField::Title,
+        ListColumn::FeatureType => FeatureSortField::Type,
+        ListColumn::Component => FeatureSortField::Component,
+        ListColumn::Status => FeatureSortField::Status,
+        ListColumn::Author => FeatureSortField::Author,
+        ListColumn::Created => FeatureSortField::Created,
+        ListColumn::Description => FeatureSortField::Created, // Handled as post-sort
+    };
+
+    let direction = if args.reverse {
+        SortDirection::Ascending
+    } else {
+        SortDirection::Descending
+    };
+
+    (field, direction)
+}
+
+/// Sort cached features based on CLI args
+fn sort_cached_features(features: &mut [CachedFeature], args: &ListArgs) {
+    match args.sort {
+        ListColumn::Id => features.sort_by(|a, b| a.id.cmp(&b.id)),
+        ListColumn::Title => features.sort_by(|a, b| a.title.cmp(&b.title)),
+        ListColumn::Description => features.sort_by(|a, b| a.id.cmp(&b.id)), // No desc in cache
+        ListColumn::FeatureType => features.sort_by(|a, b| a.feature_type.cmp(&b.feature_type)),
+        ListColumn::Component => features.sort_by(|a, b| a.component_id.cmp(&b.component_id)),
+        ListColumn::Status => features.sort_by(|a, b| a.status.cmp(&b.status)),
+        ListColumn::Author => features.sort_by(|a, b| a.author.cmp(&b.author)),
+        ListColumn::Created => features.sort_by(|a, b| a.created.cmp(&b.created)),
+    }
+}
+
+/// Output full Feature entities
+fn output_features(
+    features: &[Feature],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+    component_info: &std::collections::HashMap<String, (String, String)>,
+) -> Result<()> {
     if features.is_empty() {
         println!("No features found.");
         return Ok(());
     }
 
     // Update short ID index
-    let mut short_ids = short_ids;
     short_ids.ensure_all(features.iter().map(|f| f.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
-    // Load component info for display
-    let component_info: std::collections::HashMap<String, (String, String)> =
-        if let Ok(cache) = EntityCache::open(&project) {
-            cache
-                .list_components(None, None, None, None, None, None)
-                .into_iter()
-                .map(|c| {
-                    let pn = c.part_number.unwrap_or_default();
-                    (c.id, (pn, c.title))
-                })
-                .collect()
-        } else {
-            std::collections::HashMap::new()
-        };
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&features).into_diagnostic()?;
+            let json = serde_json::to_string_pretty(&features).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&features).into_diagnostic()?;
+            let yaml = serde_yml::to_string(&features).map_err(|e| miette::miette!("{}", e))?;
             print!("{}", yaml);
         }
         OutputFormat::Csv
@@ -552,19 +500,18 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 .collect();
             let rows: Vec<TableRow> = features
                 .iter()
-                .map(|f| feat_to_row(f, &short_ids, &component_info))
+                .map(|f| feat_to_row(f, short_ids, component_info))
                 .collect();
 
             let config = TableConfig {
                 wrap_width: args.wrap,
                 show_summary: true,
             };
-            let formatter =
-                TableFormatter::new(FEAT_COLUMNS, "feature", "FEAT").with_config(config);
+            let formatter = TableFormatter::new(FEAT_COLUMNS, "feature", "FEAT").with_config(config);
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for feat in &features {
+            for feat in features {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&feat.id.to_string())
@@ -712,32 +659,22 @@ fn cached_feat_to_row(
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let service = FeatureService::new(&project, &cache);
+
+    // Load short IDs early for component resolution
+    let mut short_ids = ShortIdIndex::load(&project);
 
     // Resolve component ID
-    let short_ids = ShortIdIndex::load(&project);
     let component_id = short_ids
         .resolve(&args.component)
         .unwrap_or_else(|| args.component.clone());
 
-    // Validate component exists
-    let cmp_dir = project.root().join("bom/components");
-    let mut component_found = false;
-    if cmp_dir.exists() {
-        for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&component_id) {
-                    component_found = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if !component_found {
+    // Validate component exists using service
+    let cmp_service = tdt_core::services::ComponentService::new(&project, &cache);
+    let cmp_exists = cmp_service.get(&component_id).map_err(|e| miette::miette!("{}", e))?.is_some();
+    if !cmp_exists {
         return Err(miette::miette!(
             "Component '{}' not found. Create it first with: tdt cmp new",
             args.component
@@ -745,7 +682,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     let title: String;
-    let feature_type: String;
+    let feature_type: FeatureType;
     let mut dimension_name = String::from("diameter");
     let mut nominal: f64 = 10.0;
     let mut plus_tol: f64 = 0.1;
@@ -763,8 +700,8 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
         feature_type = result
             .get_string("feature_type")
-            .map(String::from)
-            .unwrap_or_else(|| "internal".to_string());
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(FeatureType::Internal);
 
         // Custom prompts for primary dimension (wizard can't handle nested objects)
         let theme = ColorfulTheme::default();
@@ -801,45 +738,59 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         title = args.title.ok_or_else(|| {
             miette::miette!("Title is required (use --title or -i for interactive)")
         })?;
-        feature_type = args.feature_type.to_string();
+        feature_type = args.feature_type.to_string().parse().unwrap_or(FeatureType::Internal);
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Feat);
+    // Build dimensions - add primary dimension for interactive mode
+    let is_internal = matches!(feature_type, FeatureType::Internal);
+    let dimensions = if args.interactive {
+        vec![Dimension {
+            name: dimension_name.clone(),
+            nominal,
+            plus_tol,
+            minus_tol,
+            units: "mm".to_string(),
+            internal: is_internal,
+            distribution: tdt_core::entities::stackup::Distribution::Normal,
+        }]
+    } else {
+        // Default dimension for non-interactive
+        vec![Dimension {
+            name: "diameter".to_string(),
+            nominal: 10.0,
+            plus_tol: 0.1,
+            minus_tol: 0.05,
+            units: "mm".to_string(),
+            internal: is_internal,
+            distribution: tdt_core::entities::stackup::Distribution::Normal,
+        }]
+    };
 
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), config.author())
-        .with_title(&title)
-        .with_component_id(&component_id)
-        .with_feature_type(&feature_type);
+    // Create feature via service
+    let input = CreateFeature {
+        component: component_id.clone(),
+        feature_type,
+        title: title.clone(),
+        description: None,
+        dimensions,
+        gdt: Vec::new(),
+        geometry_class: None,
+        datum_label: None,
+        tags: Vec::new(),
+        status: None,
+        author: config.author(),
+    };
 
-    let yaml_content = generator
-        .generate_feature(&ctx)
-        .map_err(|e| miette::miette!("{}", e))?;
+    let feat = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    // Parse template and apply wizard values (more robust than string replacement)
-    let mut feature: Feature = serde_yml::from_str(&yaml_content).into_diagnostic()?;
-    if args.interactive && !feature.dimensions.is_empty() {
-        feature.dimensions[0].name = dimension_name.clone();
-        feature.dimensions[0].nominal = nominal;
-        feature.dimensions[0].plus_tol = plus_tol;
-        feature.dimensions[0].minus_tol = minus_tol;
-    }
-    let yaml_content = serde_yml::to_string(&feature).into_diagnostic()?;
-
-    // Write file
-    let output_dir = project.root().join("tolerances/features");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    // Get file path for the created feature
+    let file_path = project
+        .root()
+        .join("tolerances/features")
+        .join(format!("{}.tdt.yaml", feat.id));
 
     // Add to short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(feat.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -854,11 +805,11 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let extra_info = format!(
         "Parent: {} | Type: {} | {}",
         style(truncate_str(&component_id, 13)).yellow(),
-        style(&feature_type).cyan(),
+        style(feat.feature_type.to_string()).cyan(),
         style(&title).white()
     );
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &feat.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,
@@ -1031,6 +982,7 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
     use tdt_core::core::gdt_torsor::compute_torsor_bounds;
 
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
     // Resolve short ID if needed
@@ -1038,31 +990,11 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the feature file
-    let feat_dir = project.root().join("tolerances/features");
-    let mut found_path = None;
-
-    if feat_dir.exists() {
-        for entry in fs::read_dir(&feat_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No feature found matching '{}'", args.id))?;
-
-    // Read and parse feature
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let mut feat: Feature = serde_yml::from_str(&content).into_diagnostic()?;
+    // Load feature via service
+    let service = FeatureService::new(&project, &cache);
+    let feat = service
+        .get_required(&resolved_id)
+        .map_err(|_| miette::miette!("No feature found matching '{}'", args.id))?;
 
     // Check prerequisites
     if feat.gdt.is_empty() && feat.dimensions.is_empty() {
@@ -1133,17 +1065,18 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
 
     // Update file if requested
     if args.update {
-        feat.torsor_bounds = Some(result.bounds);
-
-        let updated_yaml = serde_yml::to_string(&feat).into_diagnostic()?;
-        fs::write(&path, updated_yaml).into_diagnostic()?;
+        let update = UpdateFeature {
+            torsor_bounds: Some(Some(result.bounds)),
+            ..Default::default()
+        };
+        service.update(&resolved_id, update).map_err(|e| miette::miette!("{}", e))?;
 
         if !args.quiet {
             println!();
             println!(
-                "{} Updated {}",
+                "{} Updated torsor_bounds for {}",
                 style("✓").green(),
-                style(path.display()).dim()
+                style(&short_id).cyan()
             );
         }
     } else if !args.quiet && !matches!(global.output, OutputFormat::Json | OutputFormat::Yaml) {
@@ -1160,6 +1093,7 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
 
 fn run_set_length(args: SetLengthArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
     // Parse the source reference (FEAT@N:dimension_name or FEAT-xxx:dimension_name)
@@ -1178,78 +1112,25 @@ fn run_set_length(args: SetLengthArgs) -> Result<()> {
         .resolve(&dim_ref.feature_id)
         .unwrap_or_else(|| dim_ref.feature_id.clone());
 
-    // Find feature files
-    let feat_dir = project.root().join("tolerances/features");
+    // Use service to set length from source dimension
+    let service = FeatureService::new(&project, &cache);
+    let updated_feat = service
+        .set_length_from(&target_id, &source_id, &dim_ref.dimension_name)
+        .map_err(|e| miette::miette!("{}", e))?;
 
-    let find_feature_path = |id: &str| -> Option<std::path::PathBuf> {
-        if !feat_dir.exists() {
-            return None;
-        }
-        for entry in fs::read_dir(&feat_dir).ok()? {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(id) || filename.starts_with(id) {
-                    return Some(path);
-                }
-            }
-        }
-        None
-    };
-
-    // Load source feature to get dimension value
-    let source_path = find_feature_path(&source_id)
-        .ok_or_else(|| miette::miette!("Source feature '{}' not found", dim_ref.feature_id))?;
-    let source_content = fs::read_to_string(&source_path).into_diagnostic()?;
-    let source_feat: Feature = serde_yml::from_str(&source_content).into_diagnostic()?;
-
-    // Get dimension value from source
-    let dimension_value = source_feat
-        .get_dimension_value(&dim_ref.dimension_name)
-        .ok_or_else(|| {
-            miette::miette!(
-                "Dimension '{}' not found in feature '{}'. Available dimensions: {}",
-                dim_ref.dimension_name,
-                dim_ref.feature_id,
-                source_feat
-                    .dimensions
-                    .iter()
-                    .map(|d| d.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        })?;
-
-    // Load and update target feature
-    let target_path = find_feature_path(&target_id)
-        .ok_or_else(|| miette::miette!("Target feature '{}' not found", args.id))?;
-    let target_content = fs::read_to_string(&target_path).into_diagnostic()?;
-    let mut target_feat: Feature = serde_yml::from_str(&target_content).into_diagnostic()?;
-
-    // Ensure geometry_3d exists
-    if target_feat.geometry_3d.is_none() {
-        target_feat.geometry_3d = Some(tdt_core::entities::feature::Geometry3D {
-            origin: [0.0, 0.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            length: Some(dimension_value),
-            length_ref: Some(format!("{}:{}", source_feat.id, dim_ref.dimension_name)),
-        });
-    } else if let Some(ref mut geom) = target_feat.geometry_3d {
-        geom.length = Some(dimension_value);
-        geom.length_ref = Some(format!("{}:{}", source_feat.id, dim_ref.dimension_name));
-    }
-
-    // Write updated feature
-    let updated_yaml = serde_yml::to_string(&target_feat).into_diagnostic()?;
-    fs::write(&target_path, updated_yaml).into_diagnostic()?;
+    // Get the dimension value for display
+    let dimension_value = updated_feat
+        .geometry_3d
+        .as_ref()
+        .and_then(|g| g.length)
+        .unwrap_or(0.0);
 
     if !args.quiet {
         let target_short = short_ids
-            .get_short_id(&target_feat.id.to_string())
+            .get_short_id(&updated_feat.id.to_string())
             .unwrap_or_else(|| args.id.clone());
         let source_short = short_ids
-            .get_short_id(&source_feat.id.to_string())
+            .get_short_id(&source_id)
             .unwrap_or_else(|| dim_ref.feature_id.clone());
 
         println!(

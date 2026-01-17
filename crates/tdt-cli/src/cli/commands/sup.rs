@@ -3,21 +3,22 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::filters::StatusFilter;
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::CachedSupplier;
 use tdt_core::core::Config;
-use tdt_core::entities::supplier::Supplier;
-use tdt_core::schema::template::{TemplateContext, TemplateGenerator};
+use tdt_core::entities::supplier::{Capability, Supplier};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::SupplierService;
+use tdt_core::services::{
+    CommonFilter, CreateSupplier, SortDirection, SupplierFilter, SupplierService,
+    SupplierSortField,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum SupCommands {
@@ -244,134 +245,104 @@ const ENTITY_CONFIG: crate::cli::EntityConfig = crate::cli::EntityConfig {
     name_plural: "suppliers",
 };
 
-/// Run a supplier subcommand
-pub fn run(cmd: SupCommands, global: &GlobalOpts) -> Result<()> {
-    match cmd {
-        SupCommands::List(args) => run_list(args, global),
-        SupCommands::New(args) => run_new(args, global),
-        SupCommands::Show(args) => run_show(args, global),
-        SupCommands::Edit(args) => run_edit(args),
-        SupCommands::Delete(args) => run_delete(args),
-        SupCommands::Archive(args) => run_archive(args),
+/// Convert CapabilityFilter to Capability
+fn capability_filter_to_capability(filter: CapabilityFilter) -> Option<Capability> {
+    match filter {
+        CapabilityFilter::Machining => Some(Capability::Machining),
+        CapabilityFilter::SheetMetal => Some(Capability::SheetMetal),
+        CapabilityFilter::Casting => Some(Capability::Casting),
+        CapabilityFilter::Injection => Some(Capability::Injection),
+        CapabilityFilter::Extrusion => Some(Capability::Extrusion),
+        CapabilityFilter::Pcb => Some(Capability::Pcb),
+        CapabilityFilter::PcbAssembly => Some(Capability::PcbAssembly),
+        CapabilityFilter::CableAssembly => Some(Capability::CableAssembly),
+        CapabilityFilter::Assembly => Some(Capability::Assembly),
+        CapabilityFilter::Testing => Some(Capability::Testing),
+        CapabilityFilter::Finishing => Some(Capability::Finishing),
+        CapabilityFilter::Packaging => Some(Capability::Packaging),
+        CapabilityFilter::All => None,
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+/// Build a SupplierFilter from CLI list arguments
+fn build_sup_filter(args: &ListArgs) -> SupplierFilter {
+    SupplierFilter {
+        common: CommonFilter {
+            status: crate::cli::entity_cmd::status_filter_to_status(args.status).map(|s| vec![s]),
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        capability: capability_filter_to_capability(args.capability),
+        ..Default::default()
+    }
+}
 
-    // Open cache (auto-syncs if files changed)
-    let cache = EntityCache::open(&project)?;
-
-    // Convert filters to cache-compatible format
-    let status_filter = crate::cli::entity_cmd::status_filter_to_str(args.status);
-
-    let capability_filter = match args.capability {
-        CapabilityFilter::Machining => Some("machining"),
-        CapabilityFilter::SheetMetal => Some("sheet_metal"),
-        CapabilityFilter::Casting => Some("casting"),
-        CapabilityFilter::Injection => Some("injection"),
-        CapabilityFilter::Extrusion => Some("extrusion"),
-        CapabilityFilter::Pcb => Some("pcb"),
-        CapabilityFilter::PcbAssembly => Some("pcb_assembly"),
-        CapabilityFilter::CableAssembly => Some("cable_assembly"),
-        CapabilityFilter::Assembly => Some("assembly"),
-        CapabilityFilter::Testing => Some("testing"),
-        CapabilityFilter::Finishing => Some("finishing"),
-        CapabilityFilter::Packaging => Some("packaging"),
-        CapabilityFilter::All => None,
+/// Build sort field and direction from CLI arguments
+fn build_sup_sort(args: &ListArgs) -> (SupplierSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => SupplierSortField::Id,
+        ListColumn::Name => SupplierSortField::Name,
+        ListColumn::ShortName => SupplierSortField::ShortName,
+        ListColumn::Status => SupplierSortField::Status,
+        ListColumn::Website => SupplierSortField::Website,
+        ListColumn::Capabilities => SupplierSortField::Capabilities,
+        ListColumn::Author => SupplierSortField::Author,
+        ListColumn::Created => SupplierSortField::Created,
     };
 
-    // Query from cache with filters (applies indexed SQL queries)
-    let suppliers = cache.list_suppliers(
-        status_filter,
-        capability_filter,
-        args.author.as_deref(),
-        args.search.as_deref(),
-        None, // We'll apply limit after sorting
-    );
+    let direction = if args.reverse {
+        SortDirection::Ascending
+    } else {
+        SortDirection::Descending
+    };
 
-    // Apply post-filters that cache doesn't support
-    let mut suppliers: Vec<_> = suppliers
-        .into_iter()
-        .filter(|s| {
-            // Active filter: exclude obsolete
-            if !crate::cli::entity_cmd::status_enum_matches_filter(&s.status, args.status) {
-                return false;
-            }
-            // Recent filter
-            args.recent.is_none_or(|days| {
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-                s.created >= cutoff
-            })
-        })
-        .collect();
+    (field, direction)
+}
 
-    // Sort
-    match args.sort {
-        ListColumn::Id => suppliers.sort_by(|a, b| a.id.cmp(&b.id)),
-        ListColumn::Name => suppliers.sort_by(|a, b| a.name.cmp(&b.name)),
-        ListColumn::ShortName => suppliers.sort_by(|a, b| a.short_name.cmp(&b.short_name)),
-        ListColumn::Status => suppliers.sort_by(|a, b| a.status.cmp(&b.status)),
-        ListColumn::Website => suppliers.sort_by(|a, b| a.website.cmp(&b.website)),
-        ListColumn::Capabilities => {
-            suppliers.sort_by(|a, b| a.capabilities.len().cmp(&b.capabilities.len()))
+/// Sort cached suppliers by the specified column
+fn sort_cached_suppliers(entities: &mut [CachedSupplier], sort: ListColumn, reverse: bool) {
+    entities.sort_by(|a, b| {
+        let cmp = match sort {
+            ListColumn::Id => a.id.cmp(&b.id),
+            ListColumn::Name => a.name.cmp(&b.name),
+            ListColumn::ShortName => a.short_name.cmp(&b.short_name),
+            ListColumn::Status => a.status.cmp(&b.status),
+            ListColumn::Website => a.website.cmp(&b.website),
+            ListColumn::Capabilities => a.capabilities.len().cmp(&b.capabilities.len()),
+            ListColumn::Author => a.author.cmp(&b.author),
+            ListColumn::Created => a.created.cmp(&b.created),
+        };
+        if reverse {
+            cmp.reverse()
+        } else {
+            cmp
         }
-        ListColumn::Author => suppliers.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => suppliers.sort_by(|a, b| a.created.cmp(&b.created)),
-    }
+    });
+}
 
-    if args.reverse {
-        suppliers.reverse();
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        suppliers.truncate(limit);
-    }
-
-    // Count only
-    if args.count {
-        println!("{}", suppliers.len());
-        return Ok(());
-    }
-
-    // No results
-    if suppliers.is_empty() {
-        println!("No suppliers found.");
-        return Ok(());
-    }
-
+/// Output suppliers in the requested format
+fn output_suppliers(
+    suppliers: &[Supplier],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
     // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
-    short_ids.ensure_all(suppliers.iter().map(|s| s.id.clone()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
-    // Output based on format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
-    };
+    short_ids.ensure_all(suppliers.iter().map(|s| s.id.to_string()));
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
-        OutputFormat::Json | OutputFormat::Yaml => {
-            // For full fidelity output, load complete entities from files
-            let full_suppliers: Vec<Supplier> = suppliers
-                .iter()
-                .filter_map(|s| {
-                    let full_path = project.root().join(&s.file_path);
-                    fs::read_to_string(&full_path)
-                        .ok()
-                        .and_then(|content| serde_yml::from_str(&content).ok())
-                })
-                .collect();
-
-            if format == OutputFormat::Json {
-                let json = serde_json::to_string_pretty(&full_suppliers).into_diagnostic()?;
-                println!("{}", json);
-            } else {
-                let yaml = serde_yml::to_string(&full_suppliers).into_diagnostic()?;
-                print!("{}", yaml);
-            }
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&suppliers).into_diagnostic()?;
+            println!("{}", json);
+        }
+        OutputFormat::Yaml => {
+            let yaml = serde_yml::to_string(&suppliers).into_diagnostic()?;
+            print!("{}", yaml);
         }
         OutputFormat::Tsv
         | OutputFormat::Csv
@@ -394,7 +365,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             // Convert to TableRows
             let rows: Vec<TableRow> = suppliers
                 .iter()
-                .map(|sup| cached_supplier_to_row(sup, &short_ids))
+                .map(|sup| supplier_to_row(sup, short_ids))
                 .collect();
 
             // Configure table
@@ -411,6 +382,171 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Convert a Supplier to a TableRow
+fn supplier_to_row(sup: &Supplier, short_ids: &ShortIdIndex) -> TableRow {
+    // Format capabilities display
+    let caps_display = if sup.capabilities.len() > 2 {
+        let first_two: Vec<_> = sup.capabilities.iter().take(2).map(|c| c.to_string()).collect();
+        format!("{}+{}", first_two.join(","), sup.capabilities.len() - 2)
+    } else {
+        sup.capabilities
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+
+    TableRow::new(sup.id.to_string(), short_ids)
+        .cell("id", CellValue::Id(sup.id.to_string()))
+        .cell("name", CellValue::Text(sup.name.clone()))
+        .cell(
+            "short-name",
+            CellValue::Text(sup.short_name.clone().unwrap_or_else(|| "-".to_string())),
+        )
+        .cell("status", CellValue::Status(sup.status))
+        .cell(
+            "website",
+            CellValue::Text(sup.website.clone().unwrap_or_else(|| "-".to_string())),
+        )
+        .cell("capabilities", CellValue::Text(caps_display))
+        .cell("author", CellValue::Text(sup.author.clone()))
+        .cell("created", CellValue::Date(sup.created))
+}
+
+/// Run a supplier subcommand
+pub fn run(cmd: SupCommands, global: &GlobalOpts) -> Result<()> {
+    match cmd {
+        SupCommands::List(args) => run_list(args, global),
+        SupCommands::New(args) => run_new(args, global),
+        SupCommands::Show(args) => run_show(args, global),
+        SupCommands::Edit(args) => run_edit(args),
+        SupCommands::Delete(args) => run_delete(args),
+        SupCommands::Archive(args) => run_archive(args),
+    }
+}
+
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = SupplierService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    // Determine output format
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Check if we can use the fast cache path:
+    // - No recent filter (requires date comparison)
+    // - Not JSON/YAML output (need full entities)
+    let can_use_cache = args.recent.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        // Fast path: use cached entities via service
+        let mut suppliers = service.list_cached();
+
+        // Apply status filter
+        if let Some(status) = crate::cli::entity_cmd::status_filter_to_status(args.status) {
+            suppliers.retain(|s| s.status == status);
+        }
+
+        // Apply capability filter
+        if let Some(cap) = capability_filter_to_capability(args.capability) {
+            let cap_str = cap.to_string();
+            suppliers.retain(|s| s.capabilities.contains(&cap_str));
+        }
+
+        // Apply author filter
+        if let Some(ref author_filter) = args.author {
+            let author_lower = author_filter.to_lowercase();
+            suppliers.retain(|s| s.author.to_lowercase().contains(&author_lower));
+        }
+
+        // Apply search filter
+        if let Some(ref search) = args.search {
+            let search_lower = search.to_lowercase();
+            suppliers.retain(|s| s.name.to_lowercase().contains(&search_lower));
+        }
+
+        // Sort
+        sort_cached_suppliers(&mut suppliers, args.sort, args.reverse);
+
+        // Apply limit
+        if let Some(limit) = args.limit {
+            suppliers.truncate(limit);
+        }
+
+        // Count only
+        if args.count {
+            println!("{}", suppliers.len());
+            return Ok(());
+        }
+
+        // No results
+        if suppliers.is_empty() {
+            println!("No suppliers found.");
+            return Ok(());
+        }
+
+        // Update short ID index
+        short_ids.ensure_all(suppliers.iter().map(|s| s.id.clone()));
+        super::utils::save_short_ids(&mut short_ids, &project);
+
+        // Build visible columns list
+        let mut visible: Vec<&str> = args
+            .columns
+            .iter()
+            .map(|c| c.to_string().leak() as &str)
+            .collect();
+        if args.show_id && !visible.contains(&"id") {
+            visible.insert(0, "id");
+        }
+
+        // Convert to TableRows
+        let rows: Vec<TableRow> = suppliers
+            .iter()
+            .map(|sup| cached_supplier_to_row(sup, &short_ids))
+            .collect();
+
+        // Configure table
+        let config = if let Some(width) = args.wrap {
+            TableConfig::with_wrap(width)
+        } else {
+            TableConfig::default()
+        };
+
+        let formatter = TableFormatter::new(SUP_COLUMNS, "supplier", "SUP").with_config(config);
+        formatter.output(rows, format, &visible);
+
+        return Ok(());
+    }
+
+    // Full entity loading via service
+    let filter = build_sup_filter(&args);
+    let (sort_field, sort_dir) = build_sup_sort(&args);
+
+    let result = service
+        .list(&filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
+    let suppliers = result.items;
+
+    // Count only
+    if args.count {
+        println!("{}", suppliers.len());
+        return Ok(());
+    }
+
+    // No results
+    if suppliers.is_empty() {
+        println!("No suppliers found.");
+        return Ok(());
+    }
+
+    output_suppliers(&suppliers, &mut short_ids, &args, format, &project)
 }
 
 /// Convert a cached supplier to a TableRow
@@ -442,6 +578,8 @@ fn cached_supplier_to_row(sup: &CachedSupplier, short_ids: &ShortIdIndex) -> Tab
 
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = SupplierService::new(&project, &cache);
     let config = Config::load();
 
     let name: String;
@@ -472,53 +610,30 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         notes = args.notes.clone();
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Sup);
-
-    // Generate template
-    let generator = TemplateGenerator::new().map_err(|e| miette::miette!("{}", e))?;
-    let ctx = TemplateContext::new(id.clone(), config.author()).with_title(&name);
-
-    let ctx = if let Some(ref short) = short_name {
-        ctx.with_short_name(short)
-    } else {
-        ctx
+    // Create supplier using service
+    let input = CreateSupplier {
+        name: name.clone(),
+        author: config.author(),
+        short_name,
+        website,
+        payment_terms,
+        notes,
+        ..Default::default()
     };
 
-    let ctx = if let Some(ref w) = website {
-        ctx.with_website(w)
-    } else {
-        ctx
-    };
-
-    let ctx = if let Some(ref terms) = payment_terms {
-        ctx.with_payment_terms(terms)
-    } else {
-        ctx
-    };
-
-    let ctx = if let Some(ref n) = notes {
-        ctx.with_notes(n)
-    } else {
-        ctx
-    };
-
-    let yaml_content = generator
-        .generate_supplier(&ctx)
+    let supplier = service
+        .create(input)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Write file
-    let output_dir = project.root().join("bom/suppliers");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    // Get file path for link processing and editor
+    let file_path = project
+        .root()
+        .join("bom/suppliers")
+        .join(format!("{}.tdt.yaml", supplier.id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
-    let short_id = short_ids.add(id.to_string());
+    let short_id = short_ids.add(supplier.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
     // Handle --link flags
@@ -531,7 +646,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
     // Output based on format flag
     crate::cli::entity_cmd::output_new_entity(
-        &id,
+        &supplier.id,
         &file_path,
         short_id.clone(),
         ENTITY_CONFIG.name,

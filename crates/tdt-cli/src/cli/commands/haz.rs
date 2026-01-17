@@ -7,14 +7,16 @@ use std::fs;
 
 use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
+use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
-use tdt_core::core::cache::EntityCache;
 use tdt_core::entities::hazard::{Hazard, HazardCategory, HazardSeverity};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::HazardService;
+use tdt_core::services::{
+    CommonFilter, CreateHazard, HazardFilter, HazardService, HazardSortField, SortDirection,
+};
 
 /// Column definitions for hazard list output
 const HAZ_COLUMNS: &[ColumnDef] = &[
@@ -272,148 +274,29 @@ pub fn run(cmd: HazCommands, global: &GlobalOpts) -> Result<()> {
 }
 
 fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().into_diagnostic()?;
-    let short_ids = ShortIdIndex::load(&project);
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = HazardService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
 
-    // Load hazards from filesystem
-    let hazards_dir = project.root().join("risks/hazards");
-    let mut hazards: Vec<Hazard> = Vec::new();
-
-    if hazards_dir.exists() {
-        for entry in walkdir::WalkDir::new(&hazards_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(content) = fs::read_to_string(entry.path()) {
-                if let Ok(hazard) = serde_yml::from_str::<Hazard>(&content) {
-                    hazards.push(hazard);
-                }
-            }
-        }
-    }
-
-    // Apply filters
-    let filtered: Vec<&Hazard> = hazards
-        .iter()
-        .filter(|h| match args.category {
-            CategoryFilter::Electrical => h.category == HazardCategory::Electrical,
-            CategoryFilter::Mechanical => h.category == HazardCategory::Mechanical,
-            CategoryFilter::Thermal => h.category == HazardCategory::Thermal,
-            CategoryFilter::Chemical => h.category == HazardCategory::Chemical,
-            CategoryFilter::Biological => h.category == HazardCategory::Biological,
-            CategoryFilter::Radiation => h.category == HazardCategory::Radiation,
-            CategoryFilter::Ergonomic => h.category == HazardCategory::Ergonomic,
-            CategoryFilter::Software => h.category == HazardCategory::Software,
-            CategoryFilter::Environmental => h.category == HazardCategory::Environmental,
-            CategoryFilter::All => true,
-        })
-        .filter(|h| match args.severity {
-            SeverityFilter::Negligible => h.severity == HazardSeverity::Negligible,
-            SeverityFilter::Minor => h.severity == HazardSeverity::Minor,
-            SeverityFilter::Serious => h.severity == HazardSeverity::Serious,
-            SeverityFilter::Severe => h.severity == HazardSeverity::Severe,
-            SeverityFilter::Catastrophic => h.severity == HazardSeverity::Catastrophic,
-            SeverityFilter::All => true,
-        })
-        .filter(|h| {
-            if let Some(ref status_filter) = args.status {
-                h.status.to_string().eq_ignore_ascii_case(status_filter)
-            } else {
-                true
-            }
-        })
-        .filter(|h| {
-            if let Some(ref tag_filter) = args.tag {
-                h.tags.iter().any(|t| t.eq_ignore_ascii_case(tag_filter))
-            } else {
-                true
-            }
-        })
-        .filter(|h| {
-            if args.uncontrolled {
-                h.links.controlled_by.is_empty()
-            } else {
-                true
-            }
-        })
-        .filter(|h| {
-            if args.no_risks {
-                h.links.causes.is_empty()
-            } else {
-                true
-            }
-        })
-        .take(args.limit.unwrap_or(usize::MAX))
-        .collect();
-
-    // Output format
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Table,
         f => f,
     };
 
-    match format {
-        OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&filtered).into_diagnostic()?;
-            println!("{}", json);
-        }
-        OutputFormat::ShortId => {
-            for h in &filtered {
-                let short = short_ids
-                    .get_short_id(&h.id.to_string())
-                    .unwrap_or_else(|| h.id.to_string());
-                println!("{}", short);
-            }
-        }
-        OutputFormat::Id => {
-            for h in &filtered {
-                println!("{}", h.id);
-            }
-        }
-        OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&filtered).into_diagnostic()?;
-            println!("{}", yaml);
-        }
-        _ => {
-            if filtered.is_empty() {
-                println!("No hazards found.");
-                return Ok(());
-            }
+    let filter = build_haz_filter(&args);
+    let mut hazards = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
 
-            // Default visible columns
-            let visible: Vec<&str> = vec![
-                "id", "category", "severity", "title", "risks", "ctrls", "status",
-            ];
-
-            // Convert to TableRows
-            let rows: Vec<TableRow> = filtered
-                .iter()
-                .map(|h| hazard_to_row(h, &short_ids))
-                .collect();
-
-            // Configure table
-            let config = TableConfig::default();
-            let formatter = TableFormatter::new(HAZ_COLUMNS, "hazard", "HAZ").with_config(config);
-            formatter.output(rows, format, &visible);
-
-            let uncontrolled = filtered
-                .iter()
-                .filter(|h| h.links.controlled_by.is_empty())
-                .count();
-            if uncontrolled > 0 {
-                println!(
-                    "\n{} hazards, {} uncontrolled",
-                    filtered.len(),
-                    style(uncontrolled).yellow()
-                );
-            } else {
-                println!("\n{} hazards", filtered.len());
-            }
-        }
+    // Post-filter: no_risks (not supported by service filter)
+    if args.no_risks {
+        hazards.retain(|h| h.links.causes.is_empty());
     }
 
-    Ok(())
+    if let Some(limit) = args.limit {
+        hazards.truncate(limit);
+    }
+
+    output_hazards(&hazards, &mut short_ids, &args, format, &project)
 }
 
 /// Convert a Hazard to a TableRow
@@ -431,123 +314,224 @@ fn hazard_to_row(hazard: &Hazard, short_ids: &ShortIdIndex) -> TableRow {
         .cell("status", CellValue::Status(hazard.status))
 }
 
+/// Build a HazardFilter from CLI ListArgs
+fn build_haz_filter(args: &ListArgs) -> HazardFilter {
+    let category = match args.category {
+        CategoryFilter::All => None,
+        CategoryFilter::Electrical => Some(HazardCategory::Electrical),
+        CategoryFilter::Mechanical => Some(HazardCategory::Mechanical),
+        CategoryFilter::Thermal => Some(HazardCategory::Thermal),
+        CategoryFilter::Chemical => Some(HazardCategory::Chemical),
+        CategoryFilter::Biological => Some(HazardCategory::Biological),
+        CategoryFilter::Radiation => Some(HazardCategory::Radiation),
+        CategoryFilter::Ergonomic => Some(HazardCategory::Ergonomic),
+        CategoryFilter::Software => Some(HazardCategory::Software),
+        CategoryFilter::Environmental => Some(HazardCategory::Environmental),
+    };
+
+    let severity = match args.severity {
+        SeverityFilter::All => None,
+        SeverityFilter::Negligible => Some(HazardSeverity::Negligible),
+        SeverityFilter::Minor => Some(HazardSeverity::Minor),
+        SeverityFilter::Serious => Some(HazardSeverity::Serious),
+        SeverityFilter::Severe => Some(HazardSeverity::Severe),
+        SeverityFilter::Catastrophic => Some(HazardSeverity::Catastrophic),
+    };
+
+    HazardFilter {
+        common: CommonFilter {
+            status: args.status.as_ref().map(|s| {
+                vec![s.parse().unwrap_or(tdt_core::core::entity::Status::Draft)]
+            }),
+            tags: args.tag.as_ref().map(|t| vec![t.clone()]),
+            limit: args.limit,
+            ..Default::default()
+        },
+        category,
+        severity,
+        uncontrolled_only: args.uncontrolled,
+        sort: HazardSortField::Created,
+        sort_direction: SortDirection::Descending,
+        ..Default::default()
+    }
+}
+
+/// Output hazards in the specified format
+fn output_hazards(
+    hazards: &[Hazard],
+    short_ids: &mut ShortIdIndex,
+    _args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
+    // Update short IDs
+    short_ids.ensure_all(hazards.iter().map(|h| h.id.to_string()));
+    super::utils::save_short_ids(short_ids, project);
+
+    match format {
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&hazards).map_err(|e| miette::miette!("{}", e))?;
+            println!("{}", json);
+        }
+        OutputFormat::ShortId => {
+            for h in hazards {
+                let short = short_ids
+                    .get_short_id(&h.id.to_string())
+                    .unwrap_or_else(|| h.id.to_string());
+                println!("{}", short);
+            }
+        }
+        OutputFormat::Id => {
+            for h in hazards {
+                println!("{}", h.id);
+            }
+        }
+        OutputFormat::Yaml => {
+            let yaml = serde_yml::to_string(&hazards).map_err(|e| miette::miette!("{}", e))?;
+            println!("{}", yaml);
+        }
+        _ => {
+            if hazards.is_empty() {
+                println!("No hazards found.");
+                return Ok(());
+            }
+
+            let visible: Vec<&str> = vec![
+                "id", "category", "severity", "title", "risks", "ctrls", "status",
+            ];
+
+            let rows: Vec<TableRow> = hazards
+                .iter()
+                .map(|h| hazard_to_row(h, short_ids))
+                .collect();
+
+            let config = TableConfig::default();
+            let formatter = TableFormatter::new(HAZ_COLUMNS, "hazard", "HAZ").with_config(config);
+            formatter.output(rows, format, &visible);
+
+            let uncontrolled = hazards
+                .iter()
+                .filter(|h| h.links.controlled_by.is_empty())
+                .count();
+            if uncontrolled > 0 {
+                println!(
+                    "\n{} hazards, {} uncontrolled",
+                    hazards.len(),
+                    style(uncontrolled).yellow()
+                );
+            } else {
+                println!("\n{} hazards", hazards.len());
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().into_diagnostic()?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let service = HazardService::new(&project, &cache);
 
-    // Get author
-    let author = config.author();
+    let title: String;
+    let category: HazardCategory;
+    let description: String;
+    let potential_harms: Vec<String>;
+    let energy_level: Option<String>;
+    let severity: HazardSeverity;
+    let tags: Vec<String>;
 
-    // Interactive wizard mode
     if args.interactive {
         let wizard = SchemaWizard::new();
         let result = wizard.run(EntityPrefix::Haz)?;
 
-        let title = result
+        title = result
             .get_string("title")
             .map(String::from)
             .unwrap_or_else(|| "New Hazard".to_string());
 
         let category_str = result.get_string("category").unwrap_or("electrical");
-        let category = category_str
+        category = category_str
             .parse::<HazardCategory>()
             .unwrap_or(HazardCategory::Electrical);
 
-        let description = result
+        description = result
             .get_string("description")
             .map(String::from)
             .unwrap_or_default();
 
-        let id = EntityId::new(EntityPrefix::Haz);
-        let hazard = Hazard::new(id.clone(), title, category, description, author.clone());
+        potential_harms = Vec::new();
+        energy_level = None;
+        severity = HazardSeverity::default();
+        tags = Vec::new();
+    } else {
+        title = args.title.ok_or_else(|| {
+            miette::miette!("--title is required (or use --interactive for wizard mode)")
+        })?;
 
-        // Write file
-        let hazards_dir = project.root().join("risks/hazards");
-        fs::create_dir_all(&hazards_dir).into_diagnostic()?;
+        category = args
+            .category
+            .map(|c| c.into())
+            .unwrap_or(HazardCategory::Electrical);
 
-        let yaml = serde_yml::to_string(&hazard).into_diagnostic()?;
-        let filename = format!("{}.tdt.yaml", id);
-        let file_path = hazards_dir.join(&filename);
-        fs::write(&file_path, &yaml).into_diagnostic()?;
+        description = args.description.unwrap_or_default();
 
-        match global.output {
-            OutputFormat::Json => {
-                let output = serde_json::json!({
-                    "id": id.to_string(),
-                    "title": hazard.title,
-                    "path": file_path.display().to_string()
-                });
-                println!("{}", serde_json::to_string_pretty(&output).unwrap());
-            }
-            OutputFormat::Id => {
-                println!("{}", id);
-            }
-            _ => {
-                println!(
-                    "Created hazard {} at {}",
-                    style(&id.to_string()).cyan(),
-                    file_path.display()
-                );
-            }
-        }
-        return Ok(());
+        potential_harms = args
+            .harms
+            .map(|h| h.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default();
+
+        energy_level = args.energy;
+
+        severity = args
+            .severity
+            .map(|s| s.into())
+            .unwrap_or_default();
+
+        tags = args
+            .tags
+            .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default();
     }
 
-    // Check required fields
-    let title = args.title.ok_or_else(|| {
-        miette::miette!("--title is required (or use --interactive for wizard mode)")
-    })?;
+    // Create hazard via service
+    let input = CreateHazard {
+        title: title.clone(),
+        category,
+        description,
+        potential_harms,
+        energy_level,
+        severity,
+        exposure_scenario: None,
+        affected_populations: Vec::new(),
+        tags,
+        author: config.author(),
+    };
 
-    let category: HazardCategory = args
-        .category
-        .map(|c| c.into())
-        .unwrap_or(HazardCategory::Electrical);
+    let hazard = service.create(input).map_err(|e| miette::miette!("{}", e))?;
 
-    let description = args.description.unwrap_or_default();
+    // Get file path for the created hazard
+    let file_path = project
+        .root()
+        .join("risks/hazards")
+        .join(format!("{}.tdt.yaml", hazard.id));
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Haz);
-
-    // Build hazard
-    let mut hazard = Hazard::new(id.clone(), title, category, description, author);
-
-    // Apply optional fields
-    if let Some(harms) = args.harms {
-        hazard.potential_harms = harms.split(',').map(|s| s.trim().to_string()).collect();
-    }
-
-    if let Some(energy) = args.energy {
-        hazard.energy_level = Some(energy);
-    }
-
-    if let Some(severity) = args.severity {
-        hazard.severity = severity.into();
-    }
-
-    if let Some(tags) = args.tags {
-        hazard.tags = tags.split(',').map(|s| s.trim().to_string()).collect();
-    }
-
+    // Handle --source flag by updating the hazard to add link
     if let Some(source) = args.source {
         let resolved = tdt_core::core::shortid::parse_entity_reference(&source, &project);
         let source_id = EntityId::parse(&resolved)
             .map_err(|e| miette::miette!("Invalid source ID '{}': {}", source, e))?;
-        hazard.links.originates_from.push(source_id);
+
+        // Load, modify, and save the hazard with the link
+        let mut updated_hazard = hazard.clone();
+        updated_hazard.links.originates_from.push(source_id);
+        let yaml = serde_yml::to_string(&updated_hazard).into_diagnostic()?;
+        std::fs::write(&file_path, yaml).into_diagnostic()?;
     }
 
-    // Serialize
-    let yaml = serde_yml::to_string(&hazard).into_diagnostic()?;
-
-    // Write file
-    let hazards_dir = project.root().join("risks/hazards");
-    fs::create_dir_all(&hazards_dir).into_diagnostic()?;
-
-    let filename = format!("{}.tdt.yaml", id);
-    let file_path = hazards_dir.join(&filename);
-    fs::write(&file_path, &yaml).into_diagnostic()?;
-
     // Open editor if not --no-edit
-    if !args.no_edit {
+    if !args.no_edit && !args.interactive {
         config.run_editor(&file_path).into_diagnostic()?;
     }
 
@@ -555,7 +539,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     match global.output {
         OutputFormat::Json => {
             let output = serde_json::json!({
-                "id": id.to_string(),
+                "id": hazard.id.to_string(),
                 "title": hazard.title,
                 "path": file_path.display().to_string()
             });
@@ -565,12 +549,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             );
         }
         OutputFormat::Id => {
-            println!("{}", id);
+            println!("{}", hazard.id);
         }
         _ => {
             println!(
                 "Created hazard {} at {}",
-                style(&id.to_string()).cyan(),
+                style(&hazard.id.to_string()).cyan(),
                 file_path.display()
             );
         }

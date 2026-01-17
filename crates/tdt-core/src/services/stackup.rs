@@ -14,7 +14,7 @@ use crate::core::loader;
 use crate::core::project::Project;
 use crate::entities::stackup::{
     AnalysisResult, Contributor, Direction, Disposition, Distribution, FeatureRef,
-    MonteCarloResult, RssResult, Stackup, Target, WorstCaseResult,
+    MonteCarloResult, RssResult, Stackup, WorstCaseResult,
 };
 use crate::services::base::ServiceBase;
 use crate::services::common::{

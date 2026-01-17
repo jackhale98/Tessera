@@ -3,7 +3,6 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
 use crate::cli::filters::StatusFilter;
@@ -18,7 +17,9 @@ use tdt_core::core::CachedQuote;
 use tdt_core::core::Config;
 use tdt_core::entities::quote::{Quote, QuoteStatus};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::QuoteService;
+use tdt_core::services::{
+    CommonFilter, CreateQuote, QuoteFilter, QuoteService, QuoteSortField, SortDirection,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum QuoteCommands {
@@ -344,271 +345,115 @@ fn parse_price_break(input: &str) -> Result<(u32, f64, Option<u32>)> {
     Ok((qty, price, lead_time))
 }
 
-/// Run a quote subcommand
-pub fn run(cmd: QuoteCommands, global: &GlobalOpts) -> Result<()> {
-    match cmd {
-        QuoteCommands::List(args) => run_list(args, global),
-        QuoteCommands::New(args) => run_new(args, global),
-        QuoteCommands::Show(args) => run_show(args, global),
-        QuoteCommands::Edit(args) => run_edit(args),
-        QuoteCommands::Delete(args) => run_delete(args),
-        QuoteCommands::Archive(args) => run_archive(args),
-        QuoteCommands::Compare(args) => run_compare(args, global),
-        QuoteCommands::Price(args) => run_price(args, global),
+/// Convert QuoteStatusFilter to QuoteStatus
+fn quote_status_filter_to_quote_status(filter: QuoteStatusFilter) -> Option<QuoteStatus> {
+    match filter {
+        QuoteStatusFilter::Pending => Some(QuoteStatus::Pending),
+        QuoteStatusFilter::Received => Some(QuoteStatus::Received),
+        QuoteStatusFilter::Accepted => Some(QuoteStatus::Accepted),
+        QuoteStatusFilter::Rejected => Some(QuoteStatus::Rejected),
+        QuoteStatusFilter::Expired => Some(QuoteStatus::Expired),
+        QuoteStatusFilter::All => None,
     }
 }
 
-fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
-    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let short_ids = ShortIdIndex::load(&project);
-
-    // Determine output format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
-    };
-
-    // Resolve supplier filter if provided
-    let supplier_filter = args
+/// Build a QuoteFilter from CLI list arguments
+fn build_quote_filter(args: &ListArgs, short_ids: &ShortIdIndex) -> QuoteFilter {
+    // Resolve supplier ID if provided
+    let supplier = args
         .supplier
         .as_ref()
         .map(|s| short_ids.resolve(s).unwrap_or_else(|| s.clone()));
 
-    // Resolve component filter if provided
-    let component_filter = args
+    // Resolve component ID if provided
+    let component = args
         .component
         .as_ref()
         .map(|c| short_ids.resolve(c).unwrap_or_else(|| c.clone()));
 
-    // Check if we can use the fast cache path:
-    // - No assembly filter (cache doesn't store this)
-    // - No recent filter (would need time-based SQL)
-    // - Not JSON/YAML output (needs full entity serialization)
-    let can_use_cache = args.assembly.is_none()
-        && args.recent.is_none()
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
-
-    if can_use_cache {
-        if let Ok(cache) = EntityCache::open(&project) {
-            let status_filter = crate::cli::entity_cmd::status_filter_to_str(args.status);
-
-            let quote_status_filter = match args.quote_status {
-                QuoteStatusFilter::Pending => Some("pending"),
-                QuoteStatusFilter::Received => Some("received"),
-                QuoteStatusFilter::Accepted => Some("accepted"),
-                QuoteStatusFilter::Rejected => Some("rejected"),
-                QuoteStatusFilter::Expired => Some("expired"),
-                QuoteStatusFilter::All => None,
-            };
-
-            let mut quotes = cache.list_quotes(
-                status_filter,
-                quote_status_filter,
-                supplier_filter.as_deref(),
-                component_filter.as_deref(),
-                args.author.as_deref(),
-                args.search.as_deref(),
-                None, // We'll apply limit after sorting
-            );
-
-            // Sort
-            match args.sort {
-                ListColumn::Id => quotes.sort_by(|a, b| a.id.cmp(&b.id)),
-                ListColumn::Title => quotes.sort_by(|a, b| a.title.cmp(&b.title)),
-                ListColumn::Supplier => quotes.sort_by(|a, b| {
-                    a.supplier_id
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.supplier_id.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Component => quotes.sort_by(|a, b| {
-                    a.component_id
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.component_id.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Price => quotes.sort_by(|a, b| {
-                    let price_a = a.unit_price.unwrap_or(0.0);
-                    let price_b = b.unit_price.unwrap_or(0.0);
-                    price_a
-                        .partial_cmp(&price_b)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                }),
-                ListColumn::QuoteStatus => quotes.sort_by(|a, b| {
-                    a.quote_status
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.quote_status.as_deref().unwrap_or(""))
-                }),
-                ListColumn::Status => quotes.sort_by(|a, b| a.status.cmp(&b.status)),
-                ListColumn::Author => quotes.sort_by(|a, b| a.author.cmp(&b.author)),
-                ListColumn::Created => quotes.sort_by(|a, b| a.created.cmp(&b.created)),
-            }
-
-            if args.reverse {
-                quotes.reverse();
-            }
-
-            if let Some(limit) = args.limit {
-                quotes.truncate(limit);
-            }
-
-            return output_cached_quotes(&quotes, &short_ids, &args, format);
-        }
-    }
-
-    // Fall back to full YAML loading
-    let quote_dir = project.root().join("bom/quotes");
-
-    if !quote_dir.exists() {
-        if args.count {
-            println!("0");
-        } else {
-            println!("No quotes found.");
-        }
-        return Ok(());
-    }
-
-    // Resolve assembly filter if provided
-    let assembly_filter = args
+    // Resolve assembly ID if provided
+    let assembly = args
         .assembly
         .as_ref()
         .map(|a| short_ids.resolve(a).unwrap_or_else(|| a.clone()));
 
-    // Load and parse all quotes
-    let mut quotes: Vec<Quote> = Vec::new();
-
-    for entry in fs::read_dir(&quote_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(quote) = serde_yml::from_str::<Quote>(&content) {
-                quotes.push(quote);
-            }
-        }
+    QuoteFilter {
+        common: CommonFilter {
+            status: crate::cli::entity_cmd::status_filter_to_status(args.status).map(|s| vec![s]),
+            author: args.author.clone(),
+            search: args.search.clone(),
+            recent_days: args.recent,
+            limit: args.limit,
+            ..Default::default()
+        },
+        quote_status: quote_status_filter_to_quote_status(args.quote_status),
+        supplier,
+        component,
+        assembly,
+        ..Default::default()
     }
+}
 
-    // Apply filters
-    let quotes: Vec<Quote> = quotes
-        .into_iter()
-        .filter(|q| match args.quote_status {
-            QuoteStatusFilter::Pending => q.quote_status == QuoteStatus::Pending,
-            QuoteStatusFilter::Received => q.quote_status == QuoteStatus::Received,
-            QuoteStatusFilter::Accepted => q.quote_status == QuoteStatus::Accepted,
-            QuoteStatusFilter::Rejected => q.quote_status == QuoteStatus::Rejected,
-            QuoteStatusFilter::Expired => q.quote_status == QuoteStatus::Expired,
-            QuoteStatusFilter::All => true,
-        })
-        .filter(|q| match args.status {
-            StatusFilter::Draft => q.status == tdt_core::core::entity::Status::Draft,
-            StatusFilter::Review => q.status == tdt_core::core::entity::Status::Review,
-            StatusFilter::Approved => q.status == tdt_core::core::entity::Status::Approved,
-            StatusFilter::Released => q.status == tdt_core::core::entity::Status::Released,
-            StatusFilter::Obsolete => q.status == tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::Active => q.status != tdt_core::core::entity::Status::Obsolete,
-            StatusFilter::All => true,
-        })
-        .filter(|q| {
-            if let Some(ref cmp) = component_filter {
-                q.component.as_ref().is_some_and(|c| c.contains(cmp))
-            } else {
-                true
-            }
-        })
-        .filter(|q| {
-            if let Some(ref asm) = assembly_filter {
-                q.assembly.as_ref().is_some_and(|a| a.contains(asm))
-            } else {
-                true
-            }
-        })
-        .filter(|q| {
-            if let Some(ref sup) = supplier_filter {
-                q.supplier.contains(sup)
-            } else {
-                true
-            }
-        })
-        .filter(|q| {
-            if let Some(ref search) = args.search {
-                let search_lower = search.to_lowercase();
-                q.title.to_lowercase().contains(&search_lower)
-                    || q.description
-                        .as_ref()
-                        .is_some_and(|d| d.to_lowercase().contains(&search_lower))
-            } else {
-                true
-            }
-        })
-        .filter(|q| {
-            args.author
-                .as_ref()
-                .is_none_or(|author| q.author.to_lowercase().contains(&author.to_lowercase()))
-        })
-        .filter(|q| {
-            args.recent.is_none_or(|days| {
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-                q.created >= cutoff
-            })
-        })
-        .collect();
-
-    // Sort
-    let mut quotes = quotes;
-    match args.sort {
-        ListColumn::Id => quotes.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string())),
-        ListColumn::Title => quotes.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::Supplier => quotes.sort_by(|a, b| a.supplier.cmp(&b.supplier)),
-        ListColumn::Component => quotes.sort_by(|a, b| a.component.cmp(&b.component)),
-        ListColumn::Price => quotes.sort_by(|a, b| {
-            let price_a = a.price_for_qty(1).unwrap_or(0.0);
-            let price_b = b.price_for_qty(1).unwrap_or(0.0);
-            price_a
-                .partial_cmp(&price_b)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }),
-        ListColumn::QuoteStatus => quotes
-            .sort_by(|a, b| format!("{:?}", a.quote_status).cmp(&format!("{:?}", b.quote_status))),
-        ListColumn::Status => {
-            quotes.sort_by(|a, b| format!("{:?}", a.status).cmp(&format!("{:?}", b.status)))
-        }
-        ListColumn::Author => quotes.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => quotes.sort_by(|a, b| a.created.cmp(&b.created)),
-    }
-
-    if args.reverse {
-        quotes.reverse();
-    }
-
-    // Apply limit
-    if let Some(limit) = args.limit {
-        quotes.truncate(limit);
-    }
-
-    // Count only
-    if args.count {
-        println!("{}", quotes.len());
-        return Ok(());
-    }
-
-    // No results
-    if quotes.is_empty() {
-        println!("No quotes found.");
-        return Ok(());
-    }
-
-    // Update short ID index
-    let mut short_ids = ShortIdIndex::load(&project);
-    short_ids.ensure_all(quotes.iter().map(|q| q.id.to_string()));
-    super::utils::save_short_ids(&mut short_ids, &project);
-
-    // Output based on format
-    let format = match global.output {
-        OutputFormat::Auto => OutputFormat::Tsv,
-        f => f,
+/// Build sort field and direction from CLI arguments
+fn build_quote_sort(args: &ListArgs) -> (QuoteSortField, SortDirection) {
+    let field = match args.sort {
+        ListColumn::Id => QuoteSortField::Id,
+        ListColumn::Title => QuoteSortField::Title,
+        ListColumn::Supplier => QuoteSortField::Supplier,
+        ListColumn::Component => QuoteSortField::Component,
+        ListColumn::Price => QuoteSortField::Price,
+        ListColumn::QuoteStatus => QuoteSortField::QuoteStatus,
+        ListColumn::Status => QuoteSortField::Status,
+        ListColumn::Author => QuoteSortField::Author,
+        ListColumn::Created => QuoteSortField::Created,
     };
+
+    let direction = if args.reverse {
+        SortDirection::Ascending
+    } else {
+        SortDirection::Descending
+    };
+
+    (field, direction)
+}
+
+/// Sort cached quotes by the specified column
+fn sort_cached_quotes(entities: &mut [CachedQuote], sort: ListColumn, reverse: bool) {
+    entities.sort_by(|a, b| {
+        let cmp = match sort {
+            ListColumn::Id => a.id.cmp(&b.id),
+            ListColumn::Title => a.title.cmp(&b.title),
+            ListColumn::Supplier => a.supplier_id.cmp(&b.supplier_id),
+            ListColumn::Component => a.component_id.cmp(&b.component_id),
+            ListColumn::Price => {
+                let price_a = a.unit_price.unwrap_or(0.0);
+                let price_b = b.unit_price.unwrap_or(0.0);
+                price_a.partial_cmp(&price_b).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            ListColumn::QuoteStatus => a.quote_status.cmp(&b.quote_status),
+            ListColumn::Status => a.status.cmp(&b.status),
+            ListColumn::Author => a.author.cmp(&b.author),
+            ListColumn::Created => a.created.cmp(&b.created),
+        };
+        if reverse {
+            cmp.reverse()
+        } else {
+            cmp
+        }
+    });
+}
+
+/// Output quotes in the requested format
+fn output_quotes(
+    quotes: &[Quote],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
+    // Update short ID index
+    short_ids.ensure_all(quotes.iter().map(|q| q.id.to_string()));
+    super::utils::save_short_ids(short_ids, project);
 
     match format {
         OutputFormat::Json => {
@@ -630,7 +475,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 .iter()
                 .map(|c| c.to_string().leak() as &str)
                 .collect();
-            let rows: Vec<TableRow> = quotes.iter().map(|q| quote_to_row(q, &short_ids)).collect();
+            let rows: Vec<TableRow> = quotes.iter().map(|q| quote_to_row(q, short_ids)).collect();
 
             let config = TableConfig {
                 wrap_width: args.wrap,
@@ -640,7 +485,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
-            for quote in &quotes {
+            for quote in quotes {
                 if format == OutputFormat::ShortId {
                     let short_id = short_ids
                         .get_short_id(&quote.id.to_string())
@@ -655,6 +500,114 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Run a quote subcommand
+pub fn run(cmd: QuoteCommands, global: &GlobalOpts) -> Result<()> {
+    match cmd {
+        QuoteCommands::List(args) => run_list(args, global),
+        QuoteCommands::New(args) => run_new(args, global),
+        QuoteCommands::Show(args) => run_show(args, global),
+        QuoteCommands::Edit(args) => run_edit(args),
+        QuoteCommands::Delete(args) => run_delete(args),
+        QuoteCommands::Archive(args) => run_archive(args),
+        QuoteCommands::Compare(args) => run_compare(args, global),
+        QuoteCommands::Price(args) => run_price(args, global),
+    }
+}
+
+fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = QuoteService::new(&project, &cache);
+    let mut short_ids = ShortIdIndex::load(&project);
+
+    // Determine output format
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    // Check if we can use the fast cache path:
+    // - No assembly filter (cache doesn't store this)
+    // - No recent filter (would need time-based comparison)
+    // - Not JSON/YAML output (needs full entity serialization)
+    let can_use_cache = args.assembly.is_none()
+        && args.recent.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        // Fast path: use cached entities via service
+        let mut quotes = service.list_cached();
+
+        // Apply status filter
+        if let Some(status) = crate::cli::entity_cmd::status_filter_to_status(args.status) {
+            quotes.retain(|q| q.status == status);
+        }
+
+        // Apply quote status filter
+        if let Some(qs) = quote_status_filter_to_quote_status(args.quote_status) {
+            let qs_str = qs.to_string();
+            quotes.retain(|q| q.quote_status.as_ref().is_some_and(|s| s == &qs_str));
+        }
+
+        // Apply supplier filter
+        if let Some(ref sup) = args.supplier {
+            let resolved_sup = short_ids.resolve(sup).unwrap_or_else(|| sup.clone());
+            quotes.retain(|q| q.supplier_id.as_ref().is_some_and(|s| s.contains(&resolved_sup)));
+        }
+
+        // Apply component filter
+        if let Some(ref cmp) = args.component {
+            let resolved_cmp = short_ids.resolve(cmp).unwrap_or_else(|| cmp.clone());
+            quotes.retain(|q| q.component_id.as_ref().is_some_and(|c| c.contains(&resolved_cmp)));
+        }
+
+        // Apply author filter
+        if let Some(ref author_filter) = args.author {
+            let author_lower = author_filter.to_lowercase();
+            quotes.retain(|q| q.author.to_lowercase().contains(&author_lower));
+        }
+
+        // Apply search filter
+        if let Some(ref search) = args.search {
+            let search_lower = search.to_lowercase();
+            quotes.retain(|q| q.title.to_lowercase().contains(&search_lower));
+        }
+
+        // Sort
+        sort_cached_quotes(&mut quotes, args.sort, args.reverse);
+
+        // Apply limit
+        if let Some(limit) = args.limit {
+            quotes.truncate(limit);
+        }
+
+        return output_cached_quotes(&quotes, &short_ids, &args, format);
+    }
+
+    // Full entity loading via service
+    let filter = build_quote_filter(&args, &short_ids);
+    let (sort_field, sort_dir) = build_quote_sort(&args);
+
+    let result = service
+        .list(&filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
+    let quotes = result.items;
+
+    // Count only
+    if args.count {
+        println!("{}", quotes.len());
+        return Ok(());
+    }
+
+    // No results
+    if quotes.is_empty() {
+        println!("No quotes found.");
+        return Ok(());
+    }
+
+    output_quotes(&quotes, &mut short_ids, &args, format, &project)
 }
 
 /// Output cached quotes (fast path - no YAML parsing needed)
@@ -782,6 +735,7 @@ fn cached_quote_to_row(quote: &CachedQuote, short_ids: &ShortIdIndex) -> TableRo
 fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let config = Config::load();
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve IDs
     let short_ids = ShortIdIndex::load(&project);
@@ -849,24 +803,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         title = args.title.unwrap_or_else(|| "Quote".to_string());
     }
 
-    // Validate referenced item exists
+    // Validate referenced item exists using services
+    let cmp_service = tdt_core::services::ComponentService::new(&project, &cache);
+    let asm_service = tdt_core::services::AssemblyService::new(&project, &cache);
+
     if let Some(ref cmp) = component {
-        let cmp_dir = project.root().join("bom/components");
-        let mut found = false;
-        if cmp_dir.exists() {
-            for entry in fs::read_dir(&cmp_dir).into_diagnostic()? {
-                let entry = entry.into_diagnostic()?;
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "yaml") {
-                    let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                    if filename.contains(cmp) {
-                        found = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if !found {
+        if cmp_service.get(cmp).map_err(|e| miette::miette!("{}", e))?.is_none() {
             println!(
                 "{} Warning: Component '{}' not found. Create it first with: tdt cmp new",
                 style("!").yellow(),
@@ -876,22 +818,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     if let Some(ref asm) = assembly {
-        let asm_dir = project.root().join("bom/assemblies");
-        let mut found = false;
-        if asm_dir.exists() {
-            for entry in fs::read_dir(&asm_dir).into_diagnostic()? {
-                let entry = entry.into_diagnostic()?;
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "yaml") {
-                    let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                    if filename.contains(asm) {
-                        found = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if !found {
+        if asm_service.get(asm).map_err(|e| miette::miette!("{}", e))?.is_none() {
             println!(
                 "{} Warning: Assembly '{}' not found. Create it first with: tdt asm new",
                 style("!").yellow(),
@@ -900,53 +827,41 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
-    // Generate ID
-    let id = EntityId::new(EntityPrefix::Quot);
-
-    // Create quote directly instead of using template
-    let mut quote = if let Some(ref cmp) = component {
-        Quote::new_for_component(&supplier, cmp, &title, config.author())
-    } else if let Some(ref asm) = assembly {
-        Quote::new_for_assembly(&supplier, asm, &title, config.author())
-    } else {
-        unreachable!("Either component or assembly must be set")
+    // Create quote via service
+    let service = QuoteService::new(&project, &cache);
+    let input = CreateQuote {
+        title: title.clone(),
+        author: config.author(),
+        supplier: supplier.clone(),
+        component: component.clone(),
+        assembly: assembly.clone(),
+        quote_ref: None,
+        description: None,
+        currency: Default::default(),
+        moq: args.moq,
+        lead_time_days: args.lead_time,
+        tooling_cost: args.tooling,
+        tags: Vec::new(),
     };
 
-    // Override the ID to use the one we generated
-    quote.id = id.clone();
+    let quote = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let id = quote.id.clone();
 
     // Add price breaks if provided
     if !args.breaks.is_empty() {
-        // Multiple price breaks via --breaks
         for break_str in &args.breaks {
             let (qty, price, lead_time) = parse_price_break(break_str)?;
-            quote.add_price_break(qty, price, lead_time);
+            service
+                .add_price_break(&id.to_string(), qty, price, lead_time)
+                .map_err(|e| miette::miette!("{}", e))?;
         }
     } else if let Some(price) = args.price {
-        // Single price via --price
-        quote.add_price_break(1, price, args.lead_time);
+        service
+            .add_price_break(&id.to_string(), 1, price, args.lead_time)
+            .map_err(|e| miette::miette!("{}", e))?;
     }
 
-    if let Some(moq) = args.moq {
-        quote.moq = Some(moq);
-    }
-    if let Some(lead_time) = args.lead_time {
-        quote.lead_time_days = Some(lead_time);
-    }
-    if let Some(tooling) = args.tooling {
-        quote.tooling_cost = Some(tooling);
-    }
-
-    let yaml_content = serde_yml::to_string(&quote).into_diagnostic()?;
-
-    // Write file
-    let output_dir = project.root().join("bom/quotes");
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).into_diagnostic()?;
-    }
-
-    let file_path = output_dir.join(format!("{}.tdt.yaml", id));
-    fs::write(&file_path, &yaml_content).into_diagnostic()?;
+    let file_path = project.root().join(format!("bom/quotes/{}.tdt.yaml", id));
 
     // Add to short ID index
     let mut short_ids = ShortIdIndex::load(&project);
@@ -1215,12 +1130,7 @@ fn effective_unit_price(quote: &Quote, qty: u32, amortize: Option<u32>, include_
 
 fn run_compare(args: CompareArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
-    let quote_dir = project.root().join("bom/quotes");
-
-    if !quote_dir.exists() {
-        println!("No quotes found.");
-        return Ok(());
-    }
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve the item ID (could be component or assembly)
     let short_ids = ShortIdIndex::load(&project);
@@ -1231,24 +1141,11 @@ fn run_compare(args: CompareArgs, global: &GlobalOpts) -> Result<()> {
     let qty = args.qty;
     let include_nre = !args.no_nre;
 
-    // Load quotes for this item (component or assembly)
-    let mut quotes: Vec<Quote> = Vec::new();
-
-    for entry in fs::read_dir(&quote_dir).into_diagnostic()? {
-        let entry = entry.into_diagnostic()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "yaml") {
-            let content = fs::read_to_string(&path).into_diagnostic()?;
-            if let Ok(quote) = serde_yml::from_str::<Quote>(&content) {
-                // Check if quote matches either component or assembly
-                let matches = quote.component.as_ref().is_some_and(|c| c.contains(&item))
-                    || quote.assembly.as_ref().is_some_and(|a| a.contains(&item));
-                if matches {
-                    quotes.push(quote);
-                }
-            }
-        }
+    // Use service to get quotes for this item (try component first, then assembly)
+    let service = QuoteService::new(&project, &cache);
+    let mut quotes = service.get_by_component(&item).unwrap_or_default();
+    if quotes.is_empty() {
+        quotes = service.get_by_assembly(&item).unwrap_or_default();
     }
 
     if quotes.is_empty() {
@@ -1422,6 +1319,7 @@ fn run_compare(args: CompareArgs, global: &GlobalOpts) -> Result<()> {
 
 fn run_price(args: PriceArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
 
     // Resolve short ID if needed
     let short_ids = ShortIdIndex::load(&project);
@@ -1429,31 +1327,11 @@ fn run_price(args: PriceArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.id)
         .unwrap_or_else(|| args.id.clone());
 
-    // Find the quote file
-    let quote_dir = project.root().join("bom/quotes");
-    let mut found_path = None;
-
-    if quote_dir.exists() {
-        for entry in fs::read_dir(&quote_dir).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|e| e == "yaml") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if filename.contains(&resolved_id) || filename.starts_with(&resolved_id) {
-                    found_path = Some(path);
-                    break;
-                }
-            }
-        }
-    }
-
-    let path =
-        found_path.ok_or_else(|| miette::miette!("No quote found matching '{}'", args.id))?;
-
-    // Read and parse quote
-    let content = fs::read_to_string(&path).into_diagnostic()?;
-    let quote: Quote = serde_yml::from_str(&content).into_diagnostic()?;
+    // Load quote via service
+    let service = QuoteService::new(&project, &cache);
+    let quote = service
+        .get_required(&resolved_id)
+        .map_err(|_| miette::miette!("No quote found matching '{}'", args.id))?;
 
     let qty = args.qty;
 
