@@ -1630,4 +1630,39 @@ impl EntityCache {
 
         rows.filter_map(|r| r.ok()).collect()
     }
+
+    /// Get all components contained in an assembly (recursively traverses subassemblies)
+    ///
+    /// Returns a set of all component IDs in the BOM hierarchy
+    pub fn get_bom_components(&self, assembly_id: &str) -> std::collections::HashSet<String> {
+        let mut components = std::collections::HashSet::new();
+        let mut visited = std::collections::HashSet::new();
+        self.collect_bom_components_recursive(assembly_id, &mut components, &mut visited);
+        components
+    }
+
+    fn collect_bom_components_recursive(
+        &self,
+        assembly_id: &str,
+        components: &mut std::collections::HashSet<String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) {
+        if visited.contains(assembly_id) {
+            return; // Prevent infinite loops from circular references
+        }
+        visited.insert(assembly_id.to_string());
+
+        // Get all items contained in this assembly (uses existing get_links_from_of_type)
+        let contained = self.get_links_from_of_type(assembly_id, "contains");
+
+        for item_id in contained {
+            if item_id.starts_with("CMP-") {
+                // It's a component - add to result
+                components.insert(item_id);
+            } else if item_id.starts_with("ASM-") {
+                // It's a subassembly - recurse
+                self.collect_bom_components_recursive(&item_id, components, visited);
+            }
+        }
+    }
 }

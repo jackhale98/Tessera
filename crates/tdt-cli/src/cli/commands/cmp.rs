@@ -3,7 +3,6 @@
 use clap::{Subcommand, ValueEnum};
 use console::style;
 use miette::{IntoDiagnostic, Result};
-use std::collections::HashSet;
 use std::fs;
 
 use crate::cli::commands::utils::format_link_with_title;
@@ -17,7 +16,7 @@ use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
-use tdt_core::entities::assembly::{Assembly, ManufacturingConfig};
+use tdt_core::entities::assembly::ManufacturingConfig;
 use tdt_core::entities::component::{Component, ComponentCategory, MakeBuy};
 use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
@@ -448,11 +447,15 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
         // Apply special filters that require full entity data
         if needs_special_filters {
-            // Pre-load quotes if needed for no_quote filter
-            let quotes: Vec<tdt_core::entities::quote::Quote> = if args.no_quote {
-                load_all_quotes(&project)
+            // Use cache for quote lookup instead of walking directories
+            let components_with_quotes: std::collections::HashSet<String> = if args.no_quote {
+                cache
+                    .list_quotes(None, None, None, None, None, None, None)
+                    .into_iter()
+                    .filter_map(|q| q.component_id)
+                    .collect()
             } else {
-                Vec::new()
+                std::collections::HashSet::new()
             };
 
             components.retain(|c| {
@@ -466,12 +469,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                 // Single source filter
                 let single_source_match = !args.single_source || c.suppliers.len() == 1;
 
-                // No quote filter
+                // No quote filter - uses cached quote data
                 let no_quote_match = if args.no_quote {
-                    let cid_str = c.id.to_string();
-                    !quotes
-                        .iter()
-                        .any(|q| q.component.as_ref() == Some(&cid_str))
+                    !components_with_quotes.contains(&c.id.to_string())
                 } else {
                     true
                 };
@@ -485,33 +485,28 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             });
 
             // Filter by parent assembly (components in BOM only)
+            // Uses cache for fast BOM traversal instead of walking directories
             if let Some(ref parent_asm) = args.assembly {
                 let short_ids_tmp = ShortIdIndex::load(&project);
                 let parent_id = short_ids_tmp
                     .resolve(parent_asm)
                     .unwrap_or_else(|| parent_asm.clone());
 
-                let assemblies = load_all_assemblies(&project);
-                let assembly_map: std::collections::HashMap<String, &Assembly> =
-                    assemblies.iter().map(|a| (a.id.to_string(), a)).collect();
+                // Use cache's recursive BOM lookup
+                let bom_component_ids = cache.get_bom_components(&parent_id);
 
-                if let Some(parent) = assembly_map.get(&parent_id) {
-                    let mut bom_component_ids: HashSet<String> = HashSet::new();
-                    let mut visited: HashSet<String> = HashSet::new();
-                    visited.insert(parent_id.clone());
-                    collect_bom_component_ids(
-                        parent,
-                        &assembly_map,
-                        &mut bom_component_ids,
-                        &mut visited,
-                    );
-                    components.retain(|c| bom_component_ids.contains(&c.id.to_string()));
-                } else {
-                    eprintln!(
-                        "Warning: Assembly '{}' not found, showing all components",
-                        parent_asm
-                    );
+                if bom_component_ids.is_empty() {
+                    // Check if assembly exists at all
+                    if cache.get_entity(&parent_id).is_none() {
+                        eprintln!(
+                            "Warning: Assembly '{}' not found, showing all components",
+                            parent_asm
+                        );
+                    }
+                    // If assembly exists but has no components, the filter will show nothing (correct behavior)
                 }
+
+                components.retain(|c| bom_component_ids.contains(&c.id.to_string()));
             }
         }
 
@@ -1277,28 +1272,6 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
     crate::cli::commands::utils::run_delete(&args.id, COMPONENT_DIRS, args.force, true, args.quiet)
 }
 
-/// Load all quotes from the project
-fn load_all_quotes(project: &Project) -> Vec<tdt_core::entities::quote::Quote> {
-    let mut quotes = Vec::new();
-
-    let quotes_dir = project.root().join("bom/quotes");
-    if quotes_dir.exists() {
-        for entry in walkdir::WalkDir::new(&quotes_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(quote) =
-                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::quote::Quote>(entry.path())
-            {
-                quotes.push(quote);
-            }
-        }
-    }
-
-    quotes
-}
 
 fn run_set_quote(args: SetQuoteArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
@@ -1455,62 +1428,6 @@ fn run_clear_quote(args: ClearQuoteArgs) -> Result<()> {
     Ok(())
 }
 
-/// Load all assemblies from the project
-fn load_all_assemblies(project: &Project) -> Vec<Assembly> {
-    let mut assemblies = Vec::new();
-    let dir = project.root().join("bom/assemblies");
-
-    if dir.exists() {
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(asm) = tdt_core::yaml::parse_yaml_file::<Assembly>(entry.path()) {
-                assemblies.push(asm);
-            }
-        }
-    }
-
-    assemblies
-}
-
-/// Recursively collect all component IDs from an assembly's BOM
-fn collect_bom_component_ids(
-    assembly: &Assembly,
-    assembly_map: &std::collections::HashMap<String, &Assembly>,
-    component_ids: &mut HashSet<String>,
-    visited: &mut HashSet<String>,
-) {
-    for item in &assembly.bom {
-        let item_id = &item.component_id;
-
-        // Check if this is an assembly (ASM-*) or component (CMP-*)
-        if item_id.starts_with("ASM-") {
-            // It's a sub-assembly - recurse into it
-            if !visited.contains(item_id) {
-                visited.insert(item_id.clone());
-                if let Some(sub_asm) = assembly_map.get(item_id) {
-                    collect_bom_component_ids(sub_asm, assembly_map, component_ids, visited);
-                }
-            }
-        } else if item_id.starts_with("CMP-") {
-            // It's a component - add it
-            component_ids.insert(item_id.clone());
-        }
-    }
-
-    // Also check the subassemblies field
-    for sub_id in &assembly.subassemblies {
-        if !visited.contains(sub_id) {
-            visited.insert(sub_id.clone());
-            if let Some(sub_asm) = assembly_map.get(sub_id) {
-                collect_bom_component_ids(sub_asm, assembly_map, component_ids, visited);
-            }
-        }
-    }
-}
 
 // ============================================================================
 // Routing subcommands

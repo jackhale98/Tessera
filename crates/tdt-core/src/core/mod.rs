@@ -19,7 +19,8 @@ pub mod workflow;
 
 pub use cache::{
     CachedComponent, CachedEntity, CachedFeature, CachedLink, CachedQuote, CachedRequirement,
-    CachedRisk, CachedSupplier, CachedTest, EntityCache, EntityFilter, LinkType, SyncStats,
+    CachedResult, CachedRisk, CachedSupplier, CachedTest, EntityCache, EntityFilter, LinkType,
+    SyncStats,
 };
 pub use config::Config;
 pub use entity::Entity;

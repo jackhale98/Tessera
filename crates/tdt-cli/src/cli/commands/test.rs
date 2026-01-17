@@ -15,7 +15,7 @@ use tdt_core::core::entity::{Priority, Status};
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
-use tdt_core::core::CachedTest;
+use tdt_core::core::{CachedResult, CachedTest};
 use tdt_core::core::Config;
 use tdt_core::entities::result::{Result as TestResult, StepResult, StepResultRecord, Verdict};
 use tdt_core::entities::test::{Test, TestLevel, TestMethod, TestType};
@@ -512,34 +512,43 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         let mut tests = result.items;
 
         // Apply result-based filters (require cross-entity queries)
+        // Use cache for fast lookups instead of walking directories
         if needs_result_filters {
-            let results = load_all_results(&project);
+            let cached_results = cache.list_results(None, None, None, None, None, None);
 
             use std::collections::{HashMap, HashSet};
-            let tests_with_results: HashSet<&EntityId> = results.iter().map(|r| &r.test_id).collect();
+            let tests_with_results: HashSet<String> = cached_results
+                .iter()
+                .filter_map(|r| r.test_id.clone())
+                .collect();
 
-            let last_failed_tests: HashSet<&EntityId> = {
-                let mut latest_by_test: HashMap<&EntityId, &tdt_core::entities::result::Result> = HashMap::new();
-                for r in &results {
-                    latest_by_test
-                        .entry(&r.test_id)
-                        .and_modify(|existing| {
-                            if r.executed_date > existing.executed_date {
-                                *existing = r;
-                            }
-                        })
-                        .or_insert(r);
+            let last_failed_tests: HashSet<String> = {
+                // Find latest result per test, then filter to failed ones
+                let mut latest_by_test: HashMap<&str, &CachedResult> = HashMap::new();
+                for r in &cached_results {
+                    if let Some(ref test_id) = r.test_id {
+                        latest_by_test
+                            .entry(test_id.as_str())
+                            .and_modify(|existing| {
+                                // Compare executed_date strings (ISO format sorts correctly)
+                                if r.executed_date > existing.executed_date {
+                                    *existing = r;
+                                }
+                            })
+                            .or_insert(r);
+                    }
                 }
                 latest_by_test
                     .into_iter()
-                    .filter(|(_, r)| r.verdict == Verdict::Fail)
-                    .map(|(id, _)| id)
+                    .filter(|(_, r)| r.verdict.as_deref() == Some("fail"))
+                    .map(|(id, _)| id.to_string())
                     .collect()
             };
 
             tests.retain(|t| {
-                let no_results_match = !args.no_results || !tests_with_results.contains(&t.id);
-                let last_failed_match = !args.last_failed || last_failed_tests.contains(&t.id);
+                let tid_str = t.id.to_string();
+                let no_results_match = !args.no_results || !tests_with_results.contains(&tid_str);
+                let last_failed_match = !args.last_failed || last_failed_tests.contains(&tid_str);
                 no_results_match && last_failed_match
             });
         }
@@ -1389,46 +1398,6 @@ fn run_edit(args: EditArgs) -> Result<()> {
     Ok(())
 }
 
-/// Load all test results from the project
-fn load_all_results(project: &Project) -> Vec<tdt_core::entities::result::Result> {
-    let mut results = Vec::new();
-
-    // Load from verification/results
-    let ver_dir = project.root().join("verification/results");
-    if ver_dir.exists() {
-        for entry in walkdir::WalkDir::new(&ver_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(result) =
-                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::result::Result>(entry.path())
-            {
-                results.push(result);
-            }
-        }
-    }
-
-    // Load from validation/results
-    let val_dir = project.root().join("validation/results");
-    if val_dir.exists() {
-        for entry in walkdir::WalkDir::new(&val_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(result) =
-                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::result::Result>(entry.path())
-            {
-                results.push(result);
-            }
-        }
-    }
-
-    results
-}
 
 fn run_run(args: RunArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;

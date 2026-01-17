@@ -12,7 +12,7 @@ use crate::cli::table::{CellValue, ColumnDef, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
 use tdt_core::core::entity::{Priority, Status};
-use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
@@ -457,7 +457,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
     if needs_test_result_filters {
         // Special case: test-result filters require loading full entities and post-filtering
-        run_list_with_test_filters(&args, &service, &filter, sort_field, sort_dir, global, &project)
+        run_list_with_test_filters(&args, &service, &filter, sort_field, sort_dir, global, &project, &cache)
     } else {
         // Standard case: use generic list infrastructure
         let config = ListConfig {
@@ -500,6 +500,7 @@ fn run_list_with_test_filters(
     sort_dir: SortDirection,
     global: &GlobalOpts,
     project: &Project,
+    cache: &EntityCache,
 ) -> Result<()> {
     let output_format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
@@ -514,20 +515,24 @@ fn run_list_with_test_filters(
     let mut reqs = result.items;
 
     // Apply test-result based filters (require cross-entity queries)
-    let results = load_all_results(project);
+    // Use cache for fast lookups instead of walking directories
+    let cached_results = cache.list_results(None, None, None, None, None, None);
 
     // Pre-compute HashSets for O(1) lookups
     use std::collections::HashSet;
-    let tested_test_ids: HashSet<&EntityId> = results.iter().map(|r| &r.test_id).collect();
-    let failed_test_ids: HashSet<&EntityId> = results
+    let tested_test_ids: HashSet<&str> = cached_results
         .iter()
-        .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Fail)
-        .map(|r| &r.test_id)
+        .filter_map(|r| r.test_id.as_deref())
         .collect();
-    let passing_test_ids: HashSet<&EntityId> = results
+    let failed_test_ids: HashSet<&str> = cached_results
         .iter()
-        .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Pass)
-        .map(|r| &r.test_id)
+        .filter(|r| r.verdict.as_deref() == Some("fail"))
+        .filter_map(|r| r.test_id.as_deref())
+        .collect();
+    let passing_test_ids: HashSet<&str> = cached_results
+        .iter()
+        .filter(|r| r.verdict.as_deref() == Some("pass"))
+        .filter_map(|r| r.test_id.as_deref())
         .collect();
 
     reqs.retain(|req| {
@@ -535,20 +540,20 @@ fn run_list_with_test_filters(
 
         let untested_match = if args.untested {
             !test_ids.is_empty()
-                && !test_ids.iter().any(|tid| tested_test_ids.contains(tid))
+                && !test_ids.iter().any(|tid| tested_test_ids.contains(tid.to_string().as_str()))
         } else {
             true
         };
 
         let failed_match = if args.failed {
-            test_ids.iter().any(|tid| failed_test_ids.contains(tid))
+            test_ids.iter().any(|tid| failed_test_ids.contains(tid.to_string().as_str()))
         } else {
             true
         };
 
         let passing_match = if args.passing {
             !test_ids.is_empty()
-                && test_ids.iter().all(|tid| passing_test_ids.contains(tid))
+                && test_ids.iter().all(|tid| passing_test_ids.contains(tid.to_string().as_str()))
         } else {
             true
         };
@@ -1120,46 +1125,6 @@ fn run_edit(args: EditArgs) -> Result<()> {
     crate::cli::entity_cmd::run_edit_generic(&id, &ENTITY_CONFIG)
 }
 
-/// Load all test results from the project
-fn load_all_results(project: &Project) -> Vec<tdt_core::entities::result::Result> {
-    let mut results = Vec::new();
-
-    // Load from verification/results
-    let ver_dir = project.root().join("verification/results");
-    if ver_dir.exists() {
-        for entry in walkdir::WalkDir::new(&ver_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(result) =
-                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::result::Result>(entry.path())
-            {
-                results.push(result);
-            }
-        }
-    }
-
-    // Load from validation/results
-    let val_dir = project.root().join("validation/results");
-    if val_dir.exists() {
-        for entry in walkdir::WalkDir::new(&val_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(result) =
-                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::result::Result>(entry.path())
-            {
-                results.push(result);
-            }
-        }
-    }
-
-    results
-}
 
 fn run_delete(args: DeleteArgs) -> Result<()> {
     crate::cli::commands::utils::run_delete(&args.id, REQ_DIRS, args.force, false, args.quiet)
