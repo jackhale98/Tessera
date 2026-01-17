@@ -194,6 +194,9 @@ pub fn run(args: ImportArgs) -> Result<()> {
             "{}",
             style("Dry run complete. No files were created.").yellow()
         );
+    } else {
+        // Sync cache after import (when not dry run)
+        super::utils::sync_cache(&project);
     }
 
     if stats.errors > 0 && !args.skip_errors {

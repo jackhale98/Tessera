@@ -404,6 +404,33 @@ impl EntityCache {
             }
         }
 
+        // Special handling for mate feature references (feature_a.id and feature_b.id)
+        if source_id.starts_with("MATE-") {
+            if let Some(feature_a) = value.get("feature_a") {
+                if let Some(feature_id) = feature_a.get("id").and_then(|v| v.as_str()) {
+                    self.insert_link(source_id, feature_id, "feature_a")?;
+                }
+            }
+            if let Some(feature_b) = value.get("feature_b") {
+                if let Some(feature_id) = feature_b.get("id").and_then(|v| v.as_str()) {
+                    self.insert_link(source_id, feature_id, "feature_b")?;
+                }
+            }
+        }
+
+        // Special handling for stackup contributor feature references
+        if source_id.starts_with("TOL-") {
+            if let Some(contributors) = value.get("contributors").and_then(|v| v.as_sequence()) {
+                for (i, contrib) in contributors.iter().enumerate() {
+                    if let Some(feature) = contrib.get("feature") {
+                        if let Some(feature_id) = feature.get("id").and_then(|v| v.as_str()) {
+                            self.insert_link(source_id, feature_id, &format!("contributor[{}]", i))?;
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

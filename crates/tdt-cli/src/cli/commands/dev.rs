@@ -829,6 +829,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         println!("  {}", file_path.display());
     }
 
+    // Sync cache after creation
+    super::utils::sync_cache(&project);
+
     // Open in editor if requested
     if args.edit && !args.no_edit {
         println!(
@@ -1092,6 +1095,9 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
+    // Sync cache after mutation
+    super::utils::sync_cache(&project);
+
     Ok(())
 }
 
@@ -1140,6 +1146,9 @@ fn run_expire(args: ExpireArgs, global: &GlobalOpts) -> Result<()> {
             style(&short_id).cyan()
         );
     }
+
+    // Sync cache after mutation
+    super::utils::sync_cache(&project);
 
     Ok(())
 }

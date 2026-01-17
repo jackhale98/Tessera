@@ -127,6 +127,9 @@ pub fn run_edit_generic(id: &str, config: &EntityConfig) -> Result<()> {
 
     cli_config.run_editor(&path).into_diagnostic()?;
 
+    // Sync cache after editing (in case user saved changes)
+    crate::cli::commands::utils::sync_cache(&project);
+
     Ok(())
 }
 

@@ -22,6 +22,23 @@ pub fn save_short_ids(short_ids: &mut ShortIdIndex, project: &Project) {
     }
 }
 
+/// Sync the cache after a mutation operation
+///
+/// This should be called after any operation that modifies entity files
+/// (create, update, delete, link add/remove, etc.) to ensure the cache
+/// stays in sync with the filesystem.
+pub fn sync_cache(project: &Project) {
+    if let Ok(mut cache) = EntityCache::open(project) {
+        if let Err(e) = cache.sync() {
+            eprintln!(
+                "{} Warning: Failed to sync cache: {}",
+                style("!").yellow(),
+                e
+            );
+        }
+    }
+}
+
 /// Format a linked entity ID with its title for display
 /// Returns format like "CMP@1 (Housing)" or just "CMP@1" if title lookup fails
 pub fn format_link_with_title(
@@ -215,6 +232,9 @@ pub fn run_delete(
             );
         }
     }
+
+    // Sync cache after mutation
+    sync_cache(&project);
 
     Ok(())
 }

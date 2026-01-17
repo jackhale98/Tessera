@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use crate::cli::helpers::format_short_id_str;
 use crate::cli::{GlobalOpts, OutputFormat};
+use tdt_core::core::cache::EntityCache;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 
@@ -21,6 +22,7 @@ pub struct WhereUsedArgs {
 
 pub fn run(args: WhereUsedArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
     // Resolve the ID
@@ -29,27 +31,7 @@ pub fn run(args: WhereUsedArgs, global: &GlobalOpts) -> Result<()> {
         .unwrap_or_else(|| args.id.clone());
 
     // Determine entity type from prefix
-    let entity_type = if resolved_id.starts_with("CMP-") {
-        "component"
-    } else if resolved_id.starts_with("ASM-") {
-        "assembly"
-    } else if resolved_id.starts_with("FEAT-") {
-        "feature"
-    } else if resolved_id.starts_with("REQ-") {
-        "requirement"
-    } else if resolved_id.starts_with("TEST-") {
-        "test"
-    } else if resolved_id.starts_with("RISK-") {
-        "risk"
-    } else if resolved_id.starts_with("PROC-") {
-        "process"
-    } else if resolved_id.starts_with("SUP-") {
-        "supplier"
-    } else if resolved_id.starts_with("QUOTE-") {
-        "quote"
-    } else {
-        "unknown"
-    };
+    let entity_type = get_entity_type(&resolved_id);
 
     println!(
         "{} {}",
@@ -60,34 +42,18 @@ pub fn run(args: WhereUsedArgs, global: &GlobalOpts) -> Result<()> {
 
     let mut found_refs: Vec<(String, String, String)> = Vec::new(); // (ref_id, ref_type, relationship)
 
-    // Search for component/assembly usage in BOMs
-    if resolved_id.starts_with("CMP-") || resolved_id.starts_with("ASM-") {
-        find_bom_references(&project, &resolved_id, &short_ids, &mut found_refs)?;
-    }
+    // Use cache to find all link-based references
+    // This includes:
+    // - Standard entity links (verifies, mitigates, etc.)
+    // - BOM containment links
+    // - Mate feature references (feature_a, feature_b)
+    // - Stackup contributor feature references (contributor[N])
+    find_link_references(&cache, &resolved_id, &mut found_refs);
 
-    // Search for feature usage in mates and stackups
-    if resolved_id.starts_with("FEAT-") {
-        find_mate_references(&project, &resolved_id, &short_ids, &mut found_refs)?;
-        find_stackup_references(&project, &resolved_id, &short_ids, &mut found_refs)?;
+    // Search for supplier/component usage in quotes
+    if resolved_id.starts_with("SUP-") || resolved_id.starts_with("CMP-") {
+        find_quote_references(&cache, &resolved_id, &mut found_refs);
     }
-
-    // Search for requirement verification (what tests verify this requirement)
-    if resolved_id.starts_with("REQ-") {
-        find_test_references(&project, &resolved_id, &short_ids, &mut found_refs)?;
-    }
-
-    // Search for supplier usage in quotes
-    if resolved_id.starts_with("SUP-") {
-        find_quote_references(&project, &resolved_id, &short_ids, &mut found_refs)?;
-    }
-
-    // Search for component usage in quotes
-    if resolved_id.starts_with("CMP-") {
-        find_component_quote_references(&project, &resolved_id, &short_ids, &mut found_refs)?;
-    }
-
-    // Search for links in any entity that references this one
-    find_generic_link_references(&project, &resolved_id, &short_ids, &mut found_refs)?;
 
     // Output results
     if found_refs.is_empty() {
@@ -144,295 +110,97 @@ pub fn run(args: WhereUsedArgs, global: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
-fn find_bom_references(
-    project: &Project,
-    target_id: &str,
-    _short_ids: &ShortIdIndex,
-    found_refs: &mut Vec<(String, String, String)>,
-) -> Result<()> {
-    let asm_dir = project.root().join("bom/assemblies");
-    if !asm_dir.exists() {
-        return Ok(());
+/// Get entity type from ID prefix
+fn get_entity_type(id: &str) -> &'static str {
+    if id.starts_with("CMP-") {
+        "component"
+    } else if id.starts_with("ASM-") {
+        "assembly"
+    } else if id.starts_with("FEAT-") {
+        "feature"
+    } else if id.starts_with("REQ-") {
+        "requirement"
+    } else if id.starts_with("TEST-") {
+        "test"
+    } else if id.starts_with("RISK-") {
+        "risk"
+    } else if id.starts_with("PROC-") {
+        "process"
+    } else if id.starts_with("SUP-") {
+        "supplier"
+    } else if id.starts_with("QUOTE-") {
+        "quote"
+    } else if id.starts_with("NCR-") {
+        "ncr"
+    } else if id.starts_with("CAPA-") {
+        "capa"
+    } else if id.starts_with("RSLT-") {
+        "result"
+    } else if id.starts_with("TOL-") {
+        "stackup"
+    } else if id.starts_with("MATE-") {
+        "mate"
+    } else {
+        "unknown"
     }
-
-    for entry in walkdir::WalkDir::new(&asm_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-    {
-        if let Ok(asm) =
-            tdt_core::yaml::parse_yaml_file::<tdt_core::entities::assembly::Assembly>(entry.path())
-        {
-            for item in &asm.bom {
-                if item.component_id == target_id {
-                    found_refs.push((
-                        asm.id.to_string(),
-                        "assembly".to_string(),
-                        format!("bom (qty: {})", item.quantity),
-                    ));
-                    break; // Only count once per assembly
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
-fn find_mate_references(
-    project: &Project,
-    target_id: &str,
-    _short_ids: &ShortIdIndex,
-    found_refs: &mut Vec<(String, String, String)>,
-) -> Result<()> {
-    let mate_dir = project.root().join("tolerances/mates");
-    if !mate_dir.exists() {
-        return Ok(());
-    }
-
-    for entry in walkdir::WalkDir::new(&mate_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-    {
-        if let Ok(mate) = tdt_core::yaml::parse_yaml_file::<tdt_core::entities::mate::Mate>(entry.path())
-        {
-            let mut found = false;
-            let mut which_feature = "";
-
-            if mate.feature_a.id.to_string() == target_id {
-                found = true;
-                which_feature = "feature_a";
-            }
-            if mate.feature_b.id.to_string() == target_id {
-                found = true;
-                which_feature = "feature_b";
-            }
-
-            if found {
-                found_refs.push((
-                    mate.id.to_string(),
-                    "mate".to_string(),
-                    which_feature.to_string(),
-                ));
-            }
-        }
-    }
-
-    Ok(())
+/// Get entity type from ID prefix for display
+fn get_entity_type_from_id(id: &str) -> &'static str {
+    get_entity_type(id)
 }
 
-fn find_stackup_references(
-    project: &Project,
+/// Find all link-based references using the cache
+fn find_link_references(
+    cache: &EntityCache,
     target_id: &str,
-    _short_ids: &ShortIdIndex,
     found_refs: &mut Vec<(String, String, String)>,
-) -> Result<()> {
-    let stackup_dir = project.root().join("tolerances/stackups");
-    if !stackup_dir.exists() {
-        return Ok(());
-    }
+) {
+    // Get all entities that link TO this entity
+    let links = cache.get_links_to(target_id);
 
-    for entry in walkdir::WalkDir::new(&stackup_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-    {
-        if let Ok(stackup) =
-            tdt_core::yaml::parse_yaml_file::<tdt_core::entities::stackup::Stackup>(entry.path())
-        {
-            for (i, contrib) in stackup.contributors.iter().enumerate() {
-                if contrib
-                    .feature
-                    .as_ref()
-                    .is_some_and(|f| f.id.to_string() == target_id)
-                {
-                    found_refs.push((
-                        stackup.id.to_string(),
-                        "stackup".to_string(),
-                        format!("contributor[{}]", i),
-                    ));
-                    break;
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn find_test_references(
-    project: &Project,
-    target_id: &str,
-    _short_ids: &ShortIdIndex,
-    found_refs: &mut Vec<(String, String, String)>,
-) -> Result<()> {
-    for subdir in &["verification/protocols", "validation/protocols"] {
-        let dir = project.root().join(subdir);
-        if !dir.exists() {
+    for link in links {
+        // Avoid self-references
+        if link.source_id == target_id {
             continue;
         }
 
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(test) =
-                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::test::Test>(entry.path())
-            {
-                let verifies_it = test
-                    .links
-                    .verifies
-                    .iter()
-                    .any(|id| id.to_string() == target_id);
-                let validates_it = test
-                    .links
-                    .validates
-                    .iter()
-                    .any(|id| id.to_string() == target_id);
-
-                if verifies_it {
-                    found_refs.push((
-                        test.id.to_string(),
-                        "test".to_string(),
-                        "verifies".to_string(),
-                    ));
-                }
-                if validates_it {
-                    found_refs.push((
-                        test.id.to_string(),
-                        "test".to_string(),
-                        "validates".to_string(),
-                    ));
-                }
-            }
+        // Avoid duplicates
+        if found_refs.iter().any(|(id, _, _)| id == &link.source_id) {
+            continue;
         }
-    }
 
-    Ok(())
+        let entity_type = get_entity_type_from_id(&link.source_id);
+        found_refs.push((
+            link.source_id.clone(),
+            entity_type.to_string(),
+            link.link_type.clone(),
+        ));
+    }
 }
 
+/// Find quote references using cache (for supplier and component lookups)
 fn find_quote_references(
-    project: &Project,
+    cache: &EntityCache,
     target_id: &str,
-    _short_ids: &ShortIdIndex,
     found_refs: &mut Vec<(String, String, String)>,
-) -> Result<()> {
-    let quote_dir = project.root().join("procurement/quotes");
-    if !quote_dir.exists() {
-        return Ok(());
-    }
+) {
+    let quotes = cache.list_quotes(None, None, None, None, None, None, None);
 
-    for entry in walkdir::WalkDir::new(&quote_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-    {
-        if let Ok(quote) =
-            tdt_core::yaml::parse_yaml_file::<tdt_core::entities::quote::Quote>(entry.path())
-        {
-            if quote.supplier == target_id {
-                found_refs.push((
-                    quote.id.to_string(),
-                    "quote".to_string(),
-                    "supplier".to_string(),
-                ));
+    for quote in quotes {
+        // Check if this quote references the target as supplier
+        if quote.supplier_id.as_ref().is_some_and(|s| s == target_id) {
+            if !found_refs.iter().any(|(id, _, _)| id == &quote.id) {
+                found_refs.push((quote.id.clone(), "quote".to_string(), "supplier".to_string()));
+            }
+        }
+
+        // Check if this quote references the target as component
+        if quote.component_id.as_ref().is_some_and(|c| c == target_id) {
+            if !found_refs.iter().any(|(id, _, _)| id == &quote.id) {
+                found_refs.push((quote.id.clone(), "quote".to_string(), "component".to_string()));
             }
         }
     }
-
-    Ok(())
 }
 
-fn find_component_quote_references(
-    project: &Project,
-    target_id: &str,
-    _short_ids: &ShortIdIndex,
-    found_refs: &mut Vec<(String, String, String)>,
-) -> Result<()> {
-    let quote_dir = project.root().join("procurement/quotes");
-    if !quote_dir.exists() {
-        return Ok(());
-    }
-
-    for entry in walkdir::WalkDir::new(&quote_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-    {
-        if let Ok(quote) =
-            tdt_core::yaml::parse_yaml_file::<tdt_core::entities::quote::Quote>(entry.path())
-        {
-            if quote.component.as_ref().is_some_and(|c| c == target_id) {
-                found_refs.push((
-                    quote.id.to_string(),
-                    "quote".to_string(),
-                    "component".to_string(),
-                ));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn find_generic_link_references(
-    project: &Project,
-    target_id: &str,
-    _short_ids: &ShortIdIndex,
-    found_refs: &mut Vec<(String, String, String)>,
-) -> Result<()> {
-    // This searches through common entity directories for any links to the target
-    let search_dirs = vec![
-        ("requirements/inputs", "requirement"),
-        ("requirements/outputs", "requirement"),
-        ("risks/design", "risk"),
-        ("risks/process", "risk"),
-        ("manufacturing/ncrs", "ncr"),
-        ("manufacturing/capas", "capa"),
-    ];
-
-    for (dir_name, entity_type) in search_dirs {
-        let dir = project.root().join(dir_name);
-        if !dir.exists() {
-            continue;
-        }
-
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            // Read file and check for the target ID in links
-            if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                if content.contains(target_id) {
-                    // Parse to get the entity ID
-                    if let Ok(yaml) = serde_yml::from_str::<serde_yml::Value>(&content) {
-                        if let Some(id) = yaml.get("id").and_then(|v| v.as_str()) {
-                            // Avoid duplicates and self-references
-                            if id != target_id
-                                && !found_refs.iter().any(|(ref_id, _, _)| ref_id == id)
-                            {
-                                found_refs.push((
-                                    id.to_string(),
-                                    entity_type.to_string(),
-                                    "links".to_string(),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}

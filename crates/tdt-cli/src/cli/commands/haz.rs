@@ -559,6 +559,10 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             );
         }
     }
+
+    // Sync cache after creation
+    super::utils::sync_cache(&project);
+
     Ok(())
 }
 

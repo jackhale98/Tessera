@@ -802,6 +802,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
+    // Sync cache after creation
+    super::utils::sync_cache(&project);
+
     // Open in editor if requested
     if args.edit || (!args.no_edit && !args.interactive) {
         println!();
@@ -1231,6 +1234,9 @@ fn run_close(args: CloseArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
     }
+
+    // Sync cache after mutation
+    super::utils::sync_cache(&project);
 
     Ok(())
 }

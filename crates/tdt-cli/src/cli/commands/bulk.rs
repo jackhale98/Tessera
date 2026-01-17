@@ -213,6 +213,8 @@ fn run_set_status(mut args: SetStatusArgs) -> Result<()> {
             style(updated).green(),
             style(errors).red()
         );
+        // Sync cache after bulk mutation
+        super::utils::sync_cache(&project);
     }
 
     Ok(())
@@ -314,6 +316,8 @@ fn run_add_tag(mut args: AddTagArgs) -> Result<()> {
             style(skipped).dim(),
             style(errors).red()
         );
+        // Sync cache after bulk mutation
+        super::utils::sync_cache(&project);
     }
 
     Ok(())
@@ -420,6 +424,8 @@ fn run_remove_tag(mut args: RemoveTagArgs) -> Result<()> {
             style(skipped).dim(),
             style(errors).red()
         );
+        // Sync cache after bulk mutation
+        super::utils::sync_cache(&project);
     }
 
     Ok(())
@@ -515,6 +521,8 @@ fn run_set_author(mut args: SetAuthorArgs) -> Result<()> {
             style(updated).green(),
             style(errors).red()
         );
+        // Sync cache after bulk mutation
+        super::utils::sync_cache(&project);
     }
 
     Ok(())

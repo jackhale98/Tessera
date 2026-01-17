@@ -849,6 +849,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
+    // Sync cache after creation
+    super::utils::sync_cache(&project);
+
     // Open in editor if requested (or by default unless --no-edit)
     if args.edit || (!args.no_edit && !args.interactive) {
         println!();
