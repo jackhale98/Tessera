@@ -598,6 +598,267 @@ export const deviations = {
 };
 
 /**
+ * NCRs API (specialized commands + CRUD)
+ */
+export interface ListNcrsParams {
+	status?: string[];
+	ncr_type?: string;
+	severity?: string;
+	ncr_status?: string;
+	category?: string;
+	open_only?: boolean;
+	recent_days?: number;
+	search?: string;
+	tags?: string[];
+	limit?: number;
+	offset?: number;
+	sort_by?: string;
+	sort_desc?: boolean;
+}
+
+export interface NcrSummary {
+	id: string;
+	title: string;
+	ncr_number?: string;
+	ncr_type: string;
+	severity: string;
+	ncr_status: string;
+	category: string;
+	status: string;
+	author: string;
+	created: string;
+}
+
+export interface ListNcrsResult {
+	items: NcrSummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface NcrStats {
+	total: number;
+	by_ncr_status: {
+		open: number;
+		containment: number;
+		investigation: number;
+		disposition: number;
+		closed: number;
+	};
+	by_type: {
+		internal: number;
+		supplier: number;
+		customer: number;
+	};
+	by_severity: {
+		minor: number;
+		major: number;
+		critical: number;
+	};
+	open: number;
+	total_cost: number;
+}
+
+export interface CreateNcrInput {
+	title: string;
+	ncr_number?: string;
+	description?: string;
+	ncr_type?: string;
+	severity?: string;
+	category?: string;
+	author: string;
+}
+
+export interface UpdateNcrInput {
+	title?: string;
+	ncr_number?: string;
+	description?: string;
+	ncr_type?: string;
+	severity?: string;
+	category?: string;
+	status?: string;
+	ncr_status?: string;
+}
+
+export interface CloseNcrInput {
+	decision: string;
+	decision_maker: string;
+	justification?: string;
+	mrb_required?: boolean;
+}
+
+export const ncrs = {
+	list: (params?: ListNcrsParams) => call<ListNcrsResult>('list_ncrs', { params }),
+	get: (id: string) => call<unknown>('get_ncr', { id }),
+	create: (input: CreateNcrInput) => call<unknown>('create_ncr', { input }),
+	update: (id: string, input: UpdateNcrInput) => call<unknown>('update_ncr', { id, input }),
+	delete: (id: string) => call<void>('delete_ncr', { id }),
+	close: (id: string, input: CloseNcrInput) => call<unknown>('close_ncr', { id, input }),
+	advanceStatus: (id: string) => call<unknown>('advance_ncr_status', { id }),
+	setContainment: (id: string, actions: string[]) =>
+		call<unknown>('set_ncr_containment', { id, actions }),
+	setCost: (id: string, reworkCost: number, scrapCost: number) =>
+		call<unknown>('set_ncr_cost', { id, reworkCost, scrapCost }),
+	setCapaLink: (id: string, capaId: string) =>
+		call<unknown>('set_ncr_capa_link', { id, capaId }),
+	getStats: () => call<NcrStats>('get_ncr_stats')
+};
+
+/**
+ * CAPAs API (specialized commands + CRUD)
+ */
+export interface ListCapasParams {
+	status?: string[];
+	capa_type?: string;
+	capa_status?: string;
+	overdue_only?: boolean;
+	open_only?: boolean;
+	recent_days?: number;
+	search?: string;
+	tags?: string[];
+	limit?: number;
+	offset?: number;
+	sort_by?: string;
+	sort_desc?: boolean;
+}
+
+export interface CapaSummary {
+	id: string;
+	title: string;
+	capa_number?: string;
+	capa_type: string;
+	capa_status: string;
+	status: string;
+	due_date?: string;
+	effectiveness_verified?: boolean;
+	author: string;
+	created: string;
+}
+
+export interface ListCapasResult {
+	items: CapaSummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface CapaStats {
+	total: number;
+	by_capa_status: {
+		initiation: number;
+		investigation: number;
+		implementation: number;
+		verification: number;
+		closed: number;
+	};
+	by_type: {
+		corrective: number;
+		preventive: number;
+	};
+	open: number;
+	overdue: number;
+	verified_effective: number;
+}
+
+export interface CreateCapaInput {
+	title: string;
+	capa_number?: string;
+	description?: string;
+	capa_type?: string;
+	source_ncr?: string;
+	author: string;
+}
+
+export interface VerifyEffectivenessInput {
+	effective: boolean;
+	verified_by: string;
+	notes?: string;
+}
+
+export const capas = {
+	list: (params?: ListCapasParams) => call<ListCapasResult>('list_capas', { params }),
+	get: (id: string) => call<unknown>('get_capa', { id }),
+	create: (input: CreateCapaInput) => call<unknown>('create_capa', { input }),
+	delete: (id: string) => call<void>('delete_capa', { id }),
+	advanceStatus: (id: string) => call<unknown>('advance_capa_status', { id }),
+	verifyEffectiveness: (id: string, input: VerifyEffectivenessInput) =>
+		call<unknown>('verify_capa_effectiveness', { id, input }),
+	setNcrLink: (id: string, ncrId: string) => call<unknown>('set_capa_ncr_link', { id, ncrId }),
+	getStats: () => call<CapaStats>('get_capa_stats')
+};
+
+/**
+ * Lots API (specialized commands + CRUD)
+ */
+export interface ListLotsParams {
+	status?: string[];
+	lot_status?: string;
+	product?: string;
+	active_only?: boolean;
+	recent_days?: number;
+	search?: string;
+	tags?: string[];
+	limit?: number;
+	offset?: number;
+	sort_by?: string;
+	sort_desc?: boolean;
+}
+
+export interface LotSummary {
+	id: string;
+	title: string;
+	lot_number?: string;
+	quantity?: number;
+	lot_status: string;
+	status: string;
+	start_date?: string;
+	completion_date?: string;
+	author: string;
+	created: string;
+}
+
+export interface ListLotsResult {
+	items: LotSummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface LotStats {
+	total: number;
+	by_status: {
+		in_progress: number;
+		on_hold: number;
+		completed: number;
+		scrapped: number;
+	};
+	total_quantity: number;
+	avg_quantity: number;
+	with_git_branch: number;
+	merged_branches: number;
+}
+
+export interface CreateLotInput {
+	title: string;
+	lot_number?: string;
+	quantity?: number;
+	product?: string;
+	notes?: string;
+	author: string;
+}
+
+export const lots = {
+	list: (params?: ListLotsParams) => call<ListLotsResult>('list_lots', { params }),
+	get: (id: string) => call<unknown>('get_lot', { id }),
+	create: (input: CreateLotInput) => call<unknown>('create_lot', { input }),
+	delete: (id: string) => call<void>('delete_lot', { id }),
+	putOnHold: (id: string) => call<unknown>('put_lot_on_hold', { id }),
+	resume: (id: string) => call<unknown>('resume_lot', { id }),
+	complete: (id: string) => call<unknown>('complete_lot', { id }),
+	scrap: (id: string) => call<unknown>('scrap_lot', { id }),
+	updateStep: (id: string, stepIndex: number, status: string, operator?: string, notes?: string) =>
+		call<unknown>('update_lot_step', { id, stepIndex, status, operator, notes }),
+	getStats: () => call<LotStats>('get_lot_stats')
+};
+
+/**
  * Combined API namespace
  */
 export const api = {
@@ -608,6 +869,9 @@ export const api = {
 	components,
 	assemblies,
 	deviations,
+	ncrs,
+	capas,
+	lots,
 	traceability
 };
 

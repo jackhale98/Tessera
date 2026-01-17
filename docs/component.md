@@ -225,6 +225,15 @@ tdt cmp list --search "bracket"
 # Filter to components within an assembly's BOM (recursive)
 tdt cmp list --assembly ASM@1
 
+# Supply chain filters
+tdt cmp list --long-lead 30      # Components with lead time > 30 days
+tdt cmp list --single-source     # Components with only one supplier
+tdt cmp list --no-quote          # Components without any quotes
+tdt cmp list --high-cost 100     # Components with unit cost > $100
+
+# Manufacturing filters
+tdt cmp list --no-routing        # Components without manufacturing routing
+
 # Sort and limit
 tdt cmp list --sort title
 tdt cmp list --limit 10

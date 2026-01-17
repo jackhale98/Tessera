@@ -207,6 +207,10 @@ pub struct ListArgs {
     #[arg(long, short = 'A')]
     pub assembly: Option<String>,
 
+    /// Show only components without a manufacturing routing
+    #[arg(long)]
+    pub no_routing: bool,
+
     /// Columns to display (can specify multiple)
     #[arg(long, value_delimiter = ',', default_values_t = vec![
         ListColumn::PartNumber,
@@ -434,7 +438,8 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         || args.single_source
         || args.no_quote
         || args.high_cost.is_some()
-        || args.assembly.is_some();
+        || args.assembly.is_some()
+        || args.no_routing;
     let needs_full_entities = needs_full_output || needs_special_filters;
 
     if needs_full_entities {
@@ -481,7 +486,18 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
                     .high_cost
                     .is_none_or(|threshold| c.unit_cost.is_some_and(|cost| cost > threshold));
 
-                long_lead_match && single_source_match && no_quote_match && high_cost_match
+                // No routing filter - components without manufacturing routing
+                let no_routing_match = !args.no_routing
+                    || c.manufacturing.is_none()
+                    || c.manufacturing
+                        .as_ref()
+                        .is_some_and(|m| m.routing.is_empty());
+
+                long_lead_match
+                    && single_source_match
+                    && no_quote_match
+                    && high_cost_match
+                    && no_routing_match
             });
 
             // Filter by parent assembly (components in BOM only)
