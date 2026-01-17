@@ -5,9 +5,10 @@ use console::style;
 use miette::{IntoDiagnostic, Result};
 
 use crate::cli::commands::utils::format_link_with_title;
+use crate::cli::entity_cmd::{CommonListArgs, ListConfig};
 use crate::cli::filters::StatusFilter;
 use crate::cli::helpers::resolve_id_arg;
-use crate::cli::table::{CellValue, ColumnDef, TableConfig, TableFormatter, TableRow};
+use crate::cli::table::{CellValue, ColumnDef, TableRow};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
 use tdt_core::core::entity::{Priority, Status};
@@ -451,127 +452,161 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let filter = build_req_filter(&args);
     let (sort_field, sort_dir) = build_req_sort(&args);
 
-    // Determine output format
+    // Check if we need special post-filtering (test-result based filters)
+    let needs_test_result_filters = args.untested || args.failed || args.passing;
+
+    if needs_test_result_filters {
+        // Special case: test-result filters require loading full entities and post-filtering
+        run_list_with_test_filters(&args, &service, &filter, sort_field, sort_dir, global, &project)
+    } else {
+        // Standard case: use generic list infrastructure
+        let config = ListConfig {
+            columns: REQ_COLUMNS,
+            entity_name: "requirement",
+            prefix_str: "REQ",
+            entity_to_row: requirement_to_row,
+            cached_to_row: cached_requirement_to_row,
+            cached_sort: Some(sort_cached_requirements_by_field),
+        };
+
+        let common_args = CommonListArgs {
+            columns: args.columns.iter().map(|c| c.to_string()).collect(),
+            limit: args.limit,
+            reverse: args.reverse,
+            count: args.count,
+            wrap: args.wrap,
+        };
+
+        crate::cli::entity_cmd::run_list_generic(
+            &config,
+            &service,
+            &filter,
+            sort_field,
+            sort_dir,
+            &common_args,
+            global,
+            &project,
+            false, // no extra full-entity requirements
+        )
+    }
+}
+
+/// Handle list with test-result based post-filters (untested/failed/passing)
+fn run_list_with_test_filters(
+    args: &ListArgs,
+    service: &RequirementService,
+    filter: &RequirementFilter,
+    sort_field: RequirementSortField,
+    sort_dir: SortDirection,
+    global: &GlobalOpts,
+    project: &Project,
+) -> Result<()> {
     let output_format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
     };
 
-    // Determine if we need full entities or can use cached data
-    let needs_full_output = matches!(output_format, OutputFormat::Json | OutputFormat::Yaml);
-    let needs_test_result_filters = args.untested || args.failed || args.passing;
-    let needs_full_entities = needs_full_output || needs_test_result_filters;
+    // Load full entities via service (needed for link access)
+    let result = service
+        .list(filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
 
-    if needs_full_entities {
-        // Load full entities via service
-        let result = service
-            .list(&filter, sort_field, sort_dir)
-            .map_err(|e| miette::miette!("{}", e))?;
+    let mut reqs = result.items;
 
-        let mut reqs = result.items;
+    // Apply test-result based filters (require cross-entity queries)
+    let results = load_all_results(project);
 
-        // Apply test-result based filters (require cross-entity queries)
-        if needs_test_result_filters {
-            let results = load_all_results(&project);
+    // Pre-compute HashSets for O(1) lookups
+    use std::collections::HashSet;
+    let tested_test_ids: HashSet<&EntityId> = results.iter().map(|r| &r.test_id).collect();
+    let failed_test_ids: HashSet<&EntityId> = results
+        .iter()
+        .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Fail)
+        .map(|r| &r.test_id)
+        .collect();
+    let passing_test_ids: HashSet<&EntityId> = results
+        .iter()
+        .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Pass)
+        .map(|r| &r.test_id)
+        .collect();
 
-            // Pre-compute HashSets for O(1) lookups
-            use std::collections::HashSet;
-            let tested_test_ids: HashSet<&EntityId> = results.iter().map(|r| &r.test_id).collect();
-            let failed_test_ids: HashSet<&EntityId> = results
-                .iter()
-                .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Fail)
-                .map(|r| &r.test_id)
-                .collect();
-            let passing_test_ids: HashSet<&EntityId> = results
-                .iter()
-                .filter(|r| r.verdict == tdt_core::entities::result::Verdict::Pass)
-                .map(|r| &r.test_id)
-                .collect();
+    reqs.retain(|req| {
+        let test_ids = &req.links.verified_by;
 
-            reqs.retain(|req| {
-                let test_ids = &req.links.verified_by;
+        let untested_match = if args.untested {
+            !test_ids.is_empty()
+                && !test_ids.iter().any(|tid| tested_test_ids.contains(tid))
+        } else {
+            true
+        };
 
-                let untested_match = if args.untested {
-                    !test_ids.is_empty()
-                        && !test_ids.iter().any(|tid| tested_test_ids.contains(tid))
-                } else {
-                    true
-                };
+        let failed_match = if args.failed {
+            test_ids.iter().any(|tid| failed_test_ids.contains(tid))
+        } else {
+            true
+        };
 
-                let failed_match = if args.failed {
-                    test_ids.iter().any(|tid| failed_test_ids.contains(tid))
-                } else {
-                    true
-                };
+        let passing_match = if args.passing {
+            !test_ids.is_empty()
+                && test_ids.iter().all(|tid| passing_test_ids.contains(tid))
+        } else {
+            true
+        };
 
-                let passing_match = if args.passing {
-                    !test_ids.is_empty()
-                        && test_ids.iter().all(|tid| passing_test_ids.contains(tid))
-                } else {
-                    true
-                };
+        untested_match && failed_match && passing_match
+    });
 
-                untested_match && failed_match && passing_match
-            });
-        }
-
-        // Handle count-only mode
-        if args.count {
-            println!("{}", reqs.len());
-            return Ok(());
-        }
-
-        if reqs.is_empty() {
-            match global.output {
-                OutputFormat::Json => println!("[]"),
-                OutputFormat::Yaml => println!("[]"),
-                _ => {
-                    println!("No requirements found matching filters.");
-                    println!();
-                    println!("Create one with: {}", style("tdt req new").yellow());
-                }
-            }
-            return Ok(());
-        }
-
-        // Update short ID index
-        let mut short_ids = ShortIdIndex::load(&project);
-        short_ids.ensure_all(reqs.iter().map(|r| r.id.to_string()));
-        super::utils::save_short_ids(&mut short_ids, &project);
-
-        // Output based on format
-        output_requirements(&reqs, &short_ids, &args, output_format)
-    } else {
-        // Fast path: use cached data via service
-        let result = service
-            .list_cached(&filter)
-            .map_err(|e| miette::miette!("{}", e))?;
-
-        let mut cached_reqs = result.items;
-
-        // Sort cached results (service sorts full entities, but list_cached doesn't sort)
-        sort_cached_requirements(&mut cached_reqs, &args);
-
-        // Handle count-only mode
-        if args.count {
-            println!("{}", cached_reqs.len());
-            return Ok(());
-        }
-
-        if cached_reqs.is_empty() {
-            println!("No requirements found matching filters.");
-            println!();
-            println!("Create one with: {}", style("tdt req new").yellow());
-            return Ok(());
-        }
-
-        // Update short ID index
-        let mut short_ids = ShortIdIndex::load(&project);
-        short_ids.ensure_all(cached_reqs.iter().map(|r| r.id.clone()));
-        super::utils::save_short_ids(&mut short_ids, &project);
-
-        output_cached_requirements(&cached_reqs, &short_ids, &args, output_format)
+    // Apply reverse and limit
+    if args.reverse {
+        reqs.reverse();
     }
+    if let Some(limit) = args.limit {
+        reqs.truncate(limit);
+    }
+
+    // Handle count-only mode
+    if args.count {
+        println!("{}", reqs.len());
+        return Ok(());
+    }
+
+    if reqs.is_empty() {
+        match output_format {
+            OutputFormat::Json => println!("[]"),
+            OutputFormat::Yaml => println!("[]"),
+            _ => {
+                println!("No requirements found matching filters.");
+                println!();
+                println!("Create one with: {}", style("tdt req new").yellow());
+            }
+        }
+        return Ok(());
+    }
+
+    // Update short ID index
+    let mut short_ids = ShortIdIndex::load(project);
+    short_ids.ensure_all(reqs.iter().map(|r| r.id.to_string()));
+    super::utils::save_short_ids(&mut short_ids, project);
+
+    // Use generic output
+    let config = ListConfig {
+        columns: REQ_COLUMNS,
+        entity_name: "requirement",
+        prefix_str: "REQ",
+        entity_to_row: requirement_to_row,
+        cached_to_row: cached_requirement_to_row,
+        cached_sort: Some(sort_cached_requirements_by_field),
+    };
+
+    let common_args = CommonListArgs {
+        columns: args.columns.iter().map(|c| c.to_string()).collect(),
+        limit: None, // Already applied
+        reverse: false, // Already applied
+        count: false, // Already handled
+        wrap: args.wrap,
+    };
+
+    crate::cli::entity_cmd::output_full_entities(&reqs, &config, &short_ids, &common_args, output_format)
 }
 
 /// Build RequirementFilter from CLI args
@@ -668,15 +703,19 @@ fn build_req_sort(args: &ListArgs) -> (RequirementSortField, SortDirection) {
     (field, direction)
 }
 
-/// Sort cached requirements based on CLI args
-fn sort_cached_requirements(reqs: &mut [tdt_core::core::CachedRequirement], args: &ListArgs) {
-    match args.sort {
-        ListColumn::Id => reqs.sort_by(|a, b| a.id.cmp(&b.id)),
-        ListColumn::Type => reqs.sort_by(|a, b| a.req_type.cmp(&b.req_type)),
-        ListColumn::Level => reqs.sort_by(|a, b| a.level.cmp(&b.level)),
-        ListColumn::Title => reqs.sort_by(|a, b| a.title.cmp(&b.title)),
-        ListColumn::Status => reqs.sort_by(|a, b| a.status.cmp(&b.status)),
-        ListColumn::Priority => {
+/// Sort cached requirements by service sort field and direction
+fn sort_cached_requirements_by_field(
+    reqs: &mut Vec<tdt_core::core::CachedRequirement>,
+    field: RequirementSortField,
+    dir: SortDirection,
+) {
+    match field {
+        RequirementSortField::Id => reqs.sort_by(|a, b| a.id.cmp(&b.id)),
+        RequirementSortField::Type => reqs.sort_by(|a, b| a.req_type.cmp(&b.req_type)),
+        RequirementSortField::Level => reqs.sort_by(|a, b| a.level.cmp(&b.level)),
+        RequirementSortField::Title => reqs.sort_by(|a, b| a.title.cmp(&b.title)),
+        RequirementSortField::Status => reqs.sort_by(|a, b| a.status.cmp(&b.status)),
+        RequirementSortField::Priority => {
             let priority_order = |p: Option<Priority>| match p {
                 Some(Priority::Critical) => 0,
                 Some(Priority::High) => 1,
@@ -686,72 +725,14 @@ fn sort_cached_requirements(reqs: &mut [tdt_core::core::CachedRequirement], args
             };
             reqs.sort_by(|a, b| priority_order(a.priority).cmp(&priority_order(b.priority)));
         }
-        ListColumn::Category => reqs.sort_by(|a, b| a.category.cmp(&b.category)),
-        ListColumn::Author => reqs.sort_by(|a, b| a.author.cmp(&b.author)),
-        ListColumn::Created => reqs.sort_by(|a, b| a.created.cmp(&b.created)),
-        ListColumn::Tags => reqs.sort_by(|a, b| a.tags.join(",").cmp(&b.tags.join(","))),
+        RequirementSortField::Category => reqs.sort_by(|a, b| a.category.cmp(&b.category)),
+        RequirementSortField::Author => reqs.sort_by(|a, b| a.author.cmp(&b.author)),
+        RequirementSortField::Created => reqs.sort_by(|a, b| a.created.cmp(&b.created)),
     }
 
-    if args.reverse {
+    if dir == SortDirection::Descending {
         reqs.reverse();
     }
-}
-
-/// Output full requirements
-fn output_requirements(
-    reqs: &[Requirement],
-    short_ids: &ShortIdIndex,
-    args: &ListArgs,
-    format: OutputFormat,
-) -> Result<()> {
-    match format {
-        OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(reqs).into_diagnostic()?;
-            println!("{}", json);
-        }
-        OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(reqs).into_diagnostic()?;
-            print!("{}", yaml);
-        }
-        OutputFormat::Tsv
-        | OutputFormat::Csv
-        | OutputFormat::Md
-        | OutputFormat::Id
-        | OutputFormat::ShortId
-        | OutputFormat::Table
-        | OutputFormat::Dot
-        | OutputFormat::Tree => {
-            // Build visible columns list
-            let mut visible: Vec<&str> = args
-                .columns
-                .iter()
-                .map(|c| c.to_string().leak() as &str)
-                .collect();
-            if args.show_id && !visible.contains(&"id") {
-                visible.insert(0, "id");
-            }
-
-            // Convert to TableRows
-            let rows: Vec<TableRow> = reqs
-                .iter()
-                .map(|req| requirement_to_row(req, short_ids))
-                .collect();
-
-            // Configure table
-            let config = if let Some(width) = args.wrap {
-                TableConfig::with_wrap(width)
-            } else {
-                TableConfig::default()
-            };
-
-            let formatter =
-                TableFormatter::new(REQ_COLUMNS, "requirement", "REQ").with_config(config);
-            formatter.output(rows, format, &visible);
-        }
-        OutputFormat::Auto | OutputFormat::Path => unreachable!(),
-    }
-
-    Ok(())
 }
 
 /// Convert a Requirement to a TableRow
@@ -770,42 +751,6 @@ fn requirement_to_row(req: &Requirement, short_ids: &ShortIdIndex) -> TableRow {
         .cell("author", CellValue::Text(req.author.clone()))
         .cell("created", CellValue::Date(req.created))
         .cell("tags", CellValue::Tags(req.tags.clone()))
-}
-
-/// Output requirements from cached data (fast path - no YAML parsing)
-fn output_cached_requirements(
-    reqs: &[tdt_core::core::CachedRequirement],
-    short_ids: &ShortIdIndex,
-    args: &ListArgs,
-    format: OutputFormat,
-) -> Result<()> {
-    // Build visible columns list
-    let mut visible: Vec<&str> = args
-        .columns
-        .iter()
-        .map(|c| c.to_string().leak() as &str)
-        .collect();
-    if args.show_id && !visible.contains(&"id") {
-        visible.insert(0, "id");
-    }
-
-    // Convert to TableRows
-    let rows: Vec<TableRow> = reqs
-        .iter()
-        .map(|req| cached_requirement_to_row(req, short_ids))
-        .collect();
-
-    // Configure table
-    let config = if let Some(width) = args.wrap {
-        TableConfig::with_wrap(width)
-    } else {
-        TableConfig::default()
-    };
-
-    let formatter = TableFormatter::new(REQ_COLUMNS, "requirement", "REQ").with_config(config);
-    formatter.output(rows, format, &visible);
-
-    Ok(())
 }
 
 /// Convert a CachedRequirement to a TableRow

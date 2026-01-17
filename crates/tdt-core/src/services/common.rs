@@ -369,6 +369,35 @@ impl<T> ListResult<T> {
     }
 }
 
+/// Trait for services that support listing entities
+///
+/// This trait provides a common interface for list operations across all entity services.
+/// Both full entity loading and cached (fast) loading are supported.
+///
+/// # Example
+///
+/// ```ignore
+/// fn list_entities<S, E, C, F, SF>(service: &S, filter: F, sort: SF) -> ServiceResult<Vec<E>>
+/// where
+///     S: ListableService<E, C, F, SF>,
+/// {
+///     let result = service.list(&filter, sort, SortDirection::Ascending)?;
+///     Ok(result.items)
+/// }
+/// ```
+pub trait ListableService<Entity, CachedEntity, Filter, SortField> {
+    /// List entities with full data (required for JSON/YAML output)
+    fn list(
+        &self,
+        filter: &Filter,
+        sort_by: SortField,
+        sort_dir: SortDirection,
+    ) -> ServiceResult<ListResult<Entity>>;
+
+    /// List entities using cached data (fast path for table output)
+    fn list_cached(&self, filter: &Filter) -> ServiceResult<ListResult<CachedEntity>>;
+}
+
 /// Helper to apply pagination to a vector
 pub fn apply_pagination<T>(items: Vec<T>, offset: Option<usize>, limit: Option<usize>) -> ListResult<T> {
     let total_count = items.len();

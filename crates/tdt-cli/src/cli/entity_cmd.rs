@@ -302,6 +302,266 @@ pub fn print_list_footer(count: usize, prefix: EntityPrefix) {
 }
 
 // =========================================================================
+// Generic List Implementation
+// =========================================================================
+
+use crate::cli::table::{ColumnDef, TableConfig, TableFormatter, TableRow};
+use tdt_core::core::entity::Entity;
+use tdt_core::services::{ListableService, SortDirection};
+
+/// Configuration for generic list commands
+pub struct ListConfig<E, C, S> {
+    /// Column definitions for table output
+    pub columns: &'static [ColumnDef],
+    /// Entity name for messages (e.g., "requirement")
+    pub entity_name: &'static str,
+    /// Entity prefix string for table footer (e.g., "REQ")
+    pub prefix_str: &'static str,
+    /// Convert full entity to table row
+    pub entity_to_row: fn(&E, &ShortIdIndex) -> TableRow,
+    /// Convert cached entity to table row
+    pub cached_to_row: fn(&C, &ShortIdIndex) -> TableRow,
+    /// Optional function to sort cached entities
+    pub cached_sort: Option<fn(&mut Vec<C>, S, SortDirection)>,
+}
+
+/// Common list arguments extracted from CLI args
+#[derive(Debug, Clone)]
+pub struct CommonListArgs {
+    pub columns: Vec<String>,
+    pub limit: Option<usize>,
+    pub reverse: bool,
+    pub count: bool,
+    pub wrap: Option<usize>,
+}
+
+/// Run a generic list command using a service
+///
+/// This function handles:
+/// - Two-tier caching (cache for table output, full entities for JSON/YAML)
+/// - All output formats (table, tsv, csv, md, json, yaml, id, shortid)
+/// - Sorting, limiting, reversing
+/// - Short ID assignment
+///
+/// # Arguments
+/// * `config` - Entity-specific list configuration
+/// * `service` - The service implementing ListableService
+/// * `filter` - Entity-specific filter
+/// * `sort_field` - Field to sort by
+/// * `sort_dir` - Sort direction
+/// * `args` - Common list arguments (columns, limit, etc.)
+/// * `global` - Global CLI options (output format)
+/// * `project` - Project reference
+/// * `needs_full_for_filter` - True if post-filtering requires full entities
+pub fn run_list_generic<E, C, F, S, Svc>(
+    config: &ListConfig<E, C, S>,
+    service: &Svc,
+    filter: &F,
+    sort_field: S,
+    sort_dir: SortDirection,
+    args: &CommonListArgs,
+    global: &GlobalOpts,
+    project: &Project,
+    needs_full_for_filter: bool,
+) -> Result<()>
+where
+    E: Entity + Serialize + Clone,
+    C: Clone,
+    S: Copy,
+    Svc: ListableService<E, C, F, S>,
+{
+    let format = match global.output {
+        OutputFormat::Auto => OutputFormat::Tsv,
+        f => f,
+    };
+
+    let needs_full_output = matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    let needs_full = needs_full_output || needs_full_for_filter;
+
+    if needs_full {
+        // Full entity path - required for JSON/YAML or cross-entity filters
+        let result = service
+            .list(filter, sort_field, sort_dir)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        let mut items = result.items;
+
+        // Apply reverse and limit
+        if args.reverse {
+            items.reverse();
+        }
+        if let Some(limit) = args.limit {
+            items.truncate(limit);
+        }
+
+        // Count only mode
+        if args.count {
+            println!("{}", items.len());
+            return Ok(());
+        }
+
+        if items.is_empty() {
+            return output_empty_list(config.entity_name, format);
+        }
+
+        // Update short IDs
+        let mut short_ids = ShortIdIndex::load(project);
+        short_ids.ensure_all(items.iter().map(|e| e.id().to_string()));
+        super::commands::utils::save_short_ids(&mut short_ids, project);
+
+        output_full_entities(&items, config, &short_ids, args, format)
+    } else {
+        // Cache path - fast, no YAML parsing needed
+        let result = service
+            .list_cached(filter)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        let mut items = result.items;
+
+        // Sort cached entities if a sort function is provided
+        if let Some(sort_fn) = config.cached_sort {
+            sort_fn(&mut items, sort_field, sort_dir);
+        }
+
+        // Apply reverse and limit
+        if args.reverse {
+            items.reverse();
+        }
+        if let Some(limit) = args.limit {
+            items.truncate(limit);
+        }
+
+        // Count only mode
+        if args.count {
+            println!("{}", items.len());
+            return Ok(());
+        }
+
+        if items.is_empty() {
+            println!("No {} found.", config.entity_name);
+            return Ok(());
+        }
+
+        // Update short IDs for cached items (need to extract IDs differently)
+        let mut short_ids = ShortIdIndex::load(project);
+        // Note: for cached items, we get the ID from the row conversion
+        // We'll update short IDs based on the rows
+        let rows: Vec<TableRow> = items
+            .iter()
+            .map(|e| (config.cached_to_row)(e, &short_ids))
+            .collect();
+        short_ids.ensure_all(rows.iter().map(|r| r.full_id.clone()));
+        super::commands::utils::save_short_ids(&mut short_ids, project);
+
+        output_cached_entities(&items, config, &short_ids, args, format)
+    }
+}
+
+/// Output empty list in appropriate format
+fn output_empty_list(entity_name: &str, format: OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Json => println!("[]"),
+        OutputFormat::Yaml => println!("[]"),
+        _ => println!("No {} found.", entity_name),
+    }
+    Ok(())
+}
+
+/// Output full entities (for JSON/YAML or when full data needed)
+pub fn output_full_entities<E, C, S>(
+    items: &[E],
+    config: &ListConfig<E, C, S>,
+    short_ids: &ShortIdIndex,
+    args: &CommonListArgs,
+    format: OutputFormat,
+) -> Result<()>
+where
+    E: Serialize + Clone,
+{
+    match format {
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(items).map_err(|e| miette::miette!("{}", e))?;
+            println!("{}", json);
+        }
+        OutputFormat::Yaml => {
+            let yaml = serde_yml::to_string(items).map_err(|e| miette::miette!("{}", e))?;
+            print!("{}", yaml);
+        }
+        OutputFormat::Id | OutputFormat::ShortId => {
+            for item in items {
+                let row = (config.entity_to_row)(item, short_ids);
+                if format == OutputFormat::ShortId {
+                    println!("{}", row.short_id);
+                } else {
+                    println!("{}", row.full_id);
+                }
+            }
+        }
+        _ => {
+            // Table formats (table, tsv, csv, md)
+            let rows: Vec<TableRow> = items
+                .iter()
+                .map(|e| (config.entity_to_row)(e, short_ids))
+                .collect();
+
+            let columns: Vec<&str> = args.columns.iter().map(|s| s.as_str()).collect();
+
+            let table_config = TableConfig {
+                wrap_width: args.wrap,
+                show_summary: true,
+            };
+            let formatter = TableFormatter::new(config.columns, config.entity_name, config.prefix_str)
+                .with_config(table_config);
+            formatter.output(rows, format, &columns);
+        }
+    }
+    Ok(())
+}
+
+/// Output cached entities (fast path for table output)
+pub fn output_cached_entities<E, C, S>(
+    items: &[C],
+    config: &ListConfig<E, C, S>,
+    short_ids: &ShortIdIndex,
+    args: &CommonListArgs,
+    format: OutputFormat,
+) -> Result<()>
+where
+    C: Clone,
+{
+    match format {
+        OutputFormat::Id | OutputFormat::ShortId => {
+            for item in items {
+                let row = (config.cached_to_row)(item, short_ids);
+                if format == OutputFormat::ShortId {
+                    println!("{}", row.short_id);
+                } else {
+                    println!("{}", row.full_id);
+                }
+            }
+        }
+        _ => {
+            // Table formats (table, tsv, csv, md)
+            let rows: Vec<TableRow> = items
+                .iter()
+                .map(|e| (config.cached_to_row)(e, short_ids))
+                .collect();
+
+            let columns: Vec<&str> = args.columns.iter().map(|s| s.as_str()).collect();
+
+            let table_config = TableConfig {
+                wrap_width: args.wrap,
+                show_summary: true,
+            };
+            let formatter = TableFormatter::new(config.columns, config.entity_name, config.prefix_str)
+                .with_config(table_config);
+            formatter.output(rows, format, &columns);
+        }
+    }
+    Ok(())
+}
+
+// =========================================================================
 // Link Handling
 // =========================================================================
 

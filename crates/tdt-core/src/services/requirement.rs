@@ -725,6 +725,27 @@ impl<'a> RequirementService<'a> {
     }
 }
 
+// Implement ListableService trait for generic CLI list operations
+impl<'a> super::common::ListableService<
+    Requirement,
+    CachedRequirement,
+    RequirementFilter,
+    RequirementSortField,
+> for RequirementService<'a> {
+    fn list(
+        &self,
+        filter: &RequirementFilter,
+        sort_by: RequirementSortField,
+        sort_dir: SortDirection,
+    ) -> ServiceResult<ListResult<Requirement>> {
+        RequirementService::list(self, filter, sort_by, sort_dir)
+    }
+
+    fn list_cached(&self, filter: &RequirementFilter) -> ServiceResult<ListResult<CachedRequirement>> {
+        RequirementService::list_cached(self, filter)
+    }
+}
+
 /// Statistics about requirements
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RequirementStats {
