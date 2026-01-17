@@ -126,7 +126,13 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields (process links, limits data, etc.)
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				control_type: controlType,
 				control_category: controlCategory,
@@ -138,18 +144,31 @@
 					units: charUnits,
 					critical: charCritical
 				},
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (description.trim()) data.description = description.trim();
-			if (reactionPlan.trim()) data.reaction_plan = reactionPlan.trim();
+			if (description.trim()) {
+				data.description = description.trim();
+			} else {
+				delete data.description;
+			}
+			if (reactionPlan.trim()) {
+				data.reaction_plan = reactionPlan.trim();
+			} else {
+				delete data.reaction_plan;
+			}
 
 			if (measurementMethod.trim() || measurementEquipment.trim()) {
 				data.measurement = {
 					method: measurementMethod.trim() || undefined,
 					equipment: measurementEquipment.trim() || undefined
 				};
+			} else {
+				delete data.measurement;
 			}
 
 			data.sampling = {
@@ -158,7 +177,7 @@
 				sample_size: sampleSize
 			};
 
-			await entities.save('CTRL', { ...data, id });
+			await entities.save('CTRL', data);
 			await refreshProject();
 			goto(`/controls/${id}`);
 		} catch (e) {

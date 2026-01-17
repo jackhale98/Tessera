@@ -95,22 +95,33 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				req_type: reqType,
 				level,
 				text: text.trim(),
 				priority,
-				author: $projectAuthor,
+				author: entity?.author ?? $projectAuthor,
 				acceptance_criteria: acceptanceCriteria,
-				tags
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
 			if (rationale.trim()) {
 				data.rationale = rationale.trim();
+			} else {
+				delete data.rationale;
 			}
 
-			await entities.save('REQ', { ...data, id });
+			await entities.save('REQ', data);
 			await refreshProject();
 			goto(`/requirements/${id}`);
 		} catch (e) {

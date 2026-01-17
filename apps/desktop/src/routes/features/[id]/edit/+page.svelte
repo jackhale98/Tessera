@@ -87,26 +87,49 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields (dimensions, gd_t, bounds, etc.)
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				component: componentId.trim(),
 				feature_type: featureType,
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (description.trim()) data.description = description.trim();
-			if (geometryClass) data.geometry_class = geometryClass;
-			if (datumLabel.trim()) data.datum_label = datumLabel.trim().toUpperCase();
+			if (description.trim()) {
+				data.description = description.trim();
+			} else {
+				delete data.description;
+			}
+			if (geometryClass) {
+				data.geometry_class = geometryClass;
+			} else {
+				delete data.geometry_class;
+			}
+			if (datumLabel.trim()) {
+				data.datum_label = datumLabel.trim().toUpperCase();
+			} else {
+				delete data.datum_label;
+			}
 			if (drawingNumber.trim()) {
 				data.drawing = {
 					number: drawingNumber.trim(),
 					revision: drawingRevision.trim() || 'A',
 					zone: drawingZone.trim() || ''
 				};
+			} else {
+				delete data.drawing;
 			}
 
-			await entities.save('FEAT', { ...data, id });
+			await entities.save('FEAT', data);
 			await refreshProject();
 			goto(`/features/${id}`);
 		} catch (e) {

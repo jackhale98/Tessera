@@ -87,22 +87,53 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields (status, created, links, etc.)
+			const existingData = entity?.data ?? {};
+
+			// Update only the fields controlled by this form
 			const data: Record<string, unknown> = {
+				...existingData,  // Preserve all existing fields
+				id,               // Ensure ID is set
 				title: title.trim(),
 				part_number: partNumber.trim(),
 				category,
 				make_buy: makeBuy,
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,  // Preserve original author
+				tags,
+				// Preserve important metadata
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (revision.trim()) data.revision = revision.trim();
-			if (description.trim()) data.description = description.trim();
-			if (material.trim()) data.material = material.trim();
-			if (massKg !== null) data.mass_kg = massKg;
-			if (unitCost !== null) data.unit_cost = unitCost;
+			// Update optional fields
+			if (revision.trim()) {
+				data.revision = revision.trim();
+			} else {
+				delete data.revision;
+			}
+			if (description.trim()) {
+				data.description = description.trim();
+			} else {
+				delete data.description;
+			}
+			if (material.trim()) {
+				data.material = material.trim();
+			} else {
+				delete data.material;
+			}
+			if (massKg !== null) {
+				data.mass_kg = massKg;
+			} else {
+				delete data.mass_kg;
+			}
+			if (unitCost !== null) {
+				data.unit_cost = unitCost;
+			} else {
+				delete data.unit_cost;
+			}
 
-			await entities.save('CMP', { ...data, id });
+			await entities.save('CMP', data);
 			await refreshProject();
 			goto(`/components/${id}`);
 		} catch (e) {

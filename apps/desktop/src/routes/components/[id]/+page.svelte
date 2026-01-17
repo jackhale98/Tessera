@@ -21,7 +21,8 @@
 		Factory,
 		CircleDot,
 		Plus,
-		Receipt
+		Receipt,
+		Layers
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -64,9 +65,33 @@
 	const makeBuy = $derived((data.make_buy as string) ?? 'make');
 	const material = $derived((data.material as string) ?? null);
 	const massKg = $derived(data.mass_kg as number | null);
-	const unitCost = $derived(data.unit_cost as number | null);
-	const selectedQuote = $derived((data.selected_quote as string) ?? null);
+	const rawUnitCost = $derived(data.unit_cost as number | null);
+	const selectedQuoteId = $derived((data.selected_quote as string) ?? null);
 	const entityRevision = $derived((data.entity_revision as number) ?? 1);
+
+	// Computed unit cost: prioritize selected quote, then any quote, then raw unit_cost
+	const unitCost = $derived.by(() => {
+		// Priority 1: Use selected quote if set
+		if (selectedQuoteId) {
+			const selectedQuote = quotes.find((q) => q.id === selectedQuoteId);
+			if (selectedQuote?.unit_price != null) {
+				return selectedQuote.unit_price;
+			}
+		}
+		// Priority 2: Fall back to raw unit_cost from component
+		return rawUnitCost;
+	});
+
+	// Track whether cost comes from quote for display purposes
+	const costSource = $derived.by(() => {
+		if (selectedQuoteId) {
+			const selectedQuote = quotes.find((q) => q.id === selectedQuoteId);
+			if (selectedQuote?.unit_price != null) {
+				return { type: 'quote' as const, quote: selectedQuote };
+			}
+		}
+		return rawUnitCost != null ? { type: 'manual' as const } : null;
+	});
 
 	// Safety classifications
 	const swClass = $derived((data.sw_class as string) ?? null);
@@ -91,6 +116,13 @@
 		revision?: string;
 	}
 	const documents = $derived((data.documents as Document[]) ?? []);
+
+	// Assemblies that use this component (from incoming "contains" links)
+	const usedInAssemblies = $derived(
+		linksTo.filter(
+			(link) => link.link_type === 'contains' || link.source_id.startsWith('ASM-')
+		)
+	);
 
 	async function loadData() {
 		if (!id) return;
@@ -337,8 +369,16 @@
 								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
 									<DollarSign class="h-4 w-4" />
 									Unit Cost
+									{#if costSource?.type === 'quote'}
+										<Badge variant="secondary" class="ml-auto text-xs">Quote</Badge>
+									{/if}
 								</dt>
 								<dd class="mt-1 text-xl font-bold">{formatCurrency(unitCost)}</dd>
+								{#if costSource?.type === 'quote' && costSource.quote}
+									<dd class="mt-1 text-xs text-muted-foreground">
+										From: {costSource.quote.supplier_name ?? costSource.quote.supplier}
+									</dd>
+								{/if}
 							</div>
 							<div class="rounded-lg border p-4">
 								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -356,6 +396,38 @@
 						</dl>
 					</CardContent>
 				</Card>
+
+				<!-- Used In Assemblies -->
+				{#if usedInAssemblies.length > 0}
+					<Card>
+						<CardHeader>
+							<CardTitle class="flex items-center gap-2">
+								<Layers class="h-5 w-5" />
+								Used In Assemblies ({usedInAssemblies.length})
+							</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<div class="space-y-2">
+								{#each usedInAssemblies as assembly}
+									<button
+										class="flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+										onclick={() => goto(`/assemblies/${assembly.source_id}`)}
+									>
+										<div class="flex items-center gap-3">
+											<Layers class="h-4 w-4 text-blue-500" />
+											<div>
+												<p class="font-medium">{assembly.target_title ?? assembly.source_id}</p>
+												<p class="text-xs text-muted-foreground font-mono">
+													{assembly.source_id}
+												</p>
+											</div>
+										</div>
+									</button>
+								{/each}
+							</div>
+						</CardContent>
+					</Card>
+				{/if}
 
 				<!-- Features -->
 				<Card>
@@ -454,14 +526,20 @@
 						{:else}
 							<div class="space-y-2">
 								{#each quotes as quote}
+									{@const isSelected = quote.id === selectedQuoteId}
 									<button
-										class="flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+										class="flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 {isSelected ? 'border-primary bg-primary/5' : ''}"
 										onclick={() => goto(`/procurement/quotes/${quote.id}`)}
 									>
 										<div class="flex items-center gap-3">
-											<Receipt class="h-4 w-4 text-muted-foreground" />
+											<Receipt class="h-4 w-4 {isSelected ? 'text-primary' : 'text-muted-foreground'}" />
 											<div>
-												<p class="font-medium">{quote.title}</p>
+												<p class="font-medium">
+													{quote.title}
+													{#if isSelected}
+														<Badge variant="default" class="ml-2 text-xs">Selected</Badge>
+													{/if}
+												</p>
 												<p class="text-xs text-muted-foreground">
 													{quote.supplier_name ?? quote.supplier}
 													{#if quote.lead_time_days}
@@ -472,7 +550,7 @@
 										</div>
 										<div class="flex items-center gap-2">
 											{#if quote.unit_price}
-												<span class="font-bold text-green-600">
+												<span class="font-bold {isSelected ? 'text-primary' : 'text-green-600'}">
 													{formatCurrency(quote.unit_price)}
 												</span>
 											{/if}

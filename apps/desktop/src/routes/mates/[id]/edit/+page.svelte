@@ -154,19 +154,36 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields (cached analysis results, etc.)
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				mate_type: mateType,
 				feature_a: { id: featureAId },
 				feature_b: { id: featureBId },
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (description.trim()) data.description = description.trim();
-			if (notes.trim()) data.notes = notes.trim();
+			if (description.trim()) {
+				data.description = description.trim();
+			} else {
+				delete data.description;
+			}
+			if (notes.trim()) {
+				data.notes = notes.trim();
+			} else {
+				delete data.notes;
+			}
 
-			await entities.save('MATE', { ...data, id });
+			await entities.save('MATE', data);
 			await refreshProject();
 			goto(`/mates/${id}`);
 		} catch (e) {

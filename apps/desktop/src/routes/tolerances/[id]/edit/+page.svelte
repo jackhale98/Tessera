@@ -238,7 +238,13 @@
 					};
 				});
 
+			// Start with existing entity data to preserve all fields (analysis results, cached data, etc.)
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				target: {
 					name: targetName.trim(),
@@ -252,13 +258,20 @@
 				sigma_level: sigmaLevel,
 				mean_shift_k: meanShiftK,
 				include_gdt: includeGdt,
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (description.trim()) data.description = description.trim();
+			if (description.trim()) {
+				data.description = description.trim();
+			} else {
+				delete data.description;
+			}
 
-			await entities.save('TOL', { ...data, id });
+			await entities.save('TOL', data);
 			await refreshProject();
 			goto(`/tolerances/${id}`);
 		} catch (e) {

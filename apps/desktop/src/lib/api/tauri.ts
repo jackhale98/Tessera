@@ -326,7 +326,7 @@ export const components = {
 	list: (params?: ListComponentsParams) => call<ListComponentsResult>('list_components', { params }),
 	get: (id: string) => call<unknown>('get_component', { id }),
 	getByPartNumber: (partNumber: string) =>
-		call<unknown>('get_component_by_part_number', { part_number: partNumber }),
+		call<unknown>('get_component_by_part_number', { partNumber }),
 	create: (input: CreateComponentInput) => call<unknown>('create_component', { input }),
 	update: (id: string, input: UpdateComponentInput) =>
 		call<unknown>('update_component', { id, input }),
@@ -417,7 +417,7 @@ export const assemblies = {
 	list: (params?: ListAssembliesParams) => call<ListAssembliesResult>('list_assemblies', { params }),
 	get: (id: string) => call<unknown>('get_assembly', { id }),
 	getByPartNumber: (partNumber: string) =>
-		call<unknown>('get_assembly_by_part_number', { part_number: partNumber }),
+		call<unknown>('get_assembly_by_part_number', { partNumber }),
 	getStats: () => call<AssemblyStats>('get_assembly_stats'),
 	getBomTree: (id: string, quantity?: number) => call<BomNode>('get_bom_tree', { id, quantity }),
 	calculateCost: (id: string, quantity?: number) =>
@@ -425,11 +425,11 @@ export const assemblies = {
 	calculateMass: (id: string, quantity?: number) =>
 		call<BomMassResult>('calculate_assembly_mass', { id, quantity }),
 	addComponent: (assemblyId: string, componentId: string, quantity: number) =>
-		call<unknown>('add_assembly_component', { assembly_id: assemblyId, component_id: componentId, quantity }),
+		call<unknown>('add_assembly_component', { assemblyId, componentId, quantity }),
 	removeComponent: (assemblyId: string, componentId: string) =>
-		call<unknown>('remove_assembly_component', { assembly_id: assemblyId, component_id: componentId }),
+		call<unknown>('remove_assembly_component', { assemblyId, componentId }),
 	updateComponentQuantity: (assemblyId: string, componentId: string, quantity: number) =>
-		call<unknown>('update_assembly_component_quantity', { assembly_id: assemblyId, component_id: componentId, quantity })
+		call<unknown>('update_assembly_component_quantity', { assemblyId, componentId, quantity })
 };
 
 /**
@@ -589,11 +589,11 @@ export const deviations = {
 	setRisk: (id: string, level: string, assessment?: string) =>
 		call<unknown>('set_deviation_risk', { id, level, assessment }),
 	addProcessLink: (id: string, processId: string) =>
-		call<unknown>('add_deviation_process_link', { id, process_id: processId }),
+		call<unknown>('add_deviation_process_link', { id, processId }),
 	addLotLink: (id: string, lotId: string) =>
-		call<unknown>('add_deviation_lot_link', { id, lot_id: lotId }),
+		call<unknown>('add_deviation_lot_link', { id, lotId }),
 	addComponentLink: (id: string, componentId: string) =>
-		call<unknown>('add_deviation_component_link', { id, component_id: componentId }),
+		call<unknown>('add_deviation_component_link', { id, componentId }),
 	getStats: () => call<DeviationStats>('get_deviation_stats')
 };
 

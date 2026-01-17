@@ -412,7 +412,10 @@
 										{#each flatBomRows as row (row.node.id + '-' + row.level)}
 											<TableRow
 												class="cursor-pointer hover:bg-muted/50"
-												onclick={() => {
+												onclick={(e) => {
+													// Don't navigate if we're editing or if click was on an interactive element
+													if (editingComponentId) return;
+
 													if (row.hasChildren) {
 														toggleNode(row.node.id);
 													} else if (row.node.is_assembly) {
@@ -456,7 +459,7 @@
 														</div>
 													</div>
 												</TableCell>
-												<TableCell class="text-center">
+												<TableCell class="text-center" onclick={(e) => e.stopPropagation()}>
 													{#if editingComponentId === row.node.id && !row.node.is_assembly}
 														<div class="flex items-center justify-center gap-1">
 															<Input
@@ -464,6 +467,7 @@
 																min="1"
 																bind:value={editingQuantityValue}
 																onkeydown={(e) => handleEditQuantityKeydown(e, row.node.id)}
+																onclick={(e) => e.stopPropagation()}
 																class="w-16 h-7 text-center text-xs"
 																disabled={savingQuantity}
 															/>
@@ -471,7 +475,7 @@
 																variant="ghost"
 																size="sm"
 																class="h-6 w-6 p-0"
-																onclick={() => saveComponentQuantity(row.node.id)}
+																onclick={(e) => { e.stopPropagation(); saveComponentQuantity(row.node.id); }}
 																disabled={savingQuantity}
 															>
 																<span class="text-green-500">&#10003;</span>
@@ -480,7 +484,7 @@
 																variant="ghost"
 																size="sm"
 																class="h-6 w-6 p-0"
-																onclick={cancelEditingQuantity}
+																onclick={(e) => { e.stopPropagation(); cancelEditingQuantity(); }}
 																disabled={savingQuantity}
 															>
 																<span class="text-red-500">&times;</span>

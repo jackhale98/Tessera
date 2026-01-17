@@ -165,22 +165,51 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields (links, results references, etc.)
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				type: testType,
 				test_level: testLevel,
 				test_method: testMethod,
 				priority,
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (objective.trim()) data.objective = objective.trim();
-			if (description.trim()) data.description = description.trim();
-			if (estimatedDuration.trim()) data.estimated_duration = estimatedDuration.trim();
+			if (objective.trim()) {
+				data.objective = objective.trim();
+			} else {
+				delete data.objective;
+			}
+			if (description.trim()) {
+				data.description = description.trim();
+			} else {
+				delete data.description;
+			}
+			if (estimatedDuration.trim()) {
+				data.estimated_duration = estimatedDuration.trim();
+			} else {
+				delete data.estimated_duration;
+			}
 
-			if (preconditions.length > 0) data.preconditions = preconditions;
-			if (acceptanceCriteria.length > 0) data.acceptance_criteria = acceptanceCriteria;
+			if (preconditions.length > 0) {
+				data.preconditions = preconditions;
+			} else {
+				delete data.preconditions;
+			}
+			if (acceptanceCriteria.length > 0) {
+				data.acceptance_criteria = acceptanceCriteria;
+			} else {
+				delete data.acceptance_criteria;
+			}
 
 			// Filter out empty steps
 			const validSteps = procedure.filter(s => s.action.trim());
@@ -191,6 +220,8 @@
 					expected: s.expected.trim(),
 					...(s.acceptance.trim() && { acceptance: s.acceptance.trim() })
 				}));
+			} else {
+				delete data.procedure;
 			}
 
 			// Filter out empty equipment
@@ -201,9 +232,11 @@
 					...(e.specification.trim() && { specification: e.specification.trim() }),
 					calibration_required: e.calibration_required
 				}));
+			} else {
+				delete data.equipment;
 			}
 
-			await entities.save('TEST', { ...data, id });
+			await entities.save('TEST', data);
 			await refreshProject();
 			goto(`/verification/tests/${id}`);
 		} catch (e) {

@@ -134,34 +134,76 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				risk_type: riskType,
-				type: riskType,  // Also save as 'type' for compatibility with CLI
+				type: riskType,
 				description: description.trim(),
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (failureMode.trim()) data.failure_mode = failureMode.trim();
-			if (cause.trim()) data.cause = cause.trim();
-			if (riskEffect.trim()) data.effect = riskEffect.trim();
-			if (severity !== null) data.severity = severity;
-			if (occurrence !== null) data.occurrence = occurrence;
-			if (detection !== null) data.detection = detection;
-			if (category.trim()) data.category = category.trim();
+			// Update optional fields - only include if they have values
+			if (failureMode.trim()) {
+				data.failure_mode = failureMode.trim();
+			} else {
+				delete data.failure_mode;
+			}
+			if (cause.trim()) {
+				data.cause = cause.trim();
+			} else {
+				delete data.cause;
+			}
+			if (riskEffect.trim()) {
+				data.effect = riskEffect.trim();
+			} else {
+				delete data.effect;
+			}
+			if (severity !== null) {
+				data.severity = severity;
+			} else {
+				delete data.severity;
+			}
+			if (occurrence !== null) {
+				data.occurrence = occurrence;
+			} else {
+				delete data.occurrence;
+			}
+			if (detection !== null) {
+				data.detection = detection;
+			} else {
+				delete data.detection;
+			}
+			if (category.trim()) {
+				data.category = category.trim();
+			} else {
+				delete data.category;
+			}
 
 			// Filter out empty mitigations and save
 			const validMitigations = mitigations.filter(m => m.action.trim());
-			data.mitigations = validMitigations.map(m => ({
-				action: m.action.trim(),
-				type: m.type,
-				status: m.status,
-				...(m.owner.trim() && { owner: m.owner.trim() }),
-				...(m.due_date && { due_date: m.due_date })
-			}));
+			if (validMitigations.length > 0) {
+				data.mitigations = validMitigations.map(m => ({
+					action: m.action.trim(),
+					type: m.type,
+					status: m.status,
+					...(m.owner.trim() && { owner: m.owner.trim() }),
+					...(m.due_date && { due_date: m.due_date })
+				}));
+			} else {
+				delete data.mitigations;
+			}
 
-			await entities.save('RISK', { ...data, id });
+			await entities.save('RISK', data);
 			await refreshProject();
 			goto(`/risks/${id}`);
 		} catch (e) {

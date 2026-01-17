@@ -97,21 +97,38 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields (linked risks, controls, etc.)
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				category,
 				description: description.trim(),
 				severity,
-				author: $projectAuthor,
+				author: entity?.author ?? $projectAuthor,
 				potential_harms: potentialHarms,
 				affected_populations: affectedPopulations,
-				tags
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (energyLevel.trim()) data.energy_level = energyLevel.trim();
-			if (exposureScenario.trim()) data.exposure_scenario = exposureScenario.trim();
+			if (energyLevel.trim()) {
+				data.energy_level = energyLevel.trim();
+			} else {
+				delete data.energy_level;
+			}
+			if (exposureScenario.trim()) {
+				data.exposure_scenario = exposureScenario.trim();
+			} else {
+				delete data.exposure_scenario;
+			}
 
-			await entities.save('HAZ', { ...data, id });
+			await entities.save('HAZ', data);
 			await refreshProject();
 			goto(`/hazards/${id}`);
 		} catch (e) {

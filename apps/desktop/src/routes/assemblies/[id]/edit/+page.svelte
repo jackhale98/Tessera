@@ -76,17 +76,34 @@
 		error = null;
 
 		try {
+			// Start with existing entity data to preserve all fields (especially bom, subassemblies, links)
+			const existingData = entity?.data ?? {};
+
+			// Build updated data, preserving existing fields
 			const data: Record<string, unknown> = {
+				...existingData,
+				id,
 				title: title.trim(),
 				part_number: partNumber.trim(),
-				author: $projectAuthor,
-				tags
+				author: entity?.author ?? $projectAuthor,
+				tags,
+				status: entity?.status ?? 'draft',
+				created: entity?.created ?? new Date().toISOString(),
+				entity_revision: ((existingData.entity_revision as number) ?? 0) + 1
 			};
 
-			if (revision.trim()) data.revision = revision.trim();
-			if (description.trim()) data.description = description.trim();
+			if (revision.trim()) {
+				data.revision = revision.trim();
+			} else {
+				delete data.revision;
+			}
+			if (description.trim()) {
+				data.description = description.trim();
+			} else {
+				delete data.description;
+			}
 
-			await entities.save('ASM', { ...data, id });
+			await entities.save('ASM', data);
 			await refreshProject();
 			goto(`/assemblies/${id}`);
 		} catch (e) {
