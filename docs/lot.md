@@ -70,6 +70,7 @@ LOTs track production batches through manufacturing, serving as Device History R
 | `operator` | string | Person who performed the step |
 | `operator_email` | string | Operator's email for signature verification |
 | `work_instructions_used` | array[WorkInstructionRef] | Work instructions followed during step |
+| `wi_step_executions` | array[WiStepExecution] | Individual WI step execution records (electronic router) |
 | `signature_verified` | boolean | Whether step was digitally signed (DHR compliance) |
 | `signing_key` | string | GPG/SSH key ID used for signing |
 | `commit_sha` | string | Git commit SHA for this step completion |
@@ -78,6 +79,26 @@ LOTs track production batches through manufacturing, serving as Device History R
 | `approval_status` | enum | `not_required`, `pending`, `approved`, `rejected` |
 | `approvals` | array[StepApproval] | Approval records for PR-based workflows |
 | `pr_number` | integer | GitHub/GitLab PR number (if using PR workflow) |
+
+### WiStepExecution Object (Electronic Router)
+
+Tracks individual work instruction step executions within a process step, enabling granular tracking for regulated manufacturing (FDA 21 CFR Part 11, ISO 13485).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `work_instruction` | EntityId | Work instruction entity ID |
+| `step_number` | integer | Step number within the work instruction |
+| `operator` | string | Person who executed the step |
+| `operator_email` | string | Operator's email for verification |
+| `operator_signature_verified` | boolean | Whether operator signature was verified |
+| `signing_key` | string | GPG/SSH key ID used for signing |
+| `completed_at` | datetime | When step was completed |
+| `data` | object | Data collected at step (measurements, serial numbers) |
+| `equipment_used` | object | Equipment used with serial numbers (for traceability) |
+| `approvals` | array[StepApproval] | Approval records for this step |
+| `approval_status` | enum | `not_required`, `pending`, `approved`, `rejected` |
+| `commit_sha` | string | Git commit SHA for this step |
+| `notes` | string | Execution notes |
 
 ### WorkInstructionRef Object
 
@@ -308,6 +329,108 @@ tdt lot delete LOT@1 --force
 # Archive instead of delete (moves to .tdt/archive/)
 tdt lot archive LOT@1
 ```
+
+## Electronic Router / Traveler
+
+The electronic router feature enables granular tracking of work instruction step execution within lot production. This is essential for regulated manufacturing environments (FDA 21 CFR Part 11, ISO 13485, AS9100) where step-level sign-offs and data collection are required.
+
+### Complete WI Steps
+
+```bash
+# Complete a work instruction step
+tdt lot wi-step LOT@1 --wi WORK@1 --step 1 --complete
+
+# Complete with process step context (1-based index)
+tdt lot wi-step LOT@1 --process 1 --wi WORK@1 --step 2 --complete
+
+# Record measurement data at step completion
+tdt lot wi-step LOT@1 --wi WORK@1 --step 2 --complete \
+    --data torque_value=25.5 \
+    --data temperature=72.3
+
+# Record equipment used (for traceability)
+tdt lot wi-step LOT@1 --wi WORK@1 --step 2 --complete \
+    --equipment torque_wrench=TW-001 \
+    --equipment multimeter=MM-456
+
+# Add execution notes
+tdt lot wi-step LOT@1 --wi WORK@1 --step 3 --complete \
+    --notes "Verified per drawing rev C"
+
+# Sign step completion (for 21 CFR Part 11 compliance)
+tdt lot wi-step LOT@1 --wi WORK@1 --step 4 --complete --sign
+
+# Mark step as requiring approval (for quality hold points)
+tdt lot wi-step LOT@1 --wi WORK@1 --step 5 --complete --require-approval
+
+# Show step status without making changes
+tdt lot wi-step LOT@1 --wi WORK@1 --step 1 --show
+```
+
+### View Router Status
+
+```bash
+# Show electronic router status for a lot
+tdt lot router LOT@1
+
+# Filter to show only pending (incomplete) steps
+tdt lot router LOT@1 --pending
+
+# Filter to show steps requiring approval
+tdt lot router LOT@1 --approval-needed
+
+# Filter by specific work instruction
+tdt lot router LOT@1 --wi WORK@1
+
+# Filter by process step (1-based index)
+tdt lot router LOT@1 --process 2
+
+# Output as JSON
+tdt lot router LOT@1 -f json
+```
+
+### Approve WI Steps
+
+```bash
+# Approve a completed step (for quality hold points)
+tdt lot approve LOT@1 --wi WORK@1 --step 2 --role quality
+
+# Approve with comment
+tdt lot approve LOT@1 --wi WORK@1 --step 2 --role quality \
+    --comment "Verified torque within spec per WI-001 rev 3"
+
+# Approve with digital signature
+tdt lot approve LOT@1 --wi WORK@1 --step 4 --role engineering --sign
+
+# Reject a step (sends back for rework)
+tdt lot approve LOT@1 --wi WORK@1 --step 2 --role quality --reject \
+    --comment "Torque value below minimum spec, requires rework"
+
+# Approve with process context
+tdt lot approve LOT@1 --process 1 --wi WORK@1 --step 3 --role quality
+```
+
+### Electronic Router Workflow
+
+```
+┌──────────────┐     ┌────────────────┐     ┌──────────────┐
+│  WI Step     │────▶│  Completed     │────▶│  Approved    │
+│  (Pending)   │     │  (Data/Equip)  │     │  (Signed)    │
+└──────────────┘     └────────────────┘     └──────────────┘
+                            │                      │
+                            │                      │
+                            ▼                      ▼
+                     ┌────────────────┐     ┌──────────────┐
+                     │ Pending        │     │ Rejected     │
+                     │ Approval       │────▶│ (Rework)     │
+                     └────────────────┘     └──────────────┘
+```
+
+1. **Execute Step** - Operator completes WI step, records data/equipment
+2. **Quality Hold** - If step has approval requirement, status = pending
+3. **Approve/Reject** - Quality/engineering reviews and approves or rejects
+4. **Rework** - If rejected, operator fixes and re-completes step
+5. **Continue** - Once approved, proceed to next step
 
 ## LOT Workflow
 

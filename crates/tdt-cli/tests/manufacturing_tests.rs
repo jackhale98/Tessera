@@ -1,0 +1,1 @@
+../../../tests/manufacturing_tests.rs

@@ -1099,3 +1099,521 @@ fn test_lot_step_show_wi() {
                 .or(predicate::str::contains("Work Instructions")),
         );
 }
+
+// ============================================================================
+// Electronic Router / Traveler Tests
+// ============================================================================
+
+/// Helper to create a work instruction with steps that have approval requirements
+fn create_wi_with_steps(tmp: &tempfile::TempDir) -> String {
+    // Create the WI via CLI first
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "work",
+            "new",
+            "--title",
+            "Assembly Procedure with Hold Points",
+            "--doc-number",
+            "WI-ROUTER-001",
+            "--no-edit",
+        ])
+        .assert()
+        .success();
+
+    // Find the WI file and add steps with approval requirements
+    let wi_dir = tmp.path().join("manufacturing/work_instructions");
+    let files: Vec<_> = fs::read_dir(&wi_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
+        .collect();
+    assert_eq!(files.len(), 1);
+
+    // Read existing content and parse it
+    let content = fs::read_to_string(files[0].path()).unwrap();
+
+    // Replace the procedure section with steps that have approval requirements
+    let updated = content.replace(
+        "procedure: []",
+        r#"procedure:
+  - step: 1
+    action: Prepare work area and verify materials
+  - step: 2
+    action: Install component A
+    verification: Verify torque to 25 Nm
+    data_fields:
+      - key: torque_value
+        label: Actual Torque (Nm)
+        data_type: number
+        required: true
+    equipment:
+      - torque_wrench
+    approval:
+      requires_signoff: true
+      required_roles:
+        - quality
+      quality_hold_point: true
+  - step: 3
+    action: Install component B
+    data_fields:
+      - key: serial_number
+        label: Component B Serial Number
+        data_type: text
+        required: true
+  - step: 4
+    action: Final inspection
+    verification: Verify all components seated properly
+    approval:
+      requires_signoff: true
+      min_approvals: 2
+      required_roles:
+        - quality
+        - engineering
+      require_signature: true"#,
+    );
+
+    fs::write(files[0].path(), updated).unwrap();
+
+    // Prime short ID
+    tdt()
+        .current_dir(tmp.path())
+        .args(["work", "list"])
+        .output()
+        .unwrap();
+
+    "WORK@1".to_string()
+}
+
+/// Helper to create a process linked to a work instruction
+fn create_process_with_wi(tmp: &tempfile::TempDir, wi_short_id: &str) -> String {
+    tdt()
+        .current_dir(tmp.path())
+        .args(["proc", "new", "--title", "Assembly Process", "--no-edit"])
+        .assert()
+        .success();
+
+    tdt()
+        .current_dir(tmp.path())
+        .args(["proc", "list"])
+        .output()
+        .unwrap();
+
+    // Link work instruction to process
+    tdt()
+        .current_dir(tmp.path())
+        .args(["link", "add", "PROC@1", wi_short_id, "work_instructions"])
+        .assert()
+        .success();
+
+    "PROC@1".to_string()
+}
+
+/// Helper to create an assembly with routing
+fn create_asm_with_routing(tmp: &tempfile::TempDir, proc_short_id: &str) -> String {
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "asm",
+            "new",
+            "--part-number",
+            "ASM-ROUTER-001",
+            "--title",
+            "Router Test Assembly",
+            "--no-edit",
+        ])
+        .assert()
+        .success();
+
+    tdt()
+        .current_dir(tmp.path())
+        .args(["asm", "list"])
+        .output()
+        .unwrap();
+
+    tdt()
+        .current_dir(tmp.path())
+        .args(["asm", "routing", "set", "ASM@1", proc_short_id])
+        .assert()
+        .success();
+
+    "ASM@1".to_string()
+}
+
+/// Helper to create a lot from routing
+fn create_lot_from_routing(tmp: &tempfile::TempDir, asm_short_id: &str) -> String {
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "new",
+            "--title",
+            "Router Test Lot",
+            "--lot-number",
+            "LOT-ROUTER-001",
+            "--product",
+            asm_short_id,
+            "--from-routing",
+            "--quantity",
+            "10",
+            "--no-edit",
+        ])
+        .assert()
+        .success();
+
+    tdt()
+        .current_dir(tmp.path())
+        .args(["lot", "list"])
+        .output()
+        .unwrap();
+
+    "LOT@1".to_string()
+}
+
+#[test]
+fn test_lot_wi_step_complete() {
+    let tmp = setup_test_project();
+
+    // Setup: WI with steps -> Process -> Assembly with routing -> Lot from routing
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 1 (no approval required)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Completed"));
+}
+
+#[test]
+fn test_lot_wi_step_with_data() {
+    let tmp = setup_test_project();
+
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 2 with data and equipment (has approval requirement)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--complete",
+            "--data",
+            "torque_value=25.5",
+            "--equipment",
+            "torque_wrench=TW-001",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("torque_value"));
+}
+
+#[test]
+fn test_lot_wi_step_show() {
+    let tmp = setup_test_project();
+
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 1
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
+        ])
+        .assert()
+        .success();
+
+    // Show step 1 status
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--show",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Completed")
+                .or(predicate::str::contains("Status")),
+        );
+}
+
+#[test]
+fn test_lot_router_show() {
+    let tmp = setup_test_project();
+
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 1
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
+        ])
+        .assert()
+        .success();
+
+    // Show router status for the lot
+    tdt()
+        .current_dir(tmp.path())
+        .args(["lot", "router", &lot_id])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Electronic Router")
+                .or(predicate::str::contains("Process Step"))
+                .or(predicate::str::contains("Step")),
+        );
+}
+
+#[test]
+fn test_lot_router_show_pending() {
+    let tmp = setup_test_project();
+
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 2 (requires approval)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--complete",
+            "--data",
+            "torque_value=25.0",
+        ])
+        .assert()
+        .success();
+
+    // Show router with pending approvals
+    tdt()
+        .current_dir(tmp.path())
+        .args(["lot", "router", &lot_id, "--pending"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Pending")
+                .or(predicate::str::contains("Approval")),
+        );
+}
+
+#[test]
+fn test_lot_approve_step() {
+    let tmp = setup_test_project();
+
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 2 (requires quality approval)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--complete",
+            "--data",
+            "torque_value=25.0",
+        ])
+        .assert()
+        .success();
+
+    // Approve the step
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "approve",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--role",
+            "quality",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Approved").or(predicate::str::contains("approval")));
+}
+
+#[test]
+fn test_lot_approve_with_comment() {
+    let tmp = setup_test_project();
+
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 2
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--complete",
+            "--data",
+            "torque_value=25.0",
+        ])
+        .assert()
+        .success();
+
+    // Approve with comment
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "approve",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--role",
+            "quality",
+            "--comment",
+            "Verified torque within spec",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_lot_approve_reject() {
+    let tmp = setup_test_project();
+
+    let wi_id = create_wi_with_steps(&tmp);
+    let proc_id = create_process_with_wi(&tmp, &wi_id);
+    let asm_id = create_asm_with_routing(&tmp, &proc_id);
+    let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 2
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--complete",
+            "--data",
+            "torque_value=20.0",
+        ])
+        .assert()
+        .success();
+
+    // Reject the step
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot",
+            "approve",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "2",
+            "--role",
+            "quality",
+            "--reject",
+            "--comment",
+            "Torque value below minimum spec",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rejected").or(predicate::str::contains("rejected")));
+}

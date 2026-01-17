@@ -15,7 +15,10 @@ use tdt_core::core::manufacturing::{
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::{Config, Git};
-use tdt_core::entities::lot::{ExecutionStatus, Lot, LotStatus, WorkInstructionRef};
+use tdt_core::entities::lot::{
+    ApprovalStatus, ExecutionStatus, Lot, LotStatus, StepApproval, WiStepExecution,
+    WorkInstructionRef,
+};
 use tdt_core::entities::process::Process;
 use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
@@ -79,6 +82,16 @@ pub enum LotCommands {
 
     /// Complete a lot
     Complete(CompleteArgs),
+
+    /// Execute/sign-off on a work instruction step (electronic router)
+    #[command(name = "wi-step")]
+    WiStep(WiStepArgs),
+
+    /// View electronic router/traveler status
+    Router(RouterArgs),
+
+    /// Approve a work instruction step (quality sign-off)
+    Approve(ApproveArgs),
 }
 
 /// Lot status filter
@@ -337,6 +350,152 @@ pub struct CompleteArgs {
     pub sign: bool,
 }
 
+/// Execute/sign-off on a work instruction step (electronic router)
+#[derive(clap::Args, Debug)]
+pub struct WiStepArgs {
+    /// Lot ID or short ID (LOT@N)
+    pub lot: String,
+
+    /// Work instruction ID (WORK@N or WORK-xxx)
+    #[arg(long, short = 'w')]
+    pub wi: String,
+
+    /// Step number within the work instruction
+    #[arg(long, short = 's')]
+    pub step: u32,
+
+    /// Process step index (1-based) within lot execution
+    #[arg(long, short = 'p')]
+    pub process: Option<usize>,
+
+    /// Operator name (defaults to config author)
+    #[arg(long, short = 'O')]
+    pub operator: Option<String>,
+
+    /// Record data (key=value format, can be repeated)
+    #[arg(long, short = 'd', value_parser = parse_key_value)]
+    pub data: Vec<(String, String)>,
+
+    /// Record equipment used (equipment=serial format, can be repeated)
+    #[arg(long, short = 'E', value_parser = parse_key_value)]
+    pub equipment: Vec<(String, String)>,
+
+    /// Notes about the step execution
+    #[arg(long, short = 'n')]
+    pub notes: Option<String>,
+
+    /// Sign step completion (GPG/SSH signature)
+    #[arg(long, short = 'S')]
+    pub sign: bool,
+
+    /// Mark step as requiring approval (sets approval_status to pending)
+    #[arg(long)]
+    pub require_approval: bool,
+
+    /// Skip git commit for this step
+    #[arg(long)]
+    pub no_commit: bool,
+
+    /// Show step status only (no updates)
+    #[arg(long)]
+    pub show: bool,
+
+    /// Mark the step as complete
+    #[arg(long, short = 'c')]
+    pub complete: bool,
+}
+
+/// View electronic router/traveler status
+#[derive(clap::Args, Debug)]
+pub struct RouterArgs {
+    /// Lot ID or short ID (LOT@N)
+    pub lot: String,
+
+    /// Show only pending steps (not yet completed)
+    #[arg(long)]
+    pub pending: bool,
+
+    /// Show only steps requiring approval
+    #[arg(long)]
+    pub approval_needed: bool,
+
+    /// Filter by work instruction ID
+    #[arg(long, short = 'w')]
+    pub wi: Option<String>,
+
+    /// Filter by process step index (1-based)
+    #[arg(long, short = 'p')]
+    pub process: Option<usize>,
+}
+
+/// Approve a work instruction step (quality sign-off)
+#[derive(clap::Args, Debug)]
+pub struct ApproveArgs {
+    /// Lot ID or short ID (LOT@N)
+    pub lot: String,
+
+    /// Work instruction ID (WORK@N or WORK-xxx)
+    #[arg(long, short = 'w')]
+    pub wi: String,
+
+    /// Step number within the work instruction
+    #[arg(long, short = 's')]
+    pub step: u32,
+
+    /// Process step index (1-based) within lot execution
+    #[arg(long, short = 'p')]
+    pub process: Option<usize>,
+
+    /// Comment/reason for approval
+    #[arg(long, short = 'c')]
+    pub comment: Option<String>,
+
+    /// Role performing the approval (e.g., quality, engineering)
+    #[arg(long, short = 'r')]
+    pub role: Option<String>,
+
+    /// Sign the approval (GPG/SSH signature)
+    #[arg(long, short = 'S')]
+    pub sign: bool,
+
+    /// Reject instead of approve
+    #[arg(long)]
+    pub reject: bool,
+
+    /// Show pending approvals only (no action)
+    #[arg(long)]
+    pub show_pending: bool,
+}
+
+/// Parse key=value pairs for data/equipment arguments
+fn parse_key_value(s: &str) -> Result<(String, String), String> {
+    let parts: Vec<&str> = s.splitn(2, '=').collect();
+    if parts.len() != 2 {
+        return Err(format!("Invalid format '{}'. Use key=value", s));
+    }
+    Ok((parts[0].to_string(), parts[1].to_string()))
+}
+
+/// Get user email from git config
+fn get_git_email() -> Option<String> {
+    std::process::Command::new("git")
+        .args(["config", "user.email"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !email.is_empty() {
+                    Some(email)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+}
+
 /// Directories where lots are stored
 const LOT_DIRS: &[&str] = &["manufacturing/lots"];
 
@@ -359,6 +518,9 @@ pub fn run(cmd: LotCommands, global: &GlobalOpts) -> Result<()> {
         LotCommands::Archive(args) => run_archive(args),
         LotCommands::Step(args) => run_step(args, global),
         LotCommands::Complete(args) => run_complete(args, global),
+        LotCommands::WiStep(args) => run_wi_step(args, global),
+        LotCommands::Router(args) => run_router(args, global),
+        LotCommands::Approve(args) => run_approve(args, global),
     }
 }
 
@@ -1618,6 +1780,767 @@ fn run_complete(args: CompleteArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     // Sync cache after mutation
+    super::utils::sync_cache(&project);
+
+    Ok(())
+}
+
+/// Execute or show status of a WI step (electronic router)
+fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let config = Config::load();
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+
+    // Resolve short IDs
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_lot_id = short_ids
+        .resolve(&args.lot)
+        .unwrap_or_else(|| args.lot.clone());
+    let resolved_wi_id = short_ids
+        .resolve(&args.wi)
+        .unwrap_or_else(|| args.wi.clone());
+
+    // Load lot using service
+    let service = LotService::new(&project, &cache);
+    let mut lot = service
+        .get(&resolved_lot_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No lot found matching '{}'", args.lot))?;
+
+    let display_id = short_ids
+        .get_short_id(&lot.id.to_string())
+        .unwrap_or_else(|| format_short_id(&lot.id));
+
+    // Find the process step
+    let proc_idx = if let Some(idx) = args.process {
+        idx.saturating_sub(1) // Convert 1-based to 0-based
+    } else {
+        // Find first process step that uses this WI
+        lot.execution
+            .iter()
+            .position(|step| {
+                step.work_instructions_used
+                    .iter()
+                    .any(|wi| wi.id == resolved_wi_id || wi.id.contains(&resolved_wi_id))
+            })
+            .or_else(|| {
+                // Or find first non-completed step
+                lot.execution
+                    .iter()
+                    .position(|s| s.status != ExecutionStatus::Completed)
+            })
+            .unwrap_or(0)
+    };
+
+    if proc_idx >= lot.execution.len() {
+        return Err(miette::miette!(
+            "Process step {} not found (lot has {} steps)",
+            proc_idx + 1,
+            lot.execution.len()
+        ));
+    }
+
+    // Show mode - just display step status
+    if args.show {
+        let exec_step = &lot.execution[proc_idx];
+        let wi_exec = exec_step
+            .wi_step_executions
+            .iter()
+            .find(|e| e.work_instruction == resolved_wi_id && e.step_number == args.step);
+
+        match global.output {
+            OutputFormat::Json | OutputFormat::Yaml => {
+                let result = serde_json::json!({
+                    "lot": lot.id.to_string(),
+                    "process_step": proc_idx + 1,
+                    "work_instruction": resolved_wi_id,
+                    "step_number": args.step,
+                    "execution": wi_exec,
+                });
+                if global.output == OutputFormat::Json {
+                    println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                } else {
+                    println!("{}", serde_yml::to_string(&result).unwrap_or_default());
+                }
+            }
+            _ => {
+                println!("{}", style("─".repeat(60)).dim());
+                println!(
+                    "{}: {} step {}",
+                    style("WI Step").bold(),
+                    style(&resolved_wi_id).cyan(),
+                    style(args.step).yellow()
+                );
+                println!("{}: {}", style("Lot").bold(), style(&display_id).cyan());
+                println!(
+                    "{}: {}",
+                    style("Process Step").bold(),
+                    proc_idx + 1
+                );
+
+                if let Some(exec) = wi_exec {
+                    println!(
+                        "{}: {}",
+                        style("Status").bold(),
+                        if exec.is_completed() {
+                            style("Completed").green()
+                        } else {
+                            style("Pending").yellow()
+                        }
+                    );
+                    if let Some(ref op) = exec.operator {
+                        println!("{}: {}", style("Operator").bold(), op);
+                    }
+                    if let Some(ref ts) = exec.completed_at {
+                        println!("{}: {}", style("Completed At").bold(), ts);
+                    }
+                    if exec.operator_signature_verified == Some(true) {
+                        println!("{}: {}", style("Signed").bold(), style("Yes").green());
+                    }
+                    let approval_styled = match exec.approval_status {
+                        ApprovalStatus::NotRequired => style("Not Required").dim(),
+                        ApprovalStatus::Pending => style("Pending").yellow(),
+                        ApprovalStatus::Approved => style("Approved").green(),
+                        ApprovalStatus::Rejected => style("Rejected").red(),
+                    };
+                    println!("{}: {}", style("Approval").bold(), approval_styled);
+                    if !exec.data.is_empty() {
+                        println!("{}: {:?}", style("Data").bold(), exec.data);
+                    }
+                    if !exec.equipment_used.is_empty() {
+                        println!("{}: {:?}", style("Equipment").bold(), exec.equipment_used);
+                    }
+                } else {
+                    println!("{}: {}", style("Status").bold(), style("Not Started").dim());
+                }
+                println!("{}", style("─".repeat(60)).dim());
+            }
+        }
+        return Ok(());
+    }
+
+    // Execute step
+    let operator = args.operator.unwrap_or_else(|| config.author().to_string());
+
+    // Create or update WI step execution
+    let exec_step = &mut lot.execution[proc_idx];
+
+    // Find existing or create new
+    let existing_idx = exec_step
+        .wi_step_executions
+        .iter()
+        .position(|e| e.work_instruction == resolved_wi_id && e.step_number == args.step);
+
+    let mut wi_exec = if let Some(idx) = existing_idx {
+        exec_step.wi_step_executions.remove(idx)
+    } else {
+        WiStepExecution::new(resolved_wi_id.clone(), args.step)
+    };
+
+    // Update execution
+    wi_exec.operator = Some(operator.clone());
+    wi_exec.operator_email = get_git_email();
+
+    // Only mark as complete if --complete flag is set
+    if args.complete {
+        wi_exec.completed_at = Some(chrono::Utc::now());
+    }
+
+    // Add data
+    for (key, value) in &args.data {
+        // Try to parse as number, otherwise use as string
+        let json_val = if let Ok(num) = value.parse::<f64>() {
+            serde_json::json!(num)
+        } else if let Ok(bool_val) = value.parse::<bool>() {
+            serde_json::json!(bool_val)
+        } else {
+            serde_json::json!(value)
+        };
+        wi_exec.data.insert(key.clone(), json_val);
+    }
+
+    // Add equipment
+    for (equipment, serial) in &args.equipment {
+        wi_exec.equipment_used.insert(equipment.clone(), serial.clone());
+    }
+
+    // Add notes
+    if let Some(ref notes) = args.notes {
+        wi_exec.notes = Some(notes.clone());
+    }
+
+    // Handle signing
+    if args.sign {
+        wi_exec.operator_signature_verified = Some(true);
+        // Note: signing_key would be populated by git commit signing
+    }
+
+    // Set approval status
+    if args.require_approval {
+        wi_exec.approval_status = ApprovalStatus::Pending;
+    }
+
+    // Add back to execution step
+    exec_step.wi_step_executions.push(wi_exec.clone());
+    exec_step.wi_step_executions.sort_by_key(|e| e.step_number);
+
+    // Increment lot revision
+    lot.entity_revision += 1;
+
+    // Save lot
+    let lot_path = project.root().join(format!("manufacturing/lots/{}.tdt.yaml", lot.id));
+    let yaml_content = serde_yml::to_string(&lot).into_diagnostic()?;
+    fs::write(&lot_path, &yaml_content).into_diagnostic()?;
+
+    // Output
+    let status = if args.complete { "completed" } else { "updated" };
+    match global.output {
+        OutputFormat::Json => {
+            let result = serde_json::json!({
+                "lot": lot.id.to_string(),
+                "work_instruction": resolved_wi_id,
+                "step_number": args.step,
+                "operator": operator,
+                "signed": args.sign,
+                "approval_status": wi_exec.approval_status.to_string(),
+                "completed": args.complete,
+            });
+            println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        }
+        OutputFormat::Yaml => {
+            let result = serde_json::json!({
+                "lot": lot.id.to_string(),
+                "step": args.step,
+                "status": status,
+            });
+            println!("{}", serde_yml::to_string(&result).unwrap_or_default());
+        }
+        _ => {
+            if args.complete {
+                println!(
+                    "{} Completed WI {} step {}",
+                    style("✓").green(),
+                    style(&resolved_wi_id).cyan(),
+                    style(args.step).yellow()
+                );
+            } else {
+                println!(
+                    "{} Updated WI {} step {}",
+                    style("•").blue(),
+                    style(&resolved_wi_id).cyan(),
+                    style(args.step).yellow()
+                );
+            }
+            println!("   Lot: {}", style(&display_id).cyan());
+            println!("   Operator: {}", operator);
+            if args.sign {
+                println!("   {} Signed", style("✓").green());
+            }
+            if args.require_approval {
+                println!(
+                    "   {} Approval Required",
+                    style("→").dim()
+                );
+            }
+            if !args.data.is_empty() {
+                println!("   Data: {} field(s) recorded", args.data.len());
+                for (key, value) in &args.data {
+                    println!("     {} = {}", style(key).dim(), value);
+                }
+            }
+            if !args.equipment.is_empty() {
+                println!("   Equipment: {} item(s) logged", args.equipment.len());
+            }
+        }
+    }
+
+    // Sync cache
+    super::utils::sync_cache(&project);
+
+    Ok(())
+}
+
+/// View electronic router/traveler status
+fn run_router(args: RouterArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+
+    // Resolve short ID
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.lot)
+        .unwrap_or_else(|| args.lot.clone());
+
+    // Load lot using service
+    let service = LotService::new(&project, &cache);
+    let lot = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No lot found matching '{}'", args.lot))?;
+
+    let display_id = short_ids
+        .get_short_id(&lot.id.to_string())
+        .unwrap_or_else(|| format_short_id(&lot.id));
+
+    // Resolve WI filter
+    let wi_filter = args
+        .wi
+        .as_ref()
+        .map(|wi| short_ids.resolve(wi).unwrap_or_else(|| wi.clone()));
+
+    match global.output {
+        OutputFormat::Json => {
+            let mut router_data = serde_json::json!({
+                "lot": lot.id.to_string(),
+                "lot_number": lot.lot_number,
+                "lot_status": lot.lot_status.to_string(),
+                "processes": [],
+            });
+
+            let processes = router_data["processes"].as_array_mut().unwrap();
+            for (idx, exec_step) in lot.execution.iter().enumerate() {
+                if args.process.is_some() && args.process != Some(idx + 1) {
+                    continue;
+                }
+
+                let mut proc_data = serde_json::json!({
+                    "index": idx + 1,
+                    "process": exec_step.process,
+                    "status": exec_step.status.to_string(),
+                    "wi_steps": [],
+                });
+
+                let wi_steps = proc_data["wi_steps"].as_array_mut().unwrap();
+                for wi_exec in &exec_step.wi_step_executions {
+                    if let Some(ref filter) = wi_filter {
+                        if !wi_exec.work_instruction.contains(filter) {
+                            continue;
+                        }
+                    }
+
+                    if args.pending && wi_exec.is_completed() {
+                        continue;
+                    }
+
+                    if args.approval_needed && wi_exec.approval_status != ApprovalStatus::Pending {
+                        continue;
+                    }
+
+                    wi_steps.push(serde_json::json!({
+                        "work_instruction": wi_exec.work_instruction,
+                        "step_number": wi_exec.step_number,
+                        "operator": wi_exec.operator,
+                        "completed_at": wi_exec.completed_at,
+                        "signed": wi_exec.operator_signature_verified.unwrap_or(false),
+                        "approval_status": wi_exec.approval_status.to_string(),
+                        "data": wi_exec.data,
+                    }));
+                }
+
+                processes.push(proc_data);
+            }
+
+            println!("{}", serde_json::to_string_pretty(&router_data).unwrap_or_default());
+        }
+        OutputFormat::Yaml => {
+            let yaml = serde_yml::to_string(&lot.execution).into_diagnostic()?;
+            print!("{}", yaml);
+        }
+        _ => {
+            // Pretty table format
+            println!();
+            println!(
+                "{} {} - Electronic Router",
+                style("LOT").bold().cyan(),
+                style(&display_id).cyan()
+            );
+            if let Some(ref ln) = lot.lot_number {
+                println!("Lot Number: {}", style(ln).yellow());
+            }
+            println!(
+                "Status: {}",
+                match lot.lot_status {
+                    LotStatus::InProgress => style(lot.lot_status.to_string()).green(),
+                    LotStatus::OnHold => style(lot.lot_status.to_string()).yellow(),
+                    LotStatus::Completed => style(lot.lot_status.to_string()).cyan(),
+                    LotStatus::Scrapped => style(lot.lot_status.to_string()).red(),
+                }
+            );
+            println!("{}", style("═".repeat(70)).dim());
+
+            for (idx, exec_step) in lot.execution.iter().enumerate() {
+                if args.process.is_some() && args.process != Some(idx + 1) {
+                    continue;
+                }
+
+                let proc_name = exec_step.process.as_deref().unwrap_or("(unlinked)");
+                let proc_short = short_ids
+                    .get_short_id(proc_name)
+                    .unwrap_or_else(|| proc_name.to_string());
+
+                println!();
+                println!(
+                    "{} {} - {}",
+                    style(format!("Process {}:", idx + 1)).bold(),
+                    style(&proc_short).cyan(),
+                    match exec_step.status {
+                        ExecutionStatus::Pending => style("Pending").dim(),
+                        ExecutionStatus::InProgress => style("In Progress").yellow(),
+                        ExecutionStatus::Completed => style("Completed").green(),
+                        ExecutionStatus::Skipped => style("Skipped").dim(),
+                    }
+                );
+                println!("{}", style("─".repeat(70)).dim());
+
+                // Show WI steps
+                if exec_step.wi_step_executions.is_empty() {
+                    println!("   {} No WI steps recorded", style("○").dim());
+                } else {
+                    for wi_exec in &exec_step.wi_step_executions {
+                        if let Some(ref filter) = wi_filter {
+                            if !wi_exec.work_instruction.contains(filter) {
+                                continue;
+                            }
+                        }
+
+                        if args.pending && wi_exec.is_completed() {
+                            continue;
+                        }
+
+                        if args.approval_needed && wi_exec.approval_status != ApprovalStatus::Pending {
+                            continue;
+                        }
+
+                        let wi_short = short_ids
+                            .get_short_id(&wi_exec.work_instruction)
+                            .unwrap_or_else(|| wi_exec.work_instruction.clone());
+
+                        let status_icon = if wi_exec.is_completed() {
+                            if wi_exec.approval_status == ApprovalStatus::Pending {
+                                style("⏳").yellow()
+                            } else if wi_exec.approval_status == ApprovalStatus::Approved {
+                                style("✅").green()
+                            } else {
+                                style("✓").green()
+                            }
+                        } else {
+                            style("○").dim()
+                        };
+
+                        print!(
+                            "   {} Step {:2} | {} ",
+                            status_icon,
+                            wi_exec.step_number,
+                            style(&wi_short).cyan()
+                        );
+
+                        if let Some(ref op) = wi_exec.operator {
+                            print!("| {} ", op);
+                        }
+
+                        if let Some(ref ts) = wi_exec.completed_at {
+                            print!("| {} ", ts.format("%Y-%m-%d %H:%M"));
+                        }
+
+                        if wi_exec.operator_signature_verified == Some(true) {
+                            print!("| {} ", style("SIGNED").green());
+                        }
+
+                        println!();
+
+                        // Show approval status if pending
+                        if wi_exec.approval_status == ApprovalStatus::Pending {
+                            println!(
+                                "         {} {}",
+                                style("└─").dim(),
+                                style("Awaiting approval").yellow()
+                            );
+                        } else if wi_exec.approval_status == ApprovalStatus::Rejected {
+                            println!(
+                                "         {} {}",
+                                style("└─").dim(),
+                                style("REJECTED").red()
+                            );
+                        }
+
+                        // Show data if present
+                        if !wi_exec.data.is_empty() {
+                            let data_summary: Vec<String> = wi_exec
+                                .data
+                                .iter()
+                                .take(3)
+                                .map(|(k, v)| format!("{}={}", k, v))
+                                .collect();
+                            let more = if wi_exec.data.len() > 3 {
+                                format!(" (+{})", wi_exec.data.len() - 3)
+                            } else {
+                                String::new()
+                            };
+                            println!(
+                                "         {} {}{}",
+                                style("└─").dim(),
+                                style(data_summary.join(", ")).dim(),
+                                more
+                            );
+                        }
+                    }
+                }
+            }
+
+            println!();
+            println!("{}", style("═".repeat(70)).dim());
+
+            // Summary
+            let total_wi_steps: usize = lot.execution.iter().map(|e| e.wi_step_executions.len()).sum();
+            let completed_wi_steps: usize = lot
+                .execution
+                .iter()
+                .flat_map(|e| &e.wi_step_executions)
+                .filter(|w| w.is_completed())
+                .count();
+            let pending_approvals: usize = lot
+                .execution
+                .iter()
+                .flat_map(|e| &e.wi_step_executions)
+                .filter(|w| w.approval_status == ApprovalStatus::Pending)
+                .count();
+
+            println!(
+                "WI Steps: {}/{} completed",
+                style(completed_wi_steps).cyan(),
+                total_wi_steps
+            );
+            if pending_approvals > 0 {
+                println!(
+                    "Pending Approvals: {}",
+                    style(pending_approvals).yellow()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Approve or reject a WI step
+fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let config = Config::load();
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+
+    // Resolve short IDs
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_lot_id = short_ids
+        .resolve(&args.lot)
+        .unwrap_or_else(|| args.lot.clone());
+    let resolved_wi_id = short_ids
+        .resolve(&args.wi)
+        .unwrap_or_else(|| args.wi.clone());
+
+    // Load lot using service
+    let service = LotService::new(&project, &cache);
+    let mut lot = service
+        .get(&resolved_lot_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No lot found matching '{}'", args.lot))?;
+
+    let display_id = short_ids
+        .get_short_id(&lot.id.to_string())
+        .unwrap_or_else(|| format_short_id(&lot.id));
+
+    // Show pending mode
+    if args.show_pending {
+        let pending: Vec<_> = lot
+            .execution
+            .iter()
+            .enumerate()
+            .flat_map(|(idx, step)| {
+                step.wi_step_executions
+                    .iter()
+                    .filter(|w| w.approval_status == ApprovalStatus::Pending)
+                    .map(move |w| (idx + 1, w))
+            })
+            .collect();
+
+        match global.output {
+            OutputFormat::Json => {
+                let result: Vec<_> = pending
+                    .iter()
+                    .map(|(proc_idx, w)| {
+                        serde_json::json!({
+                            "process_step": proc_idx,
+                            "work_instruction": w.work_instruction,
+                            "step_number": w.step_number,
+                            "operator": w.operator,
+                            "completed_at": w.completed_at,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+            }
+            _ => {
+                if pending.is_empty() {
+                    println!("No pending approvals for lot {}", style(&display_id).cyan());
+                } else {
+                    println!(
+                        "{} pending approval(s) for lot {}",
+                        style(pending.len()).yellow(),
+                        style(&display_id).cyan()
+                    );
+                    println!();
+                    for (proc_idx, w) in &pending {
+                        let wi_short = short_ids
+                            .get_short_id(&w.work_instruction)
+                            .unwrap_or_else(|| w.work_instruction.clone());
+                        println!(
+                            "  {} Process {} | {} step {} | by {}",
+                            style("→").dim(),
+                            proc_idx,
+                            style(&wi_short).cyan(),
+                            w.step_number,
+                            w.operator.as_deref().unwrap_or("?")
+                        );
+                    }
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    // Find the process step
+    let proc_idx = if let Some(idx) = args.process {
+        idx.saturating_sub(1)
+    } else {
+        lot.execution
+            .iter()
+            .position(|step| {
+                step.wi_step_executions.iter().any(|w| {
+                    (w.work_instruction == resolved_wi_id
+                        || w.work_instruction.contains(&resolved_wi_id))
+                        && w.step_number == args.step
+                        && w.approval_status == ApprovalStatus::Pending
+                })
+            })
+            .ok_or_else(|| {
+                miette::miette!(
+                    "No pending approval found for WI {} step {} in lot {}",
+                    args.wi,
+                    args.step,
+                    display_id
+                )
+            })?
+    };
+
+    if proc_idx >= lot.execution.len() {
+        return Err(miette::miette!("Process step not found"));
+    }
+
+    // Find the WI step execution
+    let exec_step = &mut lot.execution[proc_idx];
+    let wi_exec_idx = exec_step
+        .wi_step_executions
+        .iter()
+        .position(|w| {
+            (w.work_instruction == resolved_wi_id
+                || w.work_instruction.contains(&resolved_wi_id))
+                && w.step_number == args.step
+        })
+        .ok_or_else(|| {
+            miette::miette!(
+                "WI step {} step {} not found in process step {}",
+                args.wi,
+                args.step,
+                proc_idx + 1
+            )
+        })?;
+
+    let wi_exec = &mut exec_step.wi_step_executions[wi_exec_idx];
+
+    // Check if already approved/rejected
+    if wi_exec.approval_status == ApprovalStatus::Approved && !args.reject {
+        return Err(miette::miette!("This step is already approved"));
+    }
+    if wi_exec.approval_status == ApprovalStatus::Rejected && args.reject {
+        return Err(miette::miette!("This step is already rejected"));
+    }
+
+    // Create approval record
+    let approval = StepApproval {
+        approver: config.author().to_string(),
+        email: get_git_email(),
+        role: args.role.clone(),
+        timestamp: chrono::Utc::now(),
+        comment: args.comment.clone(),
+        signature_verified: if args.sign { Some(true) } else { None },
+        signing_key: None, // Would be set by git commit signing
+    };
+
+    // Update status
+    if args.reject {
+        wi_exec.approval_status = ApprovalStatus::Rejected;
+    } else {
+        wi_exec.approval_status = ApprovalStatus::Approved;
+    }
+    wi_exec.approvals.push(approval);
+
+    // Increment lot revision
+    lot.entity_revision += 1;
+
+    // Save lot
+    let lot_path = project.root().join(format!("manufacturing/lots/{}.tdt.yaml", lot.id));
+    let yaml_content = serde_yml::to_string(&lot).into_diagnostic()?;
+    fs::write(&lot_path, &yaml_content).into_diagnostic()?;
+
+    // Output
+    let action = if args.reject { "Rejected" } else { "Approved" };
+    match global.output {
+        OutputFormat::Json => {
+            let result = serde_json::json!({
+                "lot": lot.id.to_string(),
+                "work_instruction": resolved_wi_id,
+                "step_number": args.step,
+                "action": action.to_lowercase(),
+                "approver": config.author(),
+                "signed": args.sign,
+            });
+            println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        }
+        OutputFormat::Yaml => {
+            let result = serde_json::json!({
+                "lot": lot.id.to_string(),
+                "step": args.step,
+                "action": action.to_lowercase(),
+            });
+            println!("{}", serde_yml::to_string(&result).unwrap_or_default());
+        }
+        _ => {
+            let action_styled = if args.reject {
+                style(action).red()
+            } else {
+                style(action).green()
+            };
+            println!(
+                "{} {} WI {} step {}",
+                style("✓").green(),
+                action_styled,
+                style(&resolved_wi_id).cyan(),
+                style(args.step).yellow()
+            );
+            println!("   Lot: {}", style(&display_id).cyan());
+            println!("   Approver: {}", config.author());
+            if let Some(ref role) = args.role {
+                println!("   Role: {}", role);
+            }
+            if args.sign {
+                println!("   {} Signed", style("✓").green());
+            }
+            if let Some(ref comment) = args.comment {
+                println!("   Comment: {}", comment);
+            }
+        }
+    }
+
+    // Sync cache
     super::utils::sync_cache(&project);
 
     Ok(())

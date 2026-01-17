@@ -122,7 +122,7 @@ pub struct WorkInstructionRef {
 }
 
 /// Individual approval record for a step
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct StepApproval {
     /// Approver name
     pub approver: String,
@@ -165,6 +165,132 @@ pub struct MaterialUsed {
     /// Quantity used
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity: Option<u32>,
+}
+
+/// Record of a single work instruction step execution within a lot
+///
+/// Provides granular tracking at the WI procedure step level for electronic router/traveler
+/// functionality. Each step can have its own operator sign-off, data collection, and approvals.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct WiStepExecution {
+    /// Work instruction ID (WORK-xxx)
+    pub work_instruction: String,
+
+    /// Step number within the work instruction
+    pub step_number: u32,
+
+    /// Operator who performed the step
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator: Option<String>,
+
+    /// Operator email
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_email: Option<String>,
+
+    /// Whether operator signature was verified (21 CFR Part 11 compliance)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_signature_verified: Option<bool>,
+
+    /// Signing key ID (GPG/SSH) used for operator signature
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing_key: Option<String>,
+
+    /// Completion timestamp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+
+    /// Collected data from step data_fields requirements
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub data: HashMap<String, serde_json::Value>,
+
+    /// Equipment used with serial numbers (for calibration traceability)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub equipment_used: HashMap<String, String>,
+
+    /// Approvals for this step (if required by WI step approval requirements)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub approvals: Vec<StepApproval>,
+
+    /// Approval status
+    #[serde(default)]
+    pub approval_status: ApprovalStatus,
+
+    /// Git commit SHA for this step completion (audit trail)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_sha: Option<String>,
+
+    /// Notes about this step execution
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+impl WiStepExecution {
+    /// Create a new WI step execution record
+    pub fn new(work_instruction: String, step_number: u32) -> Self {
+        Self {
+            work_instruction,
+            step_number,
+            ..Default::default()
+        }
+    }
+
+    /// Create with operator info
+    pub fn with_operator(mut self, operator: String, email: Option<String>) -> Self {
+        self.operator = Some(operator);
+        self.operator_email = email;
+        self
+    }
+
+    /// Mark as completed now
+    pub fn complete(mut self) -> Self {
+        self.completed_at = Some(Utc::now());
+        self
+    }
+
+    /// Mark as completed with timestamp
+    pub fn complete_at(mut self, timestamp: DateTime<Utc>) -> Self {
+        self.completed_at = Some(timestamp);
+        self
+    }
+
+    /// Add data value
+    pub fn with_data(mut self, key: String, value: serde_json::Value) -> Self {
+        self.data.insert(key, value);
+        self
+    }
+
+    /// Add equipment used
+    pub fn with_equipment(mut self, equipment: String, serial: String) -> Self {
+        self.equipment_used.insert(equipment, serial);
+        self
+    }
+
+    /// Mark operator signature as verified
+    pub fn with_signature(mut self, signing_key: String) -> Self {
+        self.operator_signature_verified = Some(true);
+        self.signing_key = Some(signing_key);
+        self
+    }
+
+    /// Add approval record
+    pub fn add_approval(&mut self, approval: StepApproval) {
+        self.approvals.push(approval);
+    }
+
+    /// Check if step is completed (has completed_at timestamp)
+    pub fn is_completed(&self) -> bool {
+        self.completed_at.is_some()
+    }
+
+    /// Check if step requires approval (has pending or awaiting approval)
+    pub fn requires_approval(&self) -> bool {
+        self.approval_status == ApprovalStatus::Pending
+    }
+
+    /// Check if step is fully approved
+    pub fn is_approved(&self) -> bool {
+        self.approval_status == ApprovalStatus::Approved
+    }
 }
 
 /// Execution step record (DHR compliant)
@@ -233,6 +359,11 @@ pub struct ExecutionStep {
     /// Measurement/inspection data (key-value pairs)
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub data: HashMap<String, serde_json::Value>,
+
+    /// Detailed WI step executions (for electronic router/traveler)
+    /// Provides granular tracking at the procedure step level within work instructions
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wi_step_executions: Vec<WiStepExecution>,
 }
 
 /// Links for LOT entity
@@ -458,5 +589,172 @@ entity_revision: 1
         assert_eq!(lot.quantity, Some(25));
         assert_eq!(lot.lot_status, LotStatus::InProgress);
         assert_eq!(lot.materials_used.len(), 1);
+    }
+
+    // === WiStepExecution Tests ===
+
+    #[test]
+    fn test_wi_step_execution_new() {
+        let exec = WiStepExecution::new("WORK-01ABC".to_string(), 1);
+        assert_eq!(exec.work_instruction, "WORK-01ABC");
+        assert_eq!(exec.step_number, 1);
+        assert!(exec.operator.is_none());
+        assert!(exec.completed_at.is_none());
+        assert!(exec.data.is_empty());
+        assert!(exec.equipment_used.is_empty());
+        assert_eq!(exec.approval_status, ApprovalStatus::NotRequired);
+    }
+
+    #[test]
+    fn test_wi_step_execution_builder_pattern() {
+        let exec = WiStepExecution::new("WORK-01ABC".to_string(), 3)
+            .with_operator("jsmith".to_string(), Some("jsmith@example.com".to_string()))
+            .with_data("torque_nm".to_string(), serde_json::json!(25.5))
+            .with_equipment("Torque Wrench TW-001".to_string(), "CAL-2024-001".to_string())
+            .with_signature("GPG:jsmith-key".to_string())
+            .complete();
+
+        assert_eq!(exec.work_instruction, "WORK-01ABC");
+        assert_eq!(exec.step_number, 3);
+        assert_eq!(exec.operator, Some("jsmith".to_string()));
+        assert_eq!(exec.operator_email, Some("jsmith@example.com".to_string()));
+        assert!(exec.completed_at.is_some());
+        assert_eq!(exec.data.get("torque_nm"), Some(&serde_json::json!(25.5)));
+        assert_eq!(
+            exec.equipment_used.get("Torque Wrench TW-001"),
+            Some(&"CAL-2024-001".to_string())
+        );
+        assert_eq!(exec.operator_signature_verified, Some(true));
+        assert_eq!(exec.signing_key, Some("GPG:jsmith-key".to_string()));
+    }
+
+    #[test]
+    fn test_wi_step_execution_status_checks() {
+        let mut exec = WiStepExecution::new("WORK-01ABC".to_string(), 1);
+        assert!(!exec.is_completed());
+        assert!(!exec.requires_approval());
+        assert!(!exec.is_approved());
+
+        // Complete the step
+        exec = exec.complete();
+        assert!(exec.is_completed());
+
+        // Set approval pending
+        exec.approval_status = ApprovalStatus::Pending;
+        assert!(exec.requires_approval());
+        assert!(!exec.is_approved());
+
+        // Approve
+        exec.approval_status = ApprovalStatus::Approved;
+        assert!(!exec.requires_approval());
+        assert!(exec.is_approved());
+    }
+
+    #[test]
+    fn test_wi_step_execution_add_approval() {
+        let mut exec = WiStepExecution::new("WORK-01ABC".to_string(), 4);
+        exec.approval_status = ApprovalStatus::Pending;
+
+        let approval = StepApproval {
+            approver: "bwilson".to_string(),
+            email: Some("bwilson@example.com".to_string()),
+            role: Some("quality".to_string()),
+            timestamp: Utc::now(),
+            comment: Some("Dimensions verified within spec".to_string()),
+            signature_verified: Some(true),
+            signing_key: Some("SSH:bwilson-key".to_string()),
+        };
+
+        exec.add_approval(approval);
+        exec.approval_status = ApprovalStatus::Approved;
+
+        assert_eq!(exec.approvals.len(), 1);
+        assert_eq!(exec.approvals[0].approver, "bwilson");
+        assert_eq!(exec.approvals[0].role, Some("quality".to_string()));
+        assert!(exec.is_approved());
+    }
+
+    #[test]
+    fn test_wi_step_execution_serialization() {
+        let exec = WiStepExecution::new("WORK-01ABC".to_string(), 2)
+            .with_operator("jsmith".to_string(), None)
+            .with_data("measurement_mm".to_string(), serde_json::json!(12.5))
+            .complete();
+
+        let yaml = serde_yml::to_string(&exec).unwrap();
+        assert!(yaml.contains("work_instruction: WORK-01ABC"));
+        assert!(yaml.contains("step_number: 2"));
+        assert!(yaml.contains("jsmith"));
+
+        let parsed: WiStepExecution = serde_yml::from_str(&yaml).unwrap();
+        assert_eq!(exec, parsed);
+    }
+
+    #[test]
+    fn test_wi_step_execution_in_execution_step() {
+        let mut execution_step = ExecutionStep {
+            process: Some("PROC-01ABC".to_string()),
+            status: ExecutionStatus::InProgress,
+            ..Default::default()
+        };
+
+        let wi_exec1 = WiStepExecution::new("WORK-01ABC".to_string(), 1)
+            .with_operator("jsmith".to_string(), None)
+            .complete();
+
+        let wi_exec2 = WiStepExecution::new("WORK-01ABC".to_string(), 2)
+            .with_operator("jsmith".to_string(), None);
+
+        execution_step.wi_step_executions.push(wi_exec1);
+        execution_step.wi_step_executions.push(wi_exec2);
+
+        assert_eq!(execution_step.wi_step_executions.len(), 2);
+        assert!(execution_step.wi_step_executions[0].is_completed());
+        assert!(!execution_step.wi_step_executions[1].is_completed());
+    }
+
+    #[test]
+    fn test_lot_with_wi_step_executions_deserialization() {
+        let yaml = r#"
+id: LOT-01HC2JB7SMQX7RS1Y0GFKBHPTD
+title: "Production Lot 001"
+lot_status: in_progress
+execution:
+  - process: PROC-01ABC
+    status: in_progress
+    work_instructions_used:
+      - id: WORK-01XYZ
+        revision: 2
+    wi_step_executions:
+      - work_instruction: WORK-01XYZ
+        step_number: 1
+        operator: jsmith
+        completed_at: 2024-01-15T10:00:00Z
+        data:
+          torque_nm: 25.5
+        equipment_used:
+          "Torque Wrench TW-001": "CAL-2024-001"
+      - work_instruction: WORK-01XYZ
+        step_number: 2
+        operator: jsmith
+        approval_status: pending
+links: {}
+status: draft
+created: 2024-01-15T10:00:00Z
+author: "Test Author"
+entity_revision: 1
+"#;
+        let lot: Lot = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(lot.execution.len(), 1);
+        assert_eq!(lot.execution[0].wi_step_executions.len(), 2);
+        assert_eq!(
+            lot.execution[0].wi_step_executions[0].step_number,
+            1
+        );
+        assert!(lot.execution[0].wi_step_executions[0].is_completed());
+        assert_eq!(
+            lot.execution[0].wi_step_executions[1].approval_status,
+            ApprovalStatus::Pending
+        );
     }
 }

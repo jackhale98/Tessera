@@ -85,6 +85,35 @@ Work Instructions provide step-by-step procedures for operators. While processes
 | `caution` | string | Caution/warning |
 | `image` | string | Image reference path |
 | `estimated_time_minutes` | number | Time for this step |
+| `approval` | StepApprovalRequirement | Approval requirements for electronic router (optional) |
+| `data_fields` | array[StepDataField] | Data to collect at this step (optional) |
+| `equipment` | array[string] | Equipment requiring serial number entry at execution (optional) |
+
+### StepApprovalRequirement Object (Electronic Router)
+
+Defines sign-off requirements for a procedure step. Used for regulated manufacturing (FDA 21 CFR Part 11, ISO 13485) quality hold points.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `requires_signoff` | boolean | Whether this step requires sign-off (default: false) |
+| `min_approvals` | integer | Minimum number of approvals needed (default: 1) |
+| `required_roles` | array[string] | Roles that can approve: "engineering", "quality", "management", "admin" |
+| `required_approvers` | array[string] | Specific usernames who must approve |
+| `require_signature` | boolean | Require digital signature for 21 CFR Part 11 compliance |
+| `quality_hold_point` | boolean | Whether this is a quality hold point (production stops until approved) |
+
+### StepDataField Object (Electronic Router)
+
+Defines data to be collected during step execution (measurements, serial numbers, etc.).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Field key for data storage |
+| `label` | string | Human-readable label |
+| `data_type` | string | Data type: "text", "number", "boolean", "select" (default: "text") |
+| `required` | boolean | Whether this field is required (default: false) |
+| `units` | string | Units for numeric values (optional) |
+| `options` | array[string] | Options for "select" data type |
 
 ### QualityCheck Object
 
@@ -188,6 +217,36 @@ procedure:
     action: "Deburr all edges"
     verification: "No sharp edges remaining"
     estimated_time_minutes: 2
+
+  # Example step with electronic router features (quality hold point)
+  - step: 9
+    action: "Final dimensional inspection"
+    verification: "All critical dimensions within tolerance"
+    estimated_time_minutes: 10
+    data_fields:
+      - key: bore_diameter
+        label: "Bore Diameter (mm)"
+        data_type: number
+        required: true
+        units: mm
+      - key: overall_length
+        label: "Overall Length (mm)"
+        data_type: number
+        required: true
+        units: mm
+      - key: inspector_badge
+        label: "Inspector Badge Number"
+        data_type: text
+        required: true
+    equipment:
+      - CMM
+      - Bore Gauge
+    approval:
+      requires_signoff: true
+      required_roles:
+        - quality
+      quality_hold_point: true
+      require_signature: false
 
 quality_checks:
   - at_step: 6
@@ -328,6 +387,89 @@ Use consistent language:
 - **CAUTION**: Risk of equipment damage or minor injury
 - **WARNING**: Risk of serious injury
 - **DANGER**: Risk of death or severe injury
+
+## Electronic Router / Traveler
+
+Work instructions can define approval requirements and data collection points for use with the LOT entity's electronic router feature. This enables step-level tracking for regulated manufacturing.
+
+### Defining Quality Hold Points
+
+Add approval requirements to steps that need sign-off:
+
+```yaml
+procedure:
+  - step: 5
+    action: "Verify critical dimension"
+    verification: "Dimension within tolerance"
+    approval:
+      requires_signoff: true           # Requires operator sign-off
+      required_roles:
+        - quality                      # Quality role can approve
+      quality_hold_point: true         # Production stops until approved
+      require_signature: false         # Digital signature not required
+```
+
+### Defining Data Collection Points
+
+Add data fields to steps that need measurements or serial numbers:
+
+```yaml
+procedure:
+  - step: 6
+    action: "Measure bore diameter"
+    data_fields:
+      - key: bore_diameter
+        label: "Bore Diameter (mm)"
+        data_type: number
+        required: true
+        units: mm
+      - key: measurement_tool
+        label: "Measurement Tool Serial #"
+        data_type: text
+        required: true
+```
+
+### Equipment Traceability
+
+Specify equipment that requires serial number entry at execution:
+
+```yaml
+procedure:
+  - step: 7
+    action: "Torque fasteners to spec"
+    equipment:
+      - torque_wrench           # Serial number required at execution
+      - calibration_adapter
+```
+
+### Executing Electronic Router Steps
+
+When a LOT executes steps from this work instruction, operators use:
+
+```bash
+# Complete step with required data
+tdt lot wi-step LOT@1 --wi WORK@1 --step 5 --complete \
+    --data bore_diameter=25.012 \
+    --equipment torque_wrench=TW-001
+
+# Approve quality hold point
+tdt lot approve LOT@1 --wi WORK@1 --step 5 --role quality \
+    --comment "Dimension verified within spec"
+```
+
+See the [LOT documentation](lot.md#electronic-router--traveler) for complete electronic router commands.
+
+### Compliance Considerations
+
+For FDA 21 CFR Part 11 compliance:
+- Set `require_signature: true` on critical approval steps
+- Use `required_approvers` for specific individuals who must approve
+- Enable `sign_commits` in manufacturing config for audit trail
+
+For ISO 13485 compliance:
+- Define `quality_hold_point: true` for in-process inspection steps
+- Use `data_fields` to capture required measurements
+- Track equipment serial numbers for traceability
 
 ## Validation
 

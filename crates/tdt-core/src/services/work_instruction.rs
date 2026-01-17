@@ -864,6 +864,7 @@ mod tests {
             caution: None,
             image: None,
             estimated_time_minutes: Some(5.0),
+            ..Default::default()
         };
 
         let step2 = ProcedureStep {
@@ -873,6 +874,7 @@ mod tests {
             caution: Some("Watch fingers!".into()),
             image: None,
             estimated_time_minutes: Some(3.0),
+            ..Default::default()
         };
 
         service.add_step(&created.id.to_string(), step1).unwrap();
