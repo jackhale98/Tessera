@@ -40,7 +40,7 @@ pub fn sync_cache(project: &Project) {
 }
 
 /// Format a linked entity ID with its title for display
-/// Returns format like "CMP@1 (Housing)" or just "CMP@1" if title lookup fails
+/// Returns format like "CMP@1 (Housing)" or "CMP@1 [NOT FOUND]" if entity doesn't exist
 pub fn format_link_with_title(
     entity_id: &str,
     short_ids: &ShortIdIndex,
@@ -61,6 +61,8 @@ pub fn format_link_with_title(
         if let Some(entity) = cache.get_entity(&full_id) {
             return format!("{} ({})", display_id, entity.title);
         }
+        // Entity not found in cache - it's a broken link
+        return format!("{} [NOT FOUND]", display_id);
     }
 
     display_id
