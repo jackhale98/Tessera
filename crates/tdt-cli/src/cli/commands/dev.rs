@@ -6,7 +6,7 @@ use miette::{IntoDiagnostic, Result};
 
 use crate::cli::helpers::{escape_csv, truncate_str};
 use crate::cli::{GlobalOpts, OutputFormat};
-use tdt_core::core::cache::EntityCache;
+use tdt_core::core::cache::{CachedDeviation, EntityCache};
 use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -508,6 +508,260 @@ fn build_dev_sort_field(col: &ListColumn) -> DeviationSortField {
     }
 }
 
+/// Sort cached deviations in place
+fn sort_cached_deviations(deviations: &mut Vec<CachedDeviation>, args: &ListArgs) {
+    match args.sort {
+        ListColumn::Id => deviations.sort_by(|a, b| a.id.cmp(&b.id)),
+        ListColumn::Title => deviations.sort_by(|a, b| a.title.cmp(&b.title)),
+        ListColumn::DevNumber => deviations.sort_by(|a, b| {
+            a.deviation_number
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.deviation_number.as_deref().unwrap_or(""))
+        }),
+        ListColumn::DevType => deviations.sort_by(|a, b| {
+            a.deviation_type
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.deviation_type.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Category => deviations.sort_by(|a, b| {
+            a.category
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.category.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Risk => deviations.sort_by(|a, b| {
+            let risk_order = |r: Option<&str>| match r {
+                Some("high") => 0,
+                Some("medium") => 1,
+                Some("low") => 2,
+                _ => 3,
+            };
+            risk_order(a.risk_level.as_deref()).cmp(&risk_order(b.risk_level.as_deref()))
+        }),
+        ListColumn::DevStatus => deviations.sort_by(|a, b| {
+            a.dev_status
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.dev_status.as_deref().unwrap_or(""))
+        }),
+        ListColumn::Author => deviations.sort_by(|a, b| a.author.cmp(&b.author)),
+        ListColumn::Created => deviations.sort_by(|a, b| a.created.cmp(&b.created)),
+    }
+
+    if args.reverse {
+        deviations.reverse();
+    }
+
+    if let Some(limit) = args.limit {
+        deviations.truncate(limit);
+    }
+}
+
+/// Output cached deviations (fast path for table output)
+fn output_cached_deviations(
+    deviations: &[CachedDeviation],
+    short_ids: &mut ShortIdIndex,
+    args: &ListArgs,
+    format: OutputFormat,
+    project: &Project,
+) -> Result<()> {
+    if deviations.is_empty() {
+        if args.count {
+            println!("0");
+        } else {
+            println!("No deviations found.");
+        }
+        return Ok(());
+    }
+
+    if args.count {
+        println!("{}", deviations.len());
+        return Ok(());
+    }
+
+    // Update short ID index
+    short_ids.ensure_all(deviations.iter().map(|d| d.id.clone()));
+    super::utils::save_short_ids(short_ids, project);
+
+    match format {
+        OutputFormat::Csv => {
+            println!("short_id,id,title,dev_number,type,category,risk,dev_status,author");
+            for dev in deviations {
+                let short_id = short_ids.get_short_id(&dev.id).unwrap_or_default();
+                println!(
+                    "{},{},{},{},{},{},{},{},{}",
+                    short_id,
+                    dev.id,
+                    escape_csv(&dev.title),
+                    dev.deviation_number.as_deref().unwrap_or(""),
+                    dev.deviation_type.as_deref().unwrap_or(""),
+                    dev.category.as_deref().unwrap_or(""),
+                    dev.risk_level.as_deref().unwrap_or(""),
+                    dev.dev_status.as_deref().unwrap_or(""),
+                    escape_csv(&dev.author)
+                );
+            }
+        }
+        OutputFormat::Tsv
+        | OutputFormat::Auto
+        | OutputFormat::Table
+        | OutputFormat::Dot
+        | OutputFormat::Tree => {
+            // Build header
+            let mut headers = vec![];
+            let mut widths = vec![];
+
+            for col in &args.columns {
+                let (header, width) = match col {
+                    ListColumn::Id => ("ID", 17),
+                    ListColumn::Title => ("TITLE", 30),
+                    ListColumn::DevNumber => ("DEV #", 14),
+                    ListColumn::DevType => ("TYPE", 10),
+                    ListColumn::Category => ("CATEGORY", 14),
+                    ListColumn::Risk => ("RISK", 8),
+                    ListColumn::DevStatus => ("STATUS", 10),
+                    ListColumn::Author => ("AUTHOR", 16),
+                    ListColumn::Created => ("CREATED", 12),
+                };
+                headers.push((header, *col));
+                widths.push(width);
+            }
+
+            // Print header
+            print!("{:<8} ", style("SHORT").bold().dim());
+            for (i, (header, _)) in headers.iter().enumerate() {
+                print!("{:<width$} ", style(header).bold(), width = widths[i]);
+            }
+            println!();
+
+            // Print rows
+            for dev in deviations {
+                let short_id = short_ids.get_short_id(&dev.id).unwrap_or_default();
+
+                print!("{:<8} ", style(&short_id).cyan());
+
+                for (i, (_, col)) in headers.iter().enumerate() {
+                    let value = match col {
+                        ListColumn::Id => dev.id.clone(),
+                        ListColumn::Title => truncate_str(&dev.title, widths[i]),
+                        ListColumn::DevNumber => {
+                            dev.deviation_number.clone().unwrap_or_default()
+                        }
+                        ListColumn::DevType => {
+                            dev.deviation_type.clone().unwrap_or_default()
+                        }
+                        ListColumn::Category => dev.category.clone().unwrap_or_default(),
+                        ListColumn::Risk => {
+                            let level = dev.risk_level.as_deref().unwrap_or("");
+                            match level {
+                                "high" => format!("{}", style(level).red()),
+                                "medium" => format!("{}", style(level).yellow()),
+                                "low" => format!("{}", style(level).green()),
+                                _ => level.to_string(),
+                            }
+                        }
+                        ListColumn::DevStatus => {
+                            let status = dev.dev_status.as_deref().unwrap_or("");
+                            match status {
+                                "active" => format!("{}", style(status).green()),
+                                "pending" => format!("{}", style(status).yellow()),
+                                "approved" => format!("{}", style(status).cyan()),
+                                "expired" | "closed" => format!("{}", style(status).dim()),
+                                "rejected" => format!("{}", style(status).red()),
+                                _ => status.to_string(),
+                            }
+                        }
+                        ListColumn::Author => dev.author.clone(),
+                        ListColumn::Created => dev.created.format("%Y-%m-%d").to_string(),
+                    };
+                    print!("{:<width$} ", value, width = widths[i]);
+                }
+                println!();
+            }
+        }
+        OutputFormat::Md => {
+            // Markdown table
+            let headers: Vec<&str> = args
+                .columns
+                .iter()
+                .map(|c| match c {
+                    ListColumn::Id => "ID",
+                    ListColumn::Title => "Title",
+                    ListColumn::DevNumber => "Number",
+                    ListColumn::DevType => "Type",
+                    ListColumn::Category => "Category",
+                    ListColumn::Risk => "Risk",
+                    ListColumn::DevStatus => "Status",
+                    ListColumn::Author => "Author",
+                    ListColumn::Created => "Created",
+                })
+                .collect();
+            println!("| {} |", headers.join(" | "));
+            println!(
+                "| {} |",
+                headers
+                    .iter()
+                    .map(|_| "---")
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+
+            for dev in deviations {
+                let short_id = short_ids.get_short_id(&dev.id).unwrap_or_default();
+                let values: Vec<String> = args
+                    .columns
+                    .iter()
+                    .map(|c| match c {
+                        ListColumn::Id => short_id.clone(),
+                        ListColumn::Title => truncate_str(&dev.title, 40),
+                        ListColumn::DevNumber => {
+                            dev.deviation_number.clone().unwrap_or_default()
+                        }
+                        ListColumn::DevType => {
+                            dev.deviation_type.clone().unwrap_or_default()
+                        }
+                        ListColumn::Category => dev.category.clone().unwrap_or_default(),
+                        ListColumn::Risk => dev.risk_level.clone().unwrap_or_default(),
+                        ListColumn::DevStatus => dev.dev_status.clone().unwrap_or_default(),
+                        ListColumn::Author => dev.author.clone(),
+                        ListColumn::Created => dev.created.format("%Y-%m-%d").to_string(),
+                    })
+                    .collect();
+                println!("| {} |", values.join(" | "));
+            }
+        }
+        OutputFormat::Id => {
+            for dev in deviations {
+                println!("{}", dev.id);
+            }
+        }
+        OutputFormat::ShortId => {
+            for dev in deviations {
+                let short_id = short_ids.get_short_id(&dev.id).unwrap_or_default();
+                println!("{}", short_id);
+            }
+        }
+        OutputFormat::Path => {
+            for dev in deviations {
+                let path = if dev.file_path.is_absolute() {
+                    dev.file_path.clone()
+                } else {
+                    project.root().join(&dev.file_path)
+                };
+                println!("{}", path.display());
+            }
+        }
+        // JSON/YAML not handled here - they need full entity
+        OutputFormat::Json | OutputFormat::Yaml => {
+            unreachable!("JSON/YAML output requires full entity load")
+        }
+    }
+
+    Ok(())
+}
+
 /// Output full deviation entities
 fn output_deviations(
     deviations: &[Dev],
@@ -727,7 +981,24 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     // Build filter from CLI args
     let filter = build_dev_filter(&args);
 
-    // Load and filter deviations using service
+    // Two-tier caching: use cache for fast path when possible
+    // Can't use cache for: JSON/YAML output (need full entity data)
+    // Cache CAN handle: dev_status, deviation_type, category, risk_level, active_only, recent_days
+    let can_use_cache = !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+
+    if can_use_cache {
+        // Fast path: use cache
+        let mut cached_deviations = service
+            .list_cached(&filter)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        // Sort and limit
+        sort_cached_deviations(&mut cached_deviations, &args);
+
+        return output_cached_deviations(&cached_deviations, &mut short_ids, &args, format, &project);
+    }
+
+    // Full entity loading path (JSON/YAML output)
     let mut deviations = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
 
     // Apply limit

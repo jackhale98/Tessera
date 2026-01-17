@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use crate::core::cache::{CachedEntity, EntityCache, EntityFilter};
+use crate::core::cache::{CachedDeviation, EntityCache};
 use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
@@ -240,38 +240,50 @@ impl<'a> DeviationService<'a> {
 
     /// List deviations using the cache (fast path)
     ///
-    /// Returns cached entity data without loading full entities from disk.
-    /// Use this for list views and simple queries.
-    pub fn list_cached(&self, filter: &DeviationFilter) -> ServiceResult<Vec<CachedEntity>> {
-        // Build cache filter
+    /// Returns cached deviation data without loading full entities from disk.
+    /// Use this for list views and simple queries where you don't need
+    /// full entity data like description or mitigations.
+    pub fn list_cached(&self, filter: &DeviationFilter) -> ServiceResult<Vec<CachedDeviation>> {
+        // Convert filter values to strings for cache query
         let status = filter
             .common
             .status
             .as_ref()
             .and_then(|s| s.first())
-            .copied();
+            .map(|s| s.to_string());
 
-        let entity_filter = EntityFilter {
-            prefix: Some(EntityPrefix::Dev),
-            status,
-            author: filter.common.author.clone(),
-            search: filter.common.search.clone(),
-            limit: None, // Apply limit after all filters
-            priority: filter.common.priority.as_ref().and_then(|p| p.first()).copied(),
-            entity_type: None,
-            category: None,
-        };
+        let dev_status = filter.dev_status.map(|s| s.to_string());
+        let deviation_type = filter.deviation_type.map(|t| t.to_string());
+        let category = filter.category.map(|c| c.to_string());
+        let risk_level = filter.risk_level.map(|r| r.to_string());
 
-        let mut cached = self.cache.list_entities(&entity_filter);
+        // Use deviation-specific cache query
+        let mut cached = self.cache.list_deviations(
+            status.as_deref(),
+            dev_status.as_deref(),
+            deviation_type.as_deref(),
+            category.as_deref(),
+            risk_level.as_deref(),
+            filter.common.author.as_deref(),
+            filter.common.search.as_deref(),
+            None, // Apply limit after additional filters
+        );
 
-        // Apply additional filters not supported by cache query
+        // Apply active_only filter
+        if filter.active_only {
+            cached.retain(|d| {
+                matches!(
+                    d.dev_status.as_deref(),
+                    Some("pending") | Some("approved") | Some("active")
+                )
+            });
+        }
+
+        // Apply recent_days filter
         if let Some(days) = filter.recent_days {
             let cutoff = Utc::now() - chrono::Duration::days(days as i64);
             cached.retain(|e| e.created >= cutoff);
         }
-
-        // Note: dev_status, deviation_type, category, risk_level, active_only
-        // require full entity load and are handled in the regular list() method
 
         // Apply limit
         if let Some(limit) = filter.common.limit {

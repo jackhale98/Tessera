@@ -326,6 +326,144 @@ export const traceability = {
 };
 
 /**
+ * Deviations API (specialized commands + CRUD)
+ */
+export interface ListDeviationsParams {
+	status?: string[];
+	dev_status?: string;
+	deviation_type?: string;
+	category?: string;
+	risk_level?: string;
+	active_only?: boolean;
+	recent_days?: number;
+	search?: string;
+	tags?: string[];
+	limit?: number;
+	offset?: number;
+	sort_by?: string;
+	sort_desc?: boolean;
+}
+
+export interface DeviationSummary {
+	id: string;
+	title: string;
+	deviation_number?: string;
+	deviation_type: string;
+	category: string;
+	risk_level: string;
+	dev_status: string;
+	status: string;
+	effective_date?: string;
+	expiration_date?: string;
+	approved_by?: string;
+	approval_date?: string;
+	author: string;
+	created: string;
+}
+
+export interface ListDeviationsResult {
+	items: DeviationSummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface CreateDeviationInput {
+	title: string;
+	deviation_number?: string;
+	deviation_type?: string;
+	category?: string;
+	description?: string;
+	risk_level?: string;
+	risk_assessment?: string;
+	effective_date?: string;
+	expiration_date?: string;
+	notes?: string;
+	author: string;
+}
+
+export interface UpdateDeviationInput {
+	title?: string;
+	deviation_number?: string;
+	deviation_type?: string;
+	category?: string;
+	description?: string;
+	effective_date?: string;
+	expiration_date?: string;
+	notes?: string;
+	status?: string;
+	dev_status?: string;
+}
+
+export interface ApproveDeviationInput {
+	approved_by: string;
+	authorization_level: string;
+	activate?: boolean;
+}
+
+export interface RejectDeviationInput {
+	reason?: string;
+}
+
+export interface DeviationStats {
+	total: number;
+	by_dev_status: {
+		pending: number;
+		approved: number;
+		active: number;
+		expired: number;
+		closed: number;
+		rejected: number;
+	};
+	by_type: {
+		temporary: number;
+		permanent: number;
+		emergency: number;
+	};
+	by_category: {
+		material: number;
+		process: number;
+		equipment: number;
+		tooling: number;
+		specification: number;
+		documentation: number;
+	};
+	by_risk: {
+		low: number;
+		medium: number;
+		high: number;
+	};
+	active: number;
+}
+
+export const deviations = {
+	list: (params?: ListDeviationsParams) =>
+		call<ListDeviationsResult>('list_deviations', { params }),
+	get: (id: string) => call<unknown>('get_deviation', { id }),
+	create: (input: CreateDeviationInput) => call<unknown>('create_deviation', { input }),
+	update: (id: string, input: UpdateDeviationInput) =>
+		call<unknown>('update_deviation', { id, input }),
+	delete: (id: string) => call<void>('delete_deviation', { id }),
+	approve: (id: string, input: ApproveDeviationInput) =>
+		call<unknown>('approve_deviation', { id, input }),
+	reject: (id: string, input?: RejectDeviationInput) =>
+		call<unknown>('reject_deviation', { id, input }),
+	activate: (id: string) => call<unknown>('activate_deviation', { id }),
+	close: (id: string, reason?: string) => call<unknown>('close_deviation', { id, reason }),
+	expire: (id: string) => call<unknown>('expire_deviation', { id }),
+	addMitigation: (id: string, mitigation: string) =>
+		call<unknown>('add_deviation_mitigation', { id, mitigation }),
+	setRisk: (id: string, level: string, assessment?: string) =>
+		call<unknown>('set_deviation_risk', { id, level, assessment }),
+	addProcessLink: (id: string, processId: string) =>
+		call<unknown>('add_deviation_process_link', { id, process_id: processId }),
+	addLotLink: (id: string, lotId: string) =>
+		call<unknown>('add_deviation_lot_link', { id, lot_id: lotId }),
+	addComponentLink: (id: string, componentId: string) =>
+		call<unknown>('add_deviation_component_link', { id, component_id: componentId }),
+	getStats: () => call<DeviationStats>('get_deviation_stats')
+};
+
+/**
  * Combined API namespace
  */
 export const api = {
@@ -334,6 +472,7 @@ export const api = {
 	requirements,
 	risks,
 	components,
+	deviations,
 	traceability
 };
 

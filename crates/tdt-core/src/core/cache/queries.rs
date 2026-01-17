@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use rusqlite::{params, OptionalExtension};
 
 use super::{
-    parse_datetime, CachedCapa, CachedComponent, CachedControl, CachedEntity, CachedFeature,
-    CachedNcr, CachedProcess, CachedQuote, CachedRequirement, CachedResult, CachedRisk,
-    CachedSupplier, CachedTest, CachedWork, EntityCache, EntityFilter,
+    parse_datetime, CachedCapa, CachedComponent, CachedControl, CachedDeviation, CachedEntity,
+    CachedFeature, CachedNcr, CachedProcess, CachedQuote, CachedRequirement, CachedResult,
+    CachedRisk, CachedSupplier, CachedTest, CachedWork, EntityCache, EntityFilter,
 };
 
 impl EntityCache {
@@ -1376,6 +1376,107 @@ impl EntityCache {
                 author: row.get(7)?,
                 created: parse_datetime(row.get::<_, String>(8)?),
                 file_path: PathBuf::from(row.get::<_, String>(9)?),
+            })
+        }) {
+            Ok(r) => r,
+            Err(_) => return vec![],
+        };
+
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// List deviations with filtering
+    pub fn list_deviations(
+        &self,
+        status: Option<&str>,
+        dev_status: Option<&str>,
+        deviation_type: Option<&str>,
+        category: Option<&str>,
+        risk_level: Option<&str>,
+        author: Option<&str>,
+        search: Option<&str>,
+        limit: Option<usize>,
+    ) -> Vec<CachedDeviation> {
+        let mut sql = String::from(
+            r#"SELECT e.id, e.title, e.status, d.deviation_number, d.deviation_type,
+                      d.category, d.dev_status, d.risk_level, d.effective_date,
+                      d.expiration_date, d.approved_by, d.approval_date,
+                      e.author, e.created, e.file_path
+               FROM entities e
+               JOIN deviations d ON e.id = d.id
+               WHERE e.prefix = 'DEV'"#,
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+
+        if let Some(status) = status {
+            sql.push_str(" AND e.status = ?");
+            params_vec.push(Box::new(status.to_string()));
+        }
+
+        if let Some(dev_status) = dev_status {
+            sql.push_str(" AND d.dev_status = ?");
+            params_vec.push(Box::new(dev_status.to_string()));
+        }
+
+        if let Some(deviation_type) = deviation_type {
+            sql.push_str(" AND d.deviation_type = ?");
+            params_vec.push(Box::new(deviation_type.to_string()));
+        }
+
+        if let Some(category) = category {
+            sql.push_str(" AND d.category = ?");
+            params_vec.push(Box::new(category.to_string()));
+        }
+
+        if let Some(risk_level) = risk_level {
+            sql.push_str(" AND d.risk_level = ?");
+            params_vec.push(Box::new(risk_level.to_string()));
+        }
+
+        if let Some(author) = author {
+            sql.push_str(" AND e.author LIKE ?");
+            params_vec.push(Box::new(format!("%{}%", author)));
+        }
+
+        if let Some(search) = search {
+            sql.push_str(" AND (e.title LIKE ? OR e.id LIKE ? OR d.deviation_number LIKE ?)");
+            let pattern = format!("%{}%", search);
+            params_vec.push(Box::new(pattern.clone()));
+            params_vec.push(Box::new(pattern.clone()));
+            params_vec.push(Box::new(pattern));
+        }
+
+        sql.push_str(" ORDER BY e.created DESC");
+
+        if let Some(limit) = limit {
+            sql.push_str(&format!(" LIMIT {}", limit));
+        }
+
+        let mut stmt = match self.conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let rows = match stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(CachedDeviation {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                status: row.get(2)?,
+                deviation_number: row.get(3)?,
+                deviation_type: row.get(4)?,
+                category: row.get(5)?,
+                dev_status: row.get(6)?,
+                risk_level: row.get(7)?,
+                effective_date: row.get(8)?,
+                expiration_date: row.get(9)?,
+                approved_by: row.get(10)?,
+                approval_date: row.get(11)?,
+                author: row.get(12)?,
+                created: parse_datetime(row.get::<_, String>(13)?),
+                file_path: PathBuf::from(row.get::<_, String>(14)?),
             })
         }) {
             Ok(r) => r,

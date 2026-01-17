@@ -267,3 +267,172 @@ export interface RiskMatrixCell {
 	risk_ids: string[];
 	risk_level: RiskLevel;
 }
+
+// Deviation types
+export type DeviationType = 'temporary' | 'permanent' | 'emergency';
+export type DeviationCategory =
+	| 'material'
+	| 'process'
+	| 'equipment'
+	| 'tooling'
+	| 'specification'
+	| 'documentation';
+export type DevStatus = 'pending' | 'approved' | 'active' | 'expired' | 'closed' | 'rejected';
+export type DeviationRiskLevel = 'low' | 'medium' | 'high';
+export type AuthorizationLevel = 'engineering' | 'quality' | 'management';
+
+export interface DevRisk {
+	level: DeviationRiskLevel;
+	assessment?: string;
+	mitigations: string[];
+}
+
+export interface DevApproval {
+	approved_by?: string;
+	approval_date?: string;
+	authorization_level?: AuthorizationLevel;
+}
+
+export interface DevLinks {
+	processes: string[];
+	lots: string[];
+	components: string[];
+	requirements: string[];
+	ncrs: string[];
+	change_order?: string;
+}
+
+export interface Deviation {
+	id: string;
+	title: string;
+	deviation_number?: string;
+	deviation_type: DeviationType;
+	category: DeviationCategory;
+	description?: string;
+	risk: DevRisk;
+	approval: DevApproval;
+	effective_date?: string;
+	expiration_date?: string;
+	dev_status: DevStatus;
+	notes?: string;
+	links: DevLinks;
+	status: Status;
+	created: string;
+	author: string;
+	entity_revision: number;
+}
+
+export interface DeviationSummary {
+	id: string;
+	title: string;
+	deviation_number?: string;
+	deviation_type: string;
+	category: string;
+	risk_level: string;
+	dev_status: string;
+	status: string;
+	effective_date?: string;
+	expiration_date?: string;
+	approved_by?: string;
+	approval_date?: string;
+	author: string;
+	created: string;
+}
+
+export interface ListDeviationsResult {
+	items: DeviationSummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface ListDeviationsParams {
+	status?: string[];
+	dev_status?: string;
+	deviation_type?: string;
+	category?: string;
+	risk_level?: string;
+	active_only?: boolean;
+	recent_days?: number;
+	search?: string;
+	tags?: string[];
+	limit?: number;
+	offset?: number;
+	sort_by?: string;
+	sort_desc?: boolean;
+}
+
+export interface CreateDeviationInput {
+	title: string;
+	deviation_number?: string;
+	deviation_type?: string;
+	category?: string;
+	description?: string;
+	risk_level?: string;
+	risk_assessment?: string;
+	effective_date?: string;
+	expiration_date?: string;
+	notes?: string;
+	author: string;
+}
+
+export interface UpdateDeviationInput {
+	title?: string;
+	deviation_number?: string;
+	deviation_type?: string;
+	category?: string;
+	description?: string;
+	effective_date?: string;
+	expiration_date?: string;
+	notes?: string;
+	status?: string;
+	dev_status?: string;
+}
+
+export interface ApproveDeviationInput {
+	approved_by: string;
+	authorization_level: string;
+	activate?: boolean;
+}
+
+export interface RejectDeviationInput {
+	reason?: string;
+}
+
+export interface DevStatusCounts {
+	pending: number;
+	approved: number;
+	active: number;
+	expired: number;
+	closed: number;
+	rejected: number;
+}
+
+export interface DeviationTypeCounts {
+	temporary: number;
+	permanent: number;
+	emergency: number;
+}
+
+export interface DeviationCategoryCounts {
+	material: number;
+	process: number;
+	equipment: number;
+	tooling: number;
+	specification: number;
+	documentation: number;
+}
+
+export interface DeviationRiskLevelCounts {
+	low: number;
+	medium: number;
+	high: number;
+}
+
+export interface DeviationStats {
+	total: number;
+	by_dev_status: DevStatusCounts;
+	by_type: DeviationTypeCounts;
+	by_category: DeviationCategoryCounts;
+	by_risk: DeviationRiskLevelCounts;
+	active: number;
+}
