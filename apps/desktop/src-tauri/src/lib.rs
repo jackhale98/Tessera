@@ -43,7 +43,9 @@ pub fn run() {
             commands::save_entity,
             commands::get_entity_count,
             commands::get_all_entity_counts,
-            // Requirement commands (stats only - CRUD via generic entities)
+            // Requirement commands
+            commands::list_requirements,
+            commands::get_requirement,
             commands::get_requirement_stats,
             // Risk commands
             commands::list_risks,
@@ -189,6 +191,7 @@ pub fn run() {
             commands::delete_assembly,
             commands::add_assembly_component,
             commands::remove_assembly_component,
+            commands::update_assembly_component_quantity,
             commands::add_subassembly,
             commands::remove_subassembly,
             commands::get_bom_tree,

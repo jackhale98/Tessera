@@ -8,14 +8,16 @@
 	import type { EntityData } from '$lib/api/types';
 	import type { LinkInfo } from '$lib/api/tauri';
 	import {
-		FileSpreadsheet,
+		Receipt,
 		User,
 		Calendar,
 		Tag,
 		FileText,
 		DollarSign,
 		Clock,
-		Building2
+		Building2,
+		Package,
+		TrendingDown
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -27,32 +29,56 @@
 	let linksLoading = $state(true);
 	let error = $state<string | null>(null);
 
+	// Supplier info
+	let supplierName = $state<string | null>(null);
+
+	// Component/Assembly info
+	let linkedItemName = $state<string | null>(null);
+
 	// Track if we've loaded for this ID to prevent double-loads
 	let loadedId = $state<string | null>(null);
 
 	// Type-safe data access
 	const data = $derived(entity?.data ?? {});
-	const supplierId = $derived((data.supplier_id as string) ?? null);
-	const supplierName = $derived((data.supplier_name as string) ?? null);
+	const supplierId = $derived((data.supplier as string) ?? null);
+	const componentId = $derived((data.component as string) ?? null);
+	const assemblyId = $derived((data.assembly as string) ?? null);
 	const description = $derived((data.description as string) ?? '');
-	const quoteNumber = $derived((data.quote_number as string) ?? null);
+	const quoteRef = $derived((data.quote_ref as string) ?? null);
+	const quoteDate = $derived((data.quote_date as string) ?? null);
 	const validUntil = $derived((data.valid_until as string) ?? null);
-	const leadTime = $derived((data.lead_time as string) ?? null);
+	const leadTimeDays = $derived((data.lead_time_days as number) ?? null);
 	const currency = $derived((data.currency as string) ?? 'USD');
-	const revision = $derived((data.revision as number) ?? 1);
+	const moq = $derived((data.moq as number) ?? null);
+	const toolingCost = $derived((data.tooling_cost as number) ?? null);
+	const quoteStatus = $derived((data.quote_status as string) ?? 'pending');
+	const revision = $derived((data.entity_revision as number) ?? 1);
 
-	interface LineItem {
-		description: string;
-		part_number?: string;
-		quantity?: number;
-		unit_price?: number;
-		total_price?: number;
+	interface PriceBreak {
+		min_qty: number;
+		unit_price: number;
+		lead_time_days?: number;
 	}
-	const lineItems = $derived((data.line_items as LineItem[]) ?? []);
+	const priceBreaks = $derived((data.price_breaks as PriceBreak[]) ?? []);
 
-	const totalPrice = $derived(
-		lineItems.reduce((sum, item) => sum + (item.total_price ?? 0), 0)
-	);
+	interface NreCost {
+		description: string;
+		cost: number;
+		one_time?: boolean;
+	}
+	const nreCosts = $derived((data.nre_costs as NreCost[]) ?? []);
+
+	// Calculated values
+	const unitPrice = $derived(() => {
+		if (priceBreaks.length === 0) return null;
+		const sorted = [...priceBreaks].sort((a, b) => a.min_qty - b.min_qty);
+		return sorted[0]?.unit_price ?? null;
+	});
+
+	const totalNre = $derived(() => {
+		const nreSum = nreCosts.reduce((sum, n) => sum + n.cost, 0);
+		return nreSum + (toolingCost ?? 0);
+	});
 
 	async function loadData() {
 		if (!id) return;
@@ -71,6 +97,27 @@
 			entity = entityResult;
 			linksFrom = fromLinks;
 			linksTo = toLinks;
+
+			// Load supplier name
+			if (entityResult?.data?.supplier) {
+				try {
+					const supplier = await entities.get(entityResult.data.supplier as string);
+					supplierName = supplier?.title ?? null;
+				} catch {
+					supplierName = null;
+				}
+			}
+
+			// Load component/assembly name
+			const linkedId = (entityResult?.data?.component as string) ?? (entityResult?.data?.assembly as string);
+			if (linkedId) {
+				try {
+					const linked = await entities.get(linkedId);
+					linkedItemName = linked?.title ?? null;
+				} catch {
+					linkedItemName = null;
+				}
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 			console.error('Failed to load quote:', e);
@@ -99,6 +146,20 @@
 		}).format(amount);
 	}
 
+	function getQuoteStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+		switch (status.toLowerCase()) {
+			case 'accepted':
+				return 'default';
+			case 'received':
+				return 'secondary';
+			case 'rejected':
+			case 'expired':
+				return 'destructive';
+			default:
+				return 'outline';
+		}
+	}
+
 	$effect(() => {
 		// Only load if we have an ID and haven't already loaded this ID
 		if (id && id !== loadedId) {
@@ -125,7 +186,7 @@
 			id={entity.id}
 			title={entity.title}
 			status={entity.status}
-			subtitle={quoteNumber ? `Quote #${quoteNumber}` : 'Supplier Quote'}
+			subtitle={quoteRef ? `Ref: ${quoteRef}` : supplierName ?? 'Supplier Quote'}
 			backHref="/procurement/quotes"
 			backLabel="Quotes"
 			onEdit={() => goto(`/procurement/quotes/${id}/edit`)}
@@ -135,61 +196,105 @@
 			<!-- Main content -->
 			<div class="space-y-6 lg:col-span-2">
 				<!-- Description -->
-				<Card>
-					<CardHeader>
-						<CardTitle class="flex items-center gap-2">
-							<FileText class="h-5 w-5" />
-							Description
-						</CardTitle>
-					</CardHeader>
-					<CardContent>
-						<p class="whitespace-pre-wrap">{description || 'No description specified.'}</p>
-					</CardContent>
-				</Card>
-
-				<!-- Line Items -->
-				{#if lineItems.length > 0}
+				{#if description}
 					<Card>
 						<CardHeader>
 							<CardTitle class="flex items-center gap-2">
-								<FileSpreadsheet class="h-5 w-5" />
-								Line Items ({lineItems.length})
+								<FileText class="h-5 w-5" />
+								Description
 							</CardTitle>
 						</CardHeader>
 						<CardContent>
+							<p class="whitespace-pre-wrap">{description}</p>
+						</CardContent>
+					</Card>
+				{/if}
+
+				<!-- Price Breaks -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<TrendingDown class="h-5 w-5" />
+							Price Breaks ({priceBreaks.length})
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						{#if priceBreaks.length > 0}
 							<div class="overflow-x-auto">
 								<table class="w-full text-sm">
 									<thead>
 										<tr class="border-b">
-											<th class="px-4 py-2 text-left font-medium">Description</th>
-											<th class="px-4 py-2 text-left font-medium">Part #</th>
-											<th class="px-4 py-2 text-right font-medium">Qty</th>
+											<th class="px-4 py-2 text-left font-medium">Min Quantity</th>
 											<th class="px-4 py-2 text-right font-medium">Unit Price</th>
-											<th class="px-4 py-2 text-right font-medium">Total</th>
+											<th class="px-4 py-2 text-right font-medium">Lead Time</th>
 										</tr>
 									</thead>
 									<tbody>
-										{#each lineItems as item}
-											<tr class="border-b">
-												<td class="px-4 py-2">{item.description}</td>
-												<td class="px-4 py-2 font-mono text-xs">{item.part_number ?? '—'}</td>
-												<td class="px-4 py-2 text-right">{item.quantity ?? '—'}</td>
-												<td class="px-4 py-2 text-right">
-													{item.unit_price ? formatCurrency(item.unit_price) : '—'}
+										{#each [...priceBreaks].sort((a, b) => a.min_qty - b.min_qty) as pb, index}
+											<tr class="border-b {index === 0 ? 'bg-green-500/10' : ''}">
+												<td class="px-4 py-3">
+													<span class="font-medium">{pb.min_qty}+</span>
+													{#if index === 0}
+														<Badge variant="outline" class="ml-2 text-xs">Base</Badge>
+													{/if}
 												</td>
-												<td class="px-4 py-2 text-right font-medium">
-													{item.total_price ? formatCurrency(item.total_price) : '—'}
+												<td class="px-4 py-3 text-right">
+													<span class="font-bold text-green-600 dark:text-green-400">
+														{formatCurrency(pb.unit_price)}
+													</span>
+												</td>
+												<td class="px-4 py-3 text-right text-muted-foreground">
+													{#if pb.lead_time_days}
+														{pb.lead_time_days} days
+													{:else if leadTimeDays}
+														{leadTimeDays} days
+													{:else}
+														—
+													{/if}
 												</td>
 											</tr>
 										{/each}
 									</tbody>
-									<tfoot>
-										<tr class="bg-muted/50">
-											<td colspan="4" class="px-4 py-2 text-right font-medium">Total:</td>
-											<td class="px-4 py-2 text-right font-bold">{formatCurrency(totalPrice)}</td>
-										</tr>
-									</tfoot>
 								</table>
+							</div>
+						{:else}
+							<p class="text-muted-foreground">No price breaks defined.</p>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- NRE / Tooling Costs -->
+				{#if totalNre() > 0}
+					<Card>
+						<CardHeader>
+							<CardTitle class="flex items-center gap-2">
+								<DollarSign class="h-5 w-5" />
+								NRE / Tooling Costs
+							</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<div class="space-y-2">
+								{#if toolingCost}
+									<div class="flex justify-between rounded-lg border p-3">
+										<span>Tooling Cost</span>
+										<span class="font-medium">{formatCurrency(toolingCost)}</span>
+									</div>
+								{/if}
+								{#each nreCosts as nre}
+									<div class="flex justify-between rounded-lg border p-3">
+										<span>
+											{nre.description}
+											{#if nre.one_time}
+												<Badge variant="outline" class="ml-2 text-xs">One-time</Badge>
+											{/if}
+										</span>
+										<span class="font-medium">{formatCurrency(nre.cost)}</span>
+									</div>
+								{/each}
+								<div class="flex justify-between rounded-lg bg-muted/50 p-3 font-medium">
+									<span>Total NRE</span>
+									<span>{formatCurrency(totalNre())}</span>
+								</div>
 							</div>
 						</CardContent>
 					</Card>
@@ -205,26 +310,42 @@
 				<Card>
 					<CardHeader>
 						<CardTitle class="flex items-center gap-2">
-							<DollarSign class="h-4 w-4" />
+							<Receipt class="h-4 w-4" />
 							Summary
 						</CardTitle>
 					</CardHeader>
 					<CardContent class="space-y-4">
-						<div class="rounded-lg bg-muted/50 p-4 text-center">
-							<div class="text-sm text-muted-foreground">Total Value</div>
-							<div class="mt-1 text-2xl font-bold">{formatCurrency(totalPrice)}</div>
+						{#if unitPrice() !== null}
+							<div class="rounded-lg bg-muted/50 p-4 text-center">
+								<div class="text-sm text-muted-foreground">Unit Price (qty 1)</div>
+								<div class="mt-1 text-2xl font-bold text-green-600 dark:text-green-400">
+									{formatCurrency(unitPrice()!)}
+								</div>
+							</div>
+						{/if}
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">Quote Status</span>
+							<Badge variant={getQuoteStatusVariant(quoteStatus)} class="capitalize">
+								{quoteStatus}
+							</Badge>
 						</div>
-						{#if lineItems.length > 0}
+						{#if priceBreaks.length > 1}
 							<div class="flex items-center justify-between">
-								<span class="text-sm text-muted-foreground">Line Items</span>
-								<span class="text-sm font-medium">{lineItems.length}</span>
+								<span class="text-sm text-muted-foreground">Price Breaks</span>
+								<span class="text-sm font-medium">{priceBreaks.length}</span>
+							</div>
+						{/if}
+						{#if moq}
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">MOQ</span>
+								<span class="text-sm font-medium">{moq}</span>
 							</div>
 						{/if}
 					</CardContent>
 				</Card>
 
 				<!-- Supplier -->
-				{#if supplierId || supplierName}
+				{#if supplierId}
 					<Card>
 						<CardHeader>
 							<CardTitle class="flex items-center gap-2">
@@ -232,18 +353,39 @@
 								Supplier
 							</CardTitle>
 						</CardHeader>
-						<CardContent class="space-y-4">
+						<CardContent class="space-y-2">
 							{#if supplierName}
 								<div class="font-medium">{supplierName}</div>
 							{/if}
-							{#if supplierId}
-								<button
-									class="font-mono text-xs text-primary hover:underline"
-									onclick={() => goto(`/procurement/suppliers/${supplierId}`)}
-								>
-									{supplierId}
-								</button>
+							<button
+								class="font-mono text-xs text-primary hover:underline"
+								onclick={() => goto(`/procurement/suppliers/${supplierId}`)}
+							>
+								{supplierId}
+							</button>
+						</CardContent>
+					</Card>
+				{/if}
+
+				<!-- Linked Component/Assembly -->
+				{#if componentId || assemblyId}
+					<Card>
+						<CardHeader>
+							<CardTitle class="flex items-center gap-2">
+								<Package class="h-4 w-4" />
+								{componentId ? 'Component' : 'Assembly'}
+							</CardTitle>
+						</CardHeader>
+						<CardContent class="space-y-2">
+							{#if linkedItemName}
+								<div class="font-medium">{linkedItemName}</div>
 							{/if}
+							<button
+								class="font-mono text-xs text-primary hover:underline"
+								onclick={() => goto(componentId ? `/components/${componentId}` : `/assemblies/${assemblyId}`)}
+							>
+								{componentId ?? assemblyId}
+							</button>
 						</CardContent>
 					</Card>
 				{/if}
@@ -254,10 +396,16 @@
 						<CardTitle>Properties</CardTitle>
 					</CardHeader>
 					<CardContent class="space-y-4">
-						{#if quoteNumber}
+						{#if quoteRef}
 							<div class="flex items-center justify-between">
-								<span class="text-sm text-muted-foreground">Quote #</span>
-								<span class="font-mono text-sm">{quoteNumber}</span>
+								<span class="text-sm text-muted-foreground">Quote Ref</span>
+								<span class="font-mono text-sm">{quoteRef}</span>
+							</div>
+						{/if}
+						{#if quoteDate}
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">Quote Date</span>
+								<span class="text-sm font-medium">{formatDate(quoteDate)}</span>
 							</div>
 						{/if}
 						{#if validUntil}
@@ -266,15 +414,19 @@
 								<span class="text-sm font-medium">{formatDate(validUntil)}</span>
 							</div>
 						{/if}
-						{#if leadTime}
+						{#if leadTimeDays}
 							<div class="flex items-center justify-between">
-								<span class="text-sm text-muted-foreground">Lead Time</span>
+								<span class="text-sm text-muted-foreground">Default Lead Time</span>
 								<div class="flex items-center gap-1">
 									<Clock class="h-3 w-3 text-muted-foreground" />
-									<span class="text-sm font-medium">{leadTime}</span>
+									<span class="text-sm font-medium">{leadTimeDays} days</span>
 								</div>
 							</div>
 						{/if}
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">Currency</span>
+							<span class="text-sm font-medium">{currency}</span>
+						</div>
 						<div class="flex items-center justify-between">
 							<span class="text-sm text-muted-foreground">Status</span>
 							<StatusBadge status={entity.status} />

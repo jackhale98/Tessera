@@ -555,6 +555,39 @@ impl<'a> AssemblyService<'a> {
         Ok(assembly)
     }
 
+    /// Update the quantity of a component in an assembly's BOM
+    pub fn update_component_quantity(
+        &self,
+        assembly_id: &str,
+        component_id: &str,
+        quantity: u32,
+    ) -> ServiceResult<Assembly> {
+        if quantity == 0 {
+            return Err(ServiceError::InvalidInput(
+                "Quantity must be greater than 0".to_string(),
+            ));
+        }
+
+        let (path, mut assembly) = self.find_assembly(assembly_id)?;
+
+        let item = assembly
+            .bom
+            .iter_mut()
+            .find(|item| item.component_id == component_id)
+            .ok_or_else(|| {
+                ServiceError::NotFound(format!("Component {} not in BOM", component_id))
+            })?;
+
+        item.quantity = quantity;
+        assembly.entity_revision += 1;
+
+        let yaml =
+            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        fs::write(&path, yaml)?;
+
+        Ok(assembly)
+    }
+
     /// Add a subassembly reference
     pub fn add_subassembly(
         &self,
@@ -631,9 +664,26 @@ impl<'a> AssemblyService<'a> {
     }
 
     /// Get the full BOM tree for an assembly
-    pub fn get_bom_tree(&self, id: &str) -> ServiceResult<BomNode> {
+    ///
+    /// The `assembly_qty` parameter determines how many assemblies are being built,
+    /// which affects price break calculations. For example, if building 100 assemblies,
+    /// each component's effective quantity is multiplied by 100 when looking up price breaks.
+    pub fn get_bom_tree(&self, id: &str, assembly_qty: u32) -> ServiceResult<BomNode> {
         let assembly = self.get_required(id)?;
-        self.build_bom_tree(&assembly, 1, &mut HashSet::new())
+
+        // Load quotes for price lookup (same as calculate_cost_recursive)
+        let quotes_dir = self.quotes_dir();
+        let quotes: Vec<Quote> = if quotes_dir.exists() {
+            loader::load_all(&quotes_dir)?
+        } else {
+            Vec::new()
+        };
+        let quote_map: HashMap<String, &Quote> = quotes
+            .iter()
+            .filter_map(|q| q.component.as_ref().map(|c| (c.clone(), q)))
+            .collect();
+
+        self.build_bom_tree(&assembly, 1, assembly_qty, &quotes, &quote_map, &mut HashSet::new())
     }
 
     /// Calculate total cost for an assembly (recursive)
@@ -928,10 +978,17 @@ impl<'a> AssemblyService<'a> {
     }
 
     /// Build BOM tree recursively
+    ///
+    /// Uses quote price breaks when available, falling back to component unit_cost.
+    /// The `assembly_qty` is used for price break calculations - the effective quantity
+    /// for each component is `item.quantity * assembly_qty`.
     fn build_bom_tree(
         &self,
         assembly: &Assembly,
         quantity: u32,
+        assembly_qty: u32,
+        quotes: &[Quote],
+        quote_map: &HashMap<String, &Quote>,
         visited: &mut HashSet<String>,
     ) -> ServiceResult<BomNode> {
         let asm_id = assembly.id.to_string();
@@ -959,7 +1016,25 @@ impl<'a> AssemblyService<'a> {
         let cmp_dir = self.components_dir();
         for item in &assembly.bom {
             if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)? {
-                let ext_cost = cmp.unit_cost.map(|c| c * item.quantity as f64);
+                // Calculate effective quantity for price break lookup
+                let effective_qty = item.quantity * assembly_qty;
+
+                // Try to get price from quotes (same logic as calculate_cost_recursive)
+                let unit_price = if let Some(quote_id) = &cmp.selected_quote {
+                    // Use selected quote
+                    quotes
+                        .iter()
+                        .find(|q| q.id.to_string() == *quote_id)
+                        .and_then(|q| q.price_for_qty(effective_qty))
+                } else if let Some(quote) = quote_map.get(&item.component_id) {
+                    // Use quote linked to this component
+                    quote.price_for_qty(effective_qty)
+                } else {
+                    // Fall back to component's unit_cost
+                    cmp.unit_cost
+                };
+
+                let ext_cost = unit_price.map(|c| c * item.quantity as f64);
                 let ext_mass = cmp.mass_kg.map(|m| m * item.quantity as f64);
                 children.push(BomNode {
                     id: item.component_id.clone(),
@@ -967,7 +1042,7 @@ impl<'a> AssemblyService<'a> {
                     part_number: cmp.part_number,
                     is_assembly: false,
                     quantity: item.quantity,
-                    unit_cost: cmp.unit_cost,
+                    unit_cost: unit_price,
                     mass_kg: cmp.mass_kg,
                     extended_cost: ext_cost,
                     extended_mass: ext_mass,
@@ -980,7 +1055,7 @@ impl<'a> AssemblyService<'a> {
         for sub_id in &assembly.subassemblies {
             if let Some(sub) = self.get(sub_id)? {
                 // Subassemblies are quantity 1 unless specified otherwise
-                let sub_node = self.build_bom_tree(&sub, 1, visited)?;
+                let sub_node = self.build_bom_tree(&sub, 1, assembly_qty, quotes, quote_map, visited)?;
                 children.push(sub_node);
             }
         }
@@ -1493,13 +1568,16 @@ mod tests {
             .add_component(&asm.id.to_string(), &cmp.id.to_string(), 10)
             .unwrap();
 
-        let tree = service.get_bom_tree(&asm.id.to_string()).unwrap();
+        let tree = service.get_bom_tree(&asm.id.to_string(), 1).unwrap();
 
         assert_eq!(tree.title, "Tree Test");
         assert!(tree.is_assembly);
         assert_eq!(tree.children.len(), 1);
         assert!(!tree.children[0].is_assembly);
         assert_eq!(tree.children[0].quantity, 10);
+        // Check that unit_cost is populated from component
+        assert_eq!(tree.children[0].unit_cost, Some(5.0));
+        assert_eq!(tree.children[0].extended_cost, Some(50.0)); // 10 * 5.0
     }
 
     #[test]

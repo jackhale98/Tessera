@@ -288,7 +288,7 @@ pub async fn save_entity(
     let yaml = serde_yml::to_string(&data)
         .map_err(|e| CommandError::Other(format!("Failed to serialize entity: {}", e)))?;
 
-    let file_path = dir.join(format!("{}.pdt.yaml", id));
+    let file_path = dir.join(format!("{}.tdt.yaml", id));
     std::fs::write(&file_path, yaml)?;
 
     // Sync cache to pick up the new/updated entity

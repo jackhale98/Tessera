@@ -436,3 +436,303 @@ export interface DeviationStats {
 	by_risk: DeviationRiskLevelCounts;
 	active: number;
 }
+
+// ============================================================================
+// Filter Framework Types
+// ============================================================================
+
+/**
+ * Filter field types determine how the filter control is rendered
+ */
+export type FilterFieldType =
+	| 'select' // Single-select dropdown
+	| 'multi-select' // Multi-select with checkboxes
+	| 'text' // Free-text input
+	| 'number' // Numeric input
+	| 'number-range' // Min/max range
+	| 'boolean' // Checkbox/toggle
+	| 'date' // Date picker
+	| 'date-range'; // Date range picker
+
+/**
+ * Option for select/multi-select filters
+ */
+export interface FilterOption {
+	value: string;
+	label: string;
+	count?: number; // Optional count to show next to option
+}
+
+/**
+ * Filter field definition - describes a single filter control
+ */
+export interface FilterFieldDefinition {
+	key: string; // The parameter key sent to backend (e.g., 'status', 'risk_level')
+	label: string; // Display label for the filter
+	type: FilterFieldType;
+	options?: FilterOption[]; // For select/multi-select
+	placeholder?: string; // Placeholder text
+	defaultValue?: unknown; // Default value when filter is reset
+	// Number-specific
+	min?: number;
+	max?: number;
+	step?: number;
+	// Boolean-specific
+	trueLabel?: string;
+	falseLabel?: string;
+}
+
+/**
+ * Current filter value (can be various types depending on field type)
+ */
+export type FilterValue =
+	| string
+	| string[]
+	| number
+	| boolean
+	| null
+	| { min?: number; max?: number }
+	| { start?: string; end?: string };
+
+/**
+ * Active filter state - maps field keys to their current values
+ */
+export interface FilterState {
+	[key: string]: FilterValue;
+}
+
+/**
+ * Filter configuration for an entity type
+ */
+export interface EntityFilterConfig {
+	entityType: EntityPrefix;
+	fields: FilterFieldDefinition[];
+	// Optional quick filters (commonly used filter combinations)
+	quickFilters?: QuickFilter[];
+}
+
+/**
+ * Quick filter - a preset combination of filter values
+ */
+export interface QuickFilter {
+	id: string;
+	label: string;
+	icon?: string;
+	filters: FilterState;
+}
+
+/**
+ * Callback when filters change
+ */
+export type OnFiltersChange = (filters: FilterState) => void;
+
+// ============================================================================
+// Entity-Specific List Parameter Types (for Tauri commands)
+// ============================================================================
+
+export interface ListRequirementsParams {
+	status?: string[];
+	req_type?: string;
+	level?: string;
+	priority?: string;
+	orphans_only?: boolean;
+	unverified_only?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListRisksParams {
+	status?: string[];
+	risk_type?: string;
+	risk_level?: string;
+	min_rpn?: number;
+	max_rpn?: number;
+	unmitigated_only?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListComponentsParams {
+	status?: string[];
+	category?: string;
+	make_buy?: string;
+	has_routing?: boolean;
+	long_lead_only?: boolean;
+	single_source_only?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListAssembliesParams {
+	status?: string[];
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListTestsParams {
+	status?: string[];
+	test_type?: string;
+	level?: string;
+	method?: string;
+	has_results?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListResultsParams {
+	status?: string[];
+	verdict?: string;
+	test_id?: string;
+	with_failures?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListHazardsParams {
+	status?: string[];
+	category?: string;
+	severity?: string;
+	has_risks?: boolean;
+	has_controls?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListFeaturesParams {
+	status?: string[];
+	component?: string;
+	feature_type?: string;
+	has_gdt?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListMatesParams {
+	status?: string[];
+	fit_type?: string;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListStackupsParams {
+	status?: string[];
+	result?: string;
+	critical_only?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListProcessesParams {
+	status?: string[];
+	process_type?: string;
+	has_equipment?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListControlsParams {
+	status?: string[];
+	control_type?: string;
+	control_category?: string;
+	critical_only?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListWorkInstructionsParams {
+	status?: string[];
+	process?: string;
+	has_safety?: boolean;
+	has_quality_checks?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListLotsParams {
+	status?: string[];
+	lot_status?: string;
+	product?: string;
+	active_only?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListNcrsParams {
+	status?: string[];
+	ncr_type?: string;
+	ncr_status?: string;
+	severity?: string;
+	category?: string;
+	mrb_required?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListCapasParams {
+	status?: string[];
+	capa_type?: string;
+	capa_status?: string;
+	overdue_only?: boolean;
+	open_only?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListSuppliersParams {
+	status?: string[];
+	capability?: string;
+	expired_certs?: boolean;
+	certs_expiring_days?: number;
+	currency?: string;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface ListQuotesParams {
+	status?: string[];
+	quote_status?: string;
+	supplier?: string;
+	component?: string;
+	assembly?: string;
+	expired_only?: boolean;
+	has_price_breaks?: boolean;
+	currency?: string;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}

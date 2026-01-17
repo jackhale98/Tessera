@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { afterNavigate } from '$app/navigation';
 	import Sidebar from './Sidebar.svelte';
 	import Header from './Header.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
@@ -8,6 +9,15 @@
 	}
 
 	let { children }: Props = $props();
+
+	let scrollContainer = $state<HTMLElement | null>(null);
+
+	// Reset scroll position to top when navigating between pages
+	afterNavigate(() => {
+		if (scrollContainer) {
+			scrollContainer.scrollTo({ top: 0, left: 0 });
+		}
+	});
 </script>
 
 <div class="flex h-screen w-screen overflow-hidden bg-background">
@@ -21,11 +31,14 @@
 
 		<!-- Page content -->
 		<main class="flex-1 overflow-hidden">
-			<ScrollArea class="h-full" orientation="both">
+			<div
+				bind:this={scrollContainer}
+				class="h-full overflow-auto"
+			>
 				<div class="p-6">
 					{@render children?.()}
 				</div>
-			</ScrollArea>
+			</div>
 		</main>
 	</div>
 </div>

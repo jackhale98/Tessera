@@ -428,6 +428,34 @@ pub async fn remove_assembly_component(
     Ok(assembly)
 }
 
+/// Update the quantity of a component in an assembly's BOM
+#[tauri::command]
+pub async fn update_assembly_component_quantity(
+    assembly_id: String,
+    component_id: String,
+    quantity: u32,
+    state: State<'_, AppState>,
+) -> CommandResult<Assembly> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let assembly = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = AssemblyService::new(project, cache);
+        service.update_component_quantity(&assembly_id, &component_id, quantity)?
+    };
+
+    // Sync cache
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(assembly)
+}
+
 /// Add a subassembly reference
 #[tauri::command]
 pub async fn add_subassembly(
@@ -483,8 +511,11 @@ pub async fn remove_subassembly(
 }
 
 /// Get the full BOM tree for an assembly
+///
+/// The `quantity` parameter determines how many assemblies are being built,
+/// which affects price break calculations. Defaults to 1 if not provided.
 #[tauri::command]
-pub async fn get_bom_tree(id: String, state: State<'_, AppState>) -> CommandResult<BomNode> {
+pub async fn get_bom_tree(id: String, quantity: Option<u32>, state: State<'_, AppState>) -> CommandResult<BomNode> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
 
@@ -492,7 +523,7 @@ pub async fn get_bom_tree(id: String, state: State<'_, AppState>) -> CommandResu
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
     let service = AssemblyService::new(project, cache);
-    let tree = service.get_bom_tree(&id)?;
+    let tree = service.get_bom_tree(&id, quantity.unwrap_or(1))?;
 
     Ok(tree)
 }

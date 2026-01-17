@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '$lib/components/ui';
-	import { EntityDetailHeader, LinksSection, AddFeatureDialog } from '$lib/components/entities';
+	import { EntityDetailHeader, LinksSection, AddFeatureDialog, AddQuoteDialog } from '$lib/components/entities';
 	import { StatusBadge } from '$lib/components/common';
 	import { entities, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
@@ -20,7 +20,8 @@
 		Shield,
 		Factory,
 		CircleDot,
-		Plus
+		Plus,
+		Receipt
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -36,6 +37,23 @@
 	let features = $state<Array<{ id: string; title: string; feature_type: string; status: string }>>([]);
 	let featuresLoading = $state(false);
 	let addFeatureDialogOpen = $state(false);
+
+	// Quotes for this component
+	interface QuoteInfo {
+		id: string;
+		title: string;
+		supplier: string;
+		supplier_name?: string;
+		unit_price?: number;
+		currency?: string;
+		moq?: number;
+		lead_time_days?: number;
+		quote_status: string;
+		status: string;
+	}
+	let quotes = $state<QuoteInfo[]>([]);
+	let quotesLoading = $state(false);
+	let addQuoteDialogOpen = $state(false);
 
 	// Type-safe data access
 	const data = $derived(entity?.data ?? {});
@@ -111,8 +129,9 @@
 			console.log('[Component Detail] Loading complete, loading=', loading);
 		}
 
-		// Load features for this component
+		// Load features and quotes for this component
 		loadFeatures();
+		loadQuotes();
 	}
 
 	async function loadFeatures() {
@@ -137,11 +156,70 @@
 		}
 	}
 
+	async function loadQuotes() {
+		if (!id) return;
+
+		quotesLoading = true;
+		try {
+			// Get all quotes and filter by component ID
+			const result = await entities.list('QUOT', { limit: 100 });
+			const componentQuotes = result.items.filter((q) => q.data?.component === id);
+
+			// Load supplier names for each quote
+			const quotesWithSuppliers = await Promise.all(
+				componentQuotes.map(async (q) => {
+					const supplierId = q.data?.supplier as string;
+					let supplierName = supplierId;
+
+					// Try to get supplier name
+					if (supplierId) {
+						try {
+							const supplier = await entities.get(supplierId);
+							if (supplier) {
+								supplierName = supplier.title;
+							}
+						} catch {
+							// Keep ID as fallback
+						}
+					}
+
+					// Get first price break's unit price if available
+					const priceBreaks = (q.data?.price_breaks as Array<{ min_qty: number; unit_price: number }>) ?? [];
+					const firstPrice = priceBreaks.length > 0 ? priceBreaks[0]?.unit_price : undefined;
+
+					return {
+						id: q.id,
+						title: q.title,
+						supplier: supplierId,
+						supplier_name: supplierName,
+						unit_price: firstPrice,
+						currency: (q.data?.currency as string) ?? 'USD',
+						moq: q.data?.moq as number | undefined,
+						lead_time_days: q.data?.lead_time_days as number | undefined,
+						quote_status: (q.data?.quote_status as string) ?? 'pending',
+						status: q.status
+					};
+				})
+			);
+
+			quotes = quotesWithSuppliers;
+		} catch (e) {
+			console.error('Failed to load quotes:', e);
+		} finally {
+			quotesLoading = false;
+		}
+	}
+
 	function handleFeatureCreated(featureId: string) {
 		// Reload features to show the new one
 		loadFeatures();
 		// Also reload links since we added a link
 		loadData();
+	}
+
+	function handleQuoteCreated(quoteId: string) {
+		// Reload quotes to show the new one
+		loadQuotes();
 	}
 
 	function formatDate(dateStr: string): string {
@@ -331,6 +409,75 @@
 											</div>
 										</div>
 										<Badge variant="outline" class="capitalize">{feature.status}</Badge>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- Quotes -->
+				<Card>
+					<CardHeader>
+						<div class="flex items-center justify-between">
+							<CardTitle class="flex items-center gap-2">
+								<Receipt class="h-5 w-5" />
+								Quotes ({quotes.length})
+							</CardTitle>
+							<Button size="sm" onclick={() => (addQuoteDialogOpen = true)}>
+								<Plus class="mr-1 h-4 w-4" />
+								Add Quote
+							</Button>
+						</div>
+					</CardHeader>
+					<CardContent>
+						{#if quotesLoading}
+							<div class="flex justify-center py-4">
+								<div class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+							</div>
+						{:else if quotes.length === 0}
+							<div class="rounded-lg border border-dashed p-6 text-center">
+								<Receipt class="mx-auto h-8 w-8 text-muted-foreground/50" />
+								<p class="mt-2 text-sm text-muted-foreground">
+									No quotes for this component yet
+								</p>
+								<Button
+									size="sm"
+									variant="outline"
+									class="mt-3"
+									onclick={() => (addQuoteDialogOpen = true)}
+								>
+									<Plus class="mr-1 h-4 w-4" />
+									Add First Quote
+								</Button>
+							</div>
+						{:else}
+							<div class="space-y-2">
+								{#each quotes as quote}
+									<button
+										class="flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+										onclick={() => goto(`/procurement/quotes/${quote.id}`)}
+									>
+										<div class="flex items-center gap-3">
+											<Receipt class="h-4 w-4 text-muted-foreground" />
+											<div>
+												<p class="font-medium">{quote.title}</p>
+												<p class="text-xs text-muted-foreground">
+													{quote.supplier_name ?? quote.supplier}
+													{#if quote.lead_time_days}
+														<span class="ml-2">| {quote.lead_time_days} days</span>
+													{/if}
+												</p>
+											</div>
+										</div>
+										<div class="flex items-center gap-2">
+											{#if quote.unit_price}
+												<span class="font-bold text-green-600">
+													{formatCurrency(quote.unit_price)}
+												</span>
+											{/if}
+											<Badge variant="outline" class="capitalize">{quote.quote_status}</Badge>
+										</div>
 									</button>
 								{/each}
 							</div>
@@ -546,5 +693,16 @@
 		componentTitle={entity.title}
 		onClose={() => (addFeatureDialogOpen = false)}
 		onCreated={handleFeatureCreated}
+	/>
+{/if}
+
+<!-- Add Quote Dialog -->
+{#if entity}
+	<AddQuoteDialog
+		bind:open={addQuoteDialogOpen}
+		componentId={entity.id}
+		componentTitle={entity.title}
+		onClose={() => (addQuoteDialogOpen = false)}
+		onCreated={handleQuoteCreated}
 	/>
 {/if}

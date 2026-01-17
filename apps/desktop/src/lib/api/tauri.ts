@@ -171,9 +171,45 @@ export const entities = {
 };
 
 /**
- * Requirements API (stats only - CRUD via entities)
+ * Requirements API
  */
+export interface ListRequirementsParams {
+	status?: string[];
+	req_type?: string;
+	level?: string;
+	priority?: string;
+	category?: string;
+	orphans_only?: boolean;
+	unverified_only?: boolean;
+	needs_review?: boolean;
+	search?: string;
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+}
+
+export interface RequirementSummary {
+	id: string;
+	title: string;
+	req_type: string;
+	level: string;
+	priority: string;
+	category?: string;
+	status: string;
+	author: string;
+	created: string;
+	tags: string[];
+}
+
+export interface ListRequirementsResult {
+	items: RequirementSummary[];
+	total_count: number;
+}
+
 export const requirements = {
+	list: (params?: ListRequirementsParams) =>
+		call<ListRequirementsResult>('list_requirements', { params }),
+	get: (id: string) => call<unknown>('get_requirement', { id }),
 	getStats: () => call<RequirementStats>('get_requirement_stats')
 };
 
@@ -188,6 +224,7 @@ export interface ListRisksParams {
 	search?: string;
 	tags?: string[];
 	min_rpn?: number;
+	unmitigated_only?: boolean;
 	limit?: number;
 	offset?: number;
 	sort_by?: string;
@@ -296,6 +333,103 @@ export const components = {
 	delete: (id: string) => call<void>('delete_component', { id }),
 	getStats: () => call<ComponentStats>('get_component_stats'),
 	getBomCostSummary: () => call<BomCostSummary>('get_bom_cost_summary')
+};
+
+/**
+ * Assemblies API (specialized commands + CRUD)
+ */
+export interface ListAssembliesParams {
+	status?: string[];
+	part_number?: string;
+	empty_bom?: boolean;
+	has_subassemblies?: boolean;
+	top_level_only?: boolean;
+	sub_only?: boolean;
+	search?: string;
+	tags?: string[];
+	sort_by?: string;
+	sort_desc?: boolean;
+	limit?: number;
+	offset?: number;
+}
+
+export interface AssemblySummary {
+	id: string;
+	part_number: string;
+	title: string;
+	bom_count: number;
+	subassembly_count: number;
+	status: string;
+	author: string;
+	created: string;
+}
+
+export interface ListAssembliesResult {
+	items: AssemblySummary[];
+	total_count: number;
+	has_more: boolean;
+}
+
+export interface AssemblyStats {
+	total: number;
+	top_level: number;
+	sub_assemblies: number;
+	empty_bom: number;
+	total_bom_items: number;
+	by_status: {
+		draft: number;
+		review: number;
+		approved: number;
+		released: number;
+		obsolete: number;
+	};
+}
+
+export interface BomNode {
+	id: string;
+	title: string;
+	part_number: string;
+	is_assembly: boolean;
+	quantity: number;
+	unit_cost?: number;
+	mass_kg?: number;
+	extended_cost?: number;
+	extended_mass?: number;
+	children: BomNode[];
+}
+
+export interface BomCostResult {
+	total_cost: number;
+	total_nre: number;
+	components_with_cost: number;
+	components_without_cost: number;
+	missing_cost: string[];
+}
+
+export interface BomMassResult {
+	total_mass_kg: number;
+	components_with_mass: number;
+	components_without_mass: number;
+	missing_mass: string[];
+}
+
+export const assemblies = {
+	list: (params?: ListAssembliesParams) => call<ListAssembliesResult>('list_assemblies', { params }),
+	get: (id: string) => call<unknown>('get_assembly', { id }),
+	getByPartNumber: (partNumber: string) =>
+		call<unknown>('get_assembly_by_part_number', { part_number: partNumber }),
+	getStats: () => call<AssemblyStats>('get_assembly_stats'),
+	getBomTree: (id: string, quantity?: number) => call<BomNode>('get_bom_tree', { id, quantity }),
+	calculateCost: (id: string, quantity?: number) =>
+		call<BomCostResult>('calculate_assembly_cost', { id, quantity }),
+	calculateMass: (id: string, quantity?: number) =>
+		call<BomMassResult>('calculate_assembly_mass', { id, quantity }),
+	addComponent: (assemblyId: string, componentId: string, quantity: number) =>
+		call<unknown>('add_assembly_component', { assembly_id: assemblyId, component_id: componentId, quantity }),
+	removeComponent: (assemblyId: string, componentId: string) =>
+		call<unknown>('remove_assembly_component', { assembly_id: assemblyId, component_id: componentId }),
+	updateComponentQuantity: (assemblyId: string, componentId: string, quantity: number) =>
+		call<unknown>('update_assembly_component_quantity', { assembly_id: assemblyId, component_id: componentId, quantity })
 };
 
 /**
@@ -472,6 +606,7 @@ export const api = {
 	requirements,
 	risks,
 	components,
+	assemblies,
 	deviations,
 	traceability
 };
