@@ -102,7 +102,8 @@
 		}
 	}
 
-	function getControlTypeLabel(type: string): string {
+	function getControlTypeLabel(type: string | undefined | null): string {
+		if (!type) return 'Unknown';
 		const labels: Record<string, string> = {
 			spc: 'SPC',
 			inspection: 'Inspection',
@@ -116,7 +117,8 @@
 		return labels[type.toLowerCase()] ?? type;
 	}
 
-	function getSamplingTypeLabel(type: string): string {
+	function getSamplingTypeLabel(type: string | undefined | null): string {
+		if (!type) return 'Unknown';
 		const labels: Record<string, string> = {
 			continuous: 'Continuous',
 			periodic: 'Periodic',

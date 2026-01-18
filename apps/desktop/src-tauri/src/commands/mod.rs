@@ -17,10 +17,12 @@ pub mod quotes;
 pub mod requirements;
 pub mod results;
 pub mod risks;
+pub mod settings;
 pub mod stackups;
 pub mod suppliers;
 pub mod tests;
 pub mod traceability;
+pub mod version_control;
 pub mod work_instructions;
 
 // Re-export all commands for registration
@@ -41,8 +43,10 @@ pub use quotes::*;
 pub use requirements::*;
 pub use results::*;
 pub use risks::*;
+pub use settings::*;
 pub use stackups::*;
 pub use suppliers::*;
 pub use tests::*;
 pub use traceability::*;
+pub use version_control::*;
 pub use work_instructions::*;

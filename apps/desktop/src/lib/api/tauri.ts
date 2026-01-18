@@ -859,6 +859,225 @@ export const lots = {
 };
 
 /**
+ * Settings API - Config and Team Roster Management
+ */
+export interface GeneralSettings {
+	author: string | null;
+	editor: string | null;
+	pager: string | null;
+	default_format: string | null;
+}
+
+export interface WorkflowSettings {
+	enabled: boolean;
+	provider: string;
+	require_branch: boolean;
+	auto_commit: boolean;
+	auto_merge: boolean;
+	base_branch: string;
+	branch_pattern: string;
+	submit_message: string;
+	approve_message: string;
+}
+
+export interface ManufacturingSettings {
+	lot_branch_enabled: boolean;
+	base_branch: string | null;
+	branch_pattern: string | null;
+	create_tags: boolean;
+	sign_commits: boolean;
+}
+
+export interface ConfigPaths {
+	global_config: string | null;
+	project_config: string | null;
+}
+
+export interface AllSettings {
+	general: GeneralSettings;
+	workflow: WorkflowSettings;
+	manufacturing: ManufacturingSettings;
+	config_paths: ConfigPaths;
+}
+
+export interface TeamMemberDto {
+	name: string;
+	email: string;
+	username: string;
+	roles: string[];
+	active: boolean;
+	signing_format: string | null;
+}
+
+export interface TeamRosterDto {
+	version: number;
+	members: TeamMemberDto[];
+	approval_matrix: Record<string, string[]>;
+}
+
+export interface EntityPrefixInfo {
+	prefix: string;
+	name: string;
+}
+
+export interface GitUserInfo {
+	name: string | null;
+	email: string | null;
+}
+
+// ============================================================================
+// Version Control Types
+// ============================================================================
+
+export interface GitStatusInfo {
+	current_branch: string;
+	is_clean: boolean;
+	is_main_branch: boolean;
+	uncommitted_files: UncommittedFile[];
+	is_repo: boolean;
+}
+
+export interface UncommittedFile {
+	path: string;
+	status: string; // "modified", "added", "deleted", "untracked", "renamed"
+	entity_id: string | null;
+	entity_title: string | null;
+}
+
+export interface VcGitUserInfo {
+	name: string | null;
+	email: string | null;
+	signing_key: string | null;
+	signing_configured: boolean;
+}
+
+export interface GitCommitInfo {
+	hash: string;
+	short_hash: string;
+	message: string;
+	author: string;
+	author_email: string | null;
+	date: string;
+	is_signed: boolean;
+}
+
+export interface WorkflowHistory {
+	entity_id: string;
+	title: string;
+	current_status: string;
+	revision: number | null;
+	events: WorkflowEvent[];
+	tags: string[];
+}
+
+export interface WorkflowEvent {
+	event_type: string; // "created", "approved", "released", "rejected"
+	actor: string;
+	timestamp: string;
+	role: string | null;
+	comment: string | null;
+	signature_verified: boolean | null;
+}
+
+export interface BranchInfo {
+	name: string;
+	is_current: boolean;
+	is_remote: boolean;
+	last_commit: string | null;
+	last_message: string | null;
+}
+
+export interface TagInfo {
+	name: string;
+	message: string | null;
+	tagger: string | null;
+	date: string | null;
+	commit: string | null;
+}
+
+export interface CommitResult {
+	hash: string;
+	message: string;
+	files_changed: number;
+}
+
+export interface PushResult {
+	branch: string;
+	upstream_set: boolean;
+}
+
+export const versionControl = {
+	// Git status
+	getStatus: () => call<GitStatusInfo>('get_git_status'),
+	getUser: () => call<VcGitUserInfo>('get_vc_git_user'),
+
+	// Entity history
+	getEntityHistory: (id: string, limit?: number) =>
+		call<GitCommitInfo[]>('get_entity_history', { id, limit }),
+	getEntityWorkflowHistory: (id: string) =>
+		call<WorkflowHistory>('get_entity_workflow_history', { id }),
+	getEntityDiff: (id: string, commitHash: string) =>
+		call<string>('get_entity_file_diff', { id, commitHash }),
+
+	// Branches
+	listBranches: () => call<BranchInfo[]>('list_git_branches'),
+	checkoutBranch: (branch: string) => call<void>('checkout_git_branch', { branch }),
+	createBranch: (name: string, checkout: boolean) =>
+		call<void>('create_git_branch', { name, checkout }),
+
+	// Tags
+	listTags: (pattern?: string) => call<TagInfo[]>('list_git_tags', { pattern }),
+
+	// Commit operations
+	stageFiles: (paths: string[]) => call<void>('stage_files', { paths }),
+	stageEntity: (id: string) => call<void>('stage_entity', { id }),
+	commit: (message: string, sign: boolean) =>
+		call<CommitResult>('commit_changes', { message, sign }),
+	push: (branch?: string, setUpstream?: boolean) =>
+		call<PushResult>('push_changes', { branch, setUpstream }),
+	pull: () => call<void>('pull_changes'),
+	fetch: () => call<void>('fetch_changes'),
+
+	// Recent commits
+	getRecentCommits: (limit?: number) => call<GitCommitInfo[]>('get_recent_commits', { limit })
+};
+
+export const settings = {
+	// Config settings
+	getAll: () => call<AllSettings>('get_all_settings'),
+	getGeneral: () => call<GeneralSettings>('get_general_settings'),
+	getWorkflow: () => call<WorkflowSettings>('get_workflow_settings'),
+	getManufacturing: () => call<ManufacturingSettings>('get_manufacturing_settings'),
+	saveGeneral: (settings: GeneralSettings, saveToGlobal: boolean) =>
+		call<void>('save_general_settings', { settings, saveToGlobal }),
+	saveWorkflow: (settings: WorkflowSettings) =>
+		call<void>('save_workflow_settings', { settings }),
+	saveManufacturing: (settings: ManufacturingSettings) =>
+		call<void>('save_manufacturing_settings', { settings }),
+
+	// Team roster
+	getTeamRoster: () => call<TeamRosterDto | null>('get_team_roster'),
+	saveTeamRoster: (roster: TeamRosterDto) => call<void>('save_team_roster', { roster }),
+	initTeamRoster: () => call<TeamRosterDto>('init_team_roster'),
+	addTeamMember: (member: TeamMemberDto) => call<TeamRosterDto>('add_team_member', { member }),
+	updateTeamMember: (username: string, member: TeamMemberDto) =>
+		call<TeamRosterDto>('update_team_member', { username, member }),
+	removeTeamMember: (username: string) => call<TeamRosterDto>('remove_team_member', { username }),
+	setTeamMemberActive: (username: string, active: boolean) =>
+		call<TeamRosterDto>('set_team_member_active', { username, active }),
+	updateApprovalMatrix: (entityPrefix: string, roles: string[]) =>
+		call<TeamRosterDto>('update_approval_matrix', { entityPrefix, roles }),
+	removeApprovalMatrixEntry: (entityPrefix: string) =>
+		call<TeamRosterDto>('remove_approval_matrix_entry', { entityPrefix }),
+
+	// Helpers
+	getAvailableRoles: () => call<string[]>('get_available_roles'),
+	getAvailableSigningFormats: () => call<string[]>('get_available_signing_formats'),
+	getEntityPrefixesForApproval: () => call<EntityPrefixInfo[]>('get_entity_prefixes_for_approval'),
+	getCurrentGitUser: () => call<GitUserInfo>('get_current_git_user')
+};
+
+/**
  * Combined API namespace
  */
 export const api = {
@@ -872,7 +1091,9 @@ export const api = {
 	ncrs,
 	capas,
 	lots,
-	traceability
+	traceability,
+	settings,
+	versionControl
 };
 
 export default api;

@@ -4,6 +4,7 @@
 	import { Card, CardContent, CardHeader, CardTitle, Badge } from '$lib/components/ui';
 	import { EntityDetailHeader, LinksSection } from '$lib/components/entities';
 	import { StatusBadge, PriorityBadge } from '$lib/components/common';
+	import EntityHistory from '$lib/components/EntityHistory.svelte';
 	import { entities, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
 	import type { LinkInfo } from '$lib/api/tauri';
@@ -15,7 +16,8 @@
 		CheckCircle2,
 		FileQuestion,
 		Layers,
-		BookOpen
+		BookOpen,
+		History
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -212,6 +214,19 @@
 
 				<!-- Links -->
 				<LinksSection {linksFrom} {linksTo} loading={linksLoading} />
+
+				<!-- History -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<History class="h-5 w-5" />
+							History
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<EntityHistory entityId={entity.id} />
+					</CardContent>
+				</Card>
 			</div>
 
 			<!-- Sidebar -->
