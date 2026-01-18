@@ -1593,6 +1593,10 @@ fn run_cost(args: CostArgs) -> Result<()> {
 
     if include_nre && total_nre > 0.0 {
         println!("{} ${:.2}", style("Total NRE:").bold(), total_nre);
+
+        // Total cost = (piece cost × qty) + NRE (one-time)
+        let total_with_nre = total_run_cost + total_nre;
+
         if let Some(amort_qty) = args.amortize {
             println!(
                 "{} ${:.4} (NRE / {} units)",
@@ -1606,18 +1610,24 @@ fn run_cost(args: CostArgs) -> Result<()> {
                 style("Effective Unit Cost:").green().bold(),
                 effective_unit
             );
-            // Show total run cost including amortized NRE
-            let total_with_nre = (effective_unit * production_qty as f64) + total_nre;
-            if production_qty > 1 {
-                println!(
-                    "{} ${:.2} ({} units × ${:.4} + ${:.2} NRE)",
-                    style("Total Run Cost:").green().bold(),
-                    total_with_nre,
-                    production_qty,
-                    effective_unit,
-                    total_nre
-                );
-            }
+        }
+
+        // Always show the combined total when there's NRE
+        if production_qty > 1 {
+            println!(
+                "{} ${:.2} ({} units × ${:.2} + ${:.2} NRE)",
+                style("Total Cost:").green().bold(),
+                total_with_nre,
+                production_qty,
+                total_piece_cost,
+                total_nre
+            );
+        } else {
+            println!(
+                "{} ${:.2} (piece + NRE)",
+                style("Total Cost:").green().bold(),
+                total_with_nre
+            );
         }
     } else if production_qty > 1 {
         // Show both piece cost and total run cost when qty > 1
