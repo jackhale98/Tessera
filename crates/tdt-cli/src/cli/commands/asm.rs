@@ -954,10 +954,15 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
                     item.reference_designators.join(", ")
                 };
 
+                // Use short ID if available, otherwise truncate the full ID
+                let cmp_display = short_ids
+                    .get_short_id(&item.component_id)
+                    .unwrap_or_else(|| truncate_str(&item.component_id, 13).to_string());
+
                 println!(
                     "{:<6} {:<15} {:<12} {:<30} {:<20}",
                     item.quantity,
-                    truncate_str(&item.component_id, 13),
+                    cmp_display,
                     truncate_str(part_number, 10),
                     truncate_str(title, 28),
                     truncate_str(&refs, 18)
@@ -968,7 +973,10 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
                 println!();
                 println!("{}", style("Sub-assemblies:").bold());
                 for sub_id in &assembly.subassemblies {
-                    println!("  - {}", sub_id);
+                    let sub_display = short_ids
+                        .get_short_id(sub_id)
+                        .unwrap_or_else(|| sub_id.clone());
+                    println!("  - {}", sub_display);
                 }
             }
 
@@ -1580,6 +1588,9 @@ fn run_cost(args: CostArgs) -> Result<()> {
     // Cost summary
     println!("{} ${:.2}", style("Piece Cost:").bold(), total_piece_cost);
 
+    // Calculate total cost (piece cost × production quantity)
+    let total_run_cost = total_piece_cost * production_qty as f64;
+
     if include_nre && total_nre > 0.0 {
         println!("{} ${:.2}", style("Total NRE:").bold(), total_nre);
         if let Some(amort_qty) = args.amortize {
@@ -1595,7 +1606,28 @@ fn run_cost(args: CostArgs) -> Result<()> {
                 style("Effective Unit Cost:").green().bold(),
                 effective_unit
             );
+            // Show total run cost including amortized NRE
+            let total_with_nre = (effective_unit * production_qty as f64) + total_nre;
+            if production_qty > 1 {
+                println!(
+                    "{} ${:.2} ({} units × ${:.4} + ${:.2} NRE)",
+                    style("Total Run Cost:").green().bold(),
+                    total_with_nre,
+                    production_qty,
+                    effective_unit,
+                    total_nre
+                );
+            }
         }
+    } else if production_qty > 1 {
+        // Show both piece cost and total run cost when qty > 1
+        println!(
+            "{} ${:.2} ({} units × ${:.2})",
+            style("Total Cost:").green().bold(),
+            total_run_cost,
+            production_qty,
+            total_piece_cost
+        );
     } else {
         println!(
             "{} ${:.2}",
