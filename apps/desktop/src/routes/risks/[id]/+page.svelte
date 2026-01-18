@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { Card, CardContent, CardHeader, CardTitle, Badge } from '$lib/components/ui';
+	import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '$lib/components/ui';
 	import { EntityDetailHeader, LinksSection } from '$lib/components/entities';
 	import { StatusBadge } from '$lib/components/common';
+	import EntityHistory from '$lib/components/EntityHistory.svelte';
 	import { entities, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
 	import type { LinkInfo } from '$lib/api/tauri';
@@ -18,7 +19,11 @@
 		Activity,
 		CheckCircle2,
 		Clock,
-		BarChart3
+		BarChart3,
+		Plus,
+		Link2,
+		Pencil,
+		History
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -52,7 +57,9 @@
 		owner?: string;
 		due_date?: string;
 	}
-	const mitigations = $derived((data.mitigations as Mitigation[]) ?? []);
+	const rawMitigations = $derived((data.mitigations as Mitigation[]) ?? []);
+	// Filter out empty mitigations (placeholders with no action)
+	const mitigations = $derived(rawMitigations.filter(m => m.action && m.action.trim().length > 0));
 
 	interface InitialRisk {
 		severity?: number;
@@ -84,6 +91,26 @@
 			console.error('Failed to load risk:', e);
 		} finally {
 			loading = false;
+			linksLoading = false;
+		}
+	}
+
+	// Separate function to refresh just links (used after adding/removing links)
+	async function refreshLinks() {
+		if (!id) return;
+
+		linksLoading = true;
+
+		try {
+			const [fromLinks, toLinks] = await Promise.all([
+				traceability.getLinksFrom(id),
+				traceability.getLinksTo(id)
+			]);
+			linksFrom = fromLinks;
+			linksTo = toLinks;
+		} catch (e) {
+			console.error('Failed to refresh links:', e);
+		} finally {
 			linksLoading = false;
 		}
 	}
@@ -220,55 +247,103 @@
 							</div>
 						{/if}
 
-						<!-- RPN Breakdown -->
-						<div class="mt-6 grid gap-4 sm:grid-cols-4">
-							<div class="rounded-lg border p-4 text-center">
-								<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
-									<Target class="h-4 w-4" />
-									Severity
-								</div>
-								<div class="mt-1 text-2xl font-bold">{severity ?? '—'}</div>
-							</div>
-							<div class="rounded-lg border p-4 text-center">
-								<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
-									<Activity class="h-4 w-4" />
-									Occurrence
-								</div>
-								<div class="mt-1 text-2xl font-bold">{occurrence ?? '—'}</div>
-							</div>
-							<div class="rounded-lg border p-4 text-center">
-								<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
-									<Eye class="h-4 w-4" />
-									Detection
-								</div>
-								<div class="mt-1 text-2xl font-bold">{detection ?? '—'}</div>
-							</div>
-							<div class="rounded-lg border p-4 text-center">
-								<div class="text-sm text-muted-foreground">RPN</div>
-								<div class={`mt-1 text-2xl font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
-							</div>
-						</div>
-
-						<!-- Initial Risk comparison -->
+						<!-- Risk Ratings Section -->
 						{#if initialRisk && (initialRisk.severity || initialRisk.occurrence || initialRisk.detection)}
-							<div class="mt-4 rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-medium">Initial Risk (Before Mitigation)</h4>
-								<div class="grid gap-4 text-sm sm:grid-cols-4">
-									<div>
-										<span class="text-muted-foreground">Severity:</span>
-										<span class="ml-2 font-medium">{initialRisk.severity ?? '—'}</span>
+							<!-- Show both initial and residual when initial data exists -->
+							<div class="mt-6 space-y-4">
+								<!-- Initial Risk (Before Mitigation) -->
+								<div class="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30 p-4">
+									<h4 class="mb-3 text-sm font-semibold flex items-center gap-2">
+										<AlertTriangle class="h-4 w-4 text-orange-500" />
+										Initial Risk (Before Mitigation)
+									</h4>
+									<div class="grid gap-4 sm:grid-cols-4">
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Severity</div>
+											<div class="text-xl font-bold">{initialRisk.severity ?? '—'}</div>
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Occurrence</div>
+											<div class="text-xl font-bold">{initialRisk.occurrence ?? '—'}</div>
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Detection</div>
+											<div class="text-xl font-bold">{initialRisk.detection ?? '—'}</div>
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">RPN</div>
+											<div class="text-xl font-bold text-orange-600">{initialRisk.rpn ?? '—'}</div>
+										</div>
 									</div>
-									<div>
-										<span class="text-muted-foreground">Occurrence:</span>
-										<span class="ml-2 font-medium">{initialRisk.occurrence ?? '—'}</span>
+								</div>
+
+								<!-- Residual Risk (After Mitigation) -->
+								<div class="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30 p-4">
+									<h4 class="mb-3 text-sm font-semibold flex items-center gap-2">
+										<CheckCircle2 class="h-4 w-4 text-green-500" />
+										Residual Risk (After Mitigation)
+									</h4>
+									<div class="grid gap-4 sm:grid-cols-4">
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Severity</div>
+											<div class="text-xl font-bold">{severity ?? '—'}</div>
+											{#if initialRisk.severity && severity && severity < initialRisk.severity}
+												<div class="text-xs text-green-600">-{initialRisk.severity - severity}</div>
+											{/if}
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Occurrence</div>
+											<div class="text-xl font-bold">{occurrence ?? '—'}</div>
+											{#if initialRisk.occurrence && occurrence && occurrence < initialRisk.occurrence}
+												<div class="text-xs text-green-600">-{initialRisk.occurrence - occurrence}</div>
+											{/if}
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Detection</div>
+											<div class="text-xl font-bold">{detection ?? '—'}</div>
+											{#if initialRisk.detection && detection && detection < initialRisk.detection}
+												<div class="text-xs text-green-600">-{initialRisk.detection - detection}</div>
+											{/if}
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">RPN</div>
+											<div class={`text-xl font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
+											{#if initialRisk.rpn && rpn && rpn < initialRisk.rpn}
+												<div class="text-xs text-green-600">-{initialRisk.rpn - rpn} ({Math.round((1 - rpn / initialRisk.rpn) * 100)}% reduction)</div>
+											{/if}
+										</div>
 									</div>
-									<div>
-										<span class="text-muted-foreground">Detection:</span>
-										<span class="ml-2 font-medium">{initialRisk.detection ?? '—'}</span>
+								</div>
+							</div>
+						{:else}
+							<!-- Show current risk only when no initial data -->
+							<div class="mt-6">
+								<h4 class="mb-3 text-sm font-medium text-muted-foreground">Current Risk Rating</h4>
+								<div class="grid gap-4 sm:grid-cols-4">
+									<div class="rounded-lg border p-4 text-center">
+										<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
+											<Target class="h-4 w-4" />
+											Severity
+										</div>
+										<div class="mt-1 text-2xl font-bold">{severity ?? '—'}</div>
 									</div>
-									<div>
-										<span class="text-muted-foreground">RPN:</span>
-										<span class="ml-2 font-medium">{initialRisk.rpn ?? '—'}</span>
+									<div class="rounded-lg border p-4 text-center">
+										<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
+											<Activity class="h-4 w-4" />
+											Occurrence
+										</div>
+										<div class="mt-1 text-2xl font-bold">{occurrence ?? '—'}</div>
+									</div>
+									<div class="rounded-lg border p-4 text-center">
+										<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
+											<Eye class="h-4 w-4" />
+											Detection
+										</div>
+										<div class="mt-1 text-2xl font-bold">{detection ?? '—'}</div>
+									</div>
+									<div class="rounded-lg border p-4 text-center">
+										<div class="text-sm text-muted-foreground">RPN</div>
+										<div class={`mt-1 text-2xl font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
 									</div>
 								</div>
 							</div>
@@ -276,16 +351,29 @@
 					</CardContent>
 				</Card>
 
-				<!-- Mitigations -->
-				{#if mitigations.length > 0}
-					<Card>
-						<CardHeader>
-							<CardTitle class="flex items-center gap-2">
-								<Shield class="h-5 w-5" />
-								Mitigations ({mitigations.length})
-							</CardTitle>
-						</CardHeader>
-						<CardContent>
+				<!-- Mitigations / Controls -->
+				<Card>
+					<CardHeader class="flex flex-row items-center justify-between">
+						<CardTitle class="flex items-center gap-2">
+							<Shield class="h-5 w-5" />
+							Mitigations & Controls
+							{#if mitigations.length > 0}
+								<Badge variant="secondary">{mitigations.length}</Badge>
+							{/if}
+						</CardTitle>
+						<div class="flex items-center gap-2">
+							<Button variant="outline" size="sm" onclick={() => goto(`/risks/${id}/edit`)}>
+								<Pencil class="h-4 w-4 mr-1" />
+								Edit Mitigations
+							</Button>
+							<Button variant="outline" size="sm" onclick={() => goto('/controls/new')}>
+								<Plus class="h-4 w-4 mr-1" />
+								New Control
+							</Button>
+						</div>
+					</CardHeader>
+					<CardContent>
+						{#if mitigations.length > 0}
 							<div class="space-y-4">
 								{#each mitigations as mitigation, i}
 									<div class="rounded-lg border p-4">
@@ -326,12 +414,52 @@
 									</div>
 								{/each}
 							</div>
-						</CardContent>
-					</Card>
-				{/if}
+						{:else}
+							<div class="flex flex-col items-center justify-center py-8 text-center">
+								<Shield class="h-12 w-12 text-muted-foreground/30 mb-3" />
+								<p class="text-sm text-muted-foreground">No mitigations defined</p>
+								<p class="text-xs text-muted-foreground/70 mt-1 mb-4">
+									Add mitigations to reduce risk severity, occurrence, or improve detection
+								</p>
+								<div class="flex gap-2">
+									<Button variant="outline" size="sm" onclick={() => goto(`/risks/${id}/edit`)}>
+										<Pencil class="h-4 w-4 mr-1" />
+										Add Mitigation
+									</Button>
+									<Button variant="outline" size="sm" onclick={() => goto('/controls/new')}>
+										<Plus class="h-4 w-4 mr-1" />
+										Create Control
+									</Button>
+								</div>
+								<p class="text-xs text-muted-foreground/70 mt-3">
+									Use "Add Link" below to link existing controls to this risk
+								</p>
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
 
 				<!-- Links -->
-				<LinksSection {linksFrom} {linksTo} loading={linksLoading} />
+				<LinksSection
+					{linksFrom}
+					{linksTo}
+					loading={linksLoading}
+					entityId={entity?.id}
+					onLinksChanged={refreshLinks}
+				/>
+
+				<!-- History -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<History class="h-5 w-5" />
+							History
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<EntityHistory entityId={entity?.id} />
+					</CardContent>
+				</Card>
 			</div>
 
 			<!-- Sidebar -->

@@ -19,7 +19,7 @@
 	} from 'lucide-svelte';
 
 	interface Props {
-		entityId: string;
+		entityId?: string;
 		class?: string;
 	}
 
@@ -40,6 +40,11 @@
 	});
 
 	async function loadHistory() {
+		if (!entityId) {
+			loading = false;
+			return;
+		}
+
 		loading = true;
 		error = null;
 
@@ -67,7 +72,7 @@
 			expandedCommits = new Set(expandedCommits);
 
 			// Load diff if not already loaded
-			if (!commitDiffs.has(hash)) {
+			if (!commitDiffs.has(hash) && entityId) {
 				loadingDiffs.add(hash);
 				loadingDiffs = new Set(loadingDiffs);
 

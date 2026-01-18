@@ -7,6 +7,7 @@
 	import { deviations, traceability } from '$lib/api/tauri';
 	import type { LinkInfo } from '$lib/api/tauri';
 	import { projectAuthor } from '$lib/stores/project';
+	import EntityHistory from '$lib/components/EntityHistory.svelte';
 	import {
 		AlertTriangle,
 		User,
@@ -19,7 +20,8 @@
 		Clock,
 		ShieldAlert,
 		Play,
-		Ban
+		Ban,
+		History
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -225,6 +227,24 @@
 		}
 	});
 
+	// Separate function to refresh just links (used after adding/removing links)
+	async function refreshLinks() {
+		if (!id) return;
+		linksLoading = true;
+		try {
+			const [fromLinks, toLinks] = await Promise.all([
+				traceability.getLinksFrom(id),
+				traceability.getLinksTo(id)
+			]);
+			linksFrom = fromLinks;
+			linksTo = toLinks;
+		} catch (e) {
+			console.error('Failed to refresh links:', e);
+		} finally {
+			linksLoading = false;
+		}
+	}
+
 	$effect(() => {
 		if (id && id !== loadedId) {
 			loadedId = id;
@@ -381,7 +401,26 @@
 				{/if}
 
 				<!-- Links -->
-				<LinksSection {linksFrom} {linksTo} loading={linksLoading} />
+				<LinksSection
+					{linksFrom}
+					{linksTo}
+					loading={linksLoading}
+					entityId={id}
+					onLinksChanged={refreshLinks}
+				/>
+
+				<!-- History -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<History class="h-5 w-5" />
+							History
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<EntityHistory entityId={id} />
+					</CardContent>
+				</Card>
 			</div>
 
 			<!-- Sidebar -->

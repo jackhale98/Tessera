@@ -20,6 +20,11 @@ export type {
 	BranchInfo,
 	TagInfo,
 	CommitResult,
-	PushResult
+	PushResult,
+	// DMM types
+	DmmEntity,
+	DmmLink,
+	DmmCoverage,
+	DmmResult
 } from './tauri.js';
 export { default } from './tauri.js';

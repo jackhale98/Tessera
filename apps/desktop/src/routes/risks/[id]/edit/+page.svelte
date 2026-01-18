@@ -40,6 +40,11 @@
 	let failureMode = $state('');
 	let cause = $state('');
 	let riskEffect = $state('');
+	// Initial (pre-mitigation) risk values
+	let initialSeverity = $state<number | null>(null);
+	let initialOccurrence = $state<number | null>(null);
+	let initialDetection = $state<number | null>(null);
+	// Residual (post-mitigation) risk values
 	let severity = $state<number | null>(null);
 	let occurrence = $state<number | null>(null);
 	let detection = $state<number | null>(null);
@@ -48,8 +53,22 @@
 	let newTag = $state('');
 	let mitigations = $state<Mitigation[]>([]);
 
+	const initialRpn = $derived(
+		initialSeverity && initialOccurrence && initialDetection
+			? initialSeverity * initialOccurrence * initialDetection
+			: null
+	);
+
 	const rpn = $derived(
 		severity && occurrence && detection ? severity * occurrence * detection : null
+	);
+
+	const rpnReduction = $derived(
+		initialRpn && rpn ? initialRpn - rpn : null
+	);
+
+	const rpnReductionPct = $derived(
+		initialRpn && rpn && initialRpn > 0 ? Math.round((1 - rpn / initialRpn) * 100) : null
 	);
 
 	async function loadData() {
@@ -71,6 +90,14 @@
 				failureMode = (data.failure_mode as string) ?? '';
 				cause = (data.cause as string) ?? '';
 				riskEffect = (data.effect as string) ?? '';
+				// Load initial (pre-mitigation) risk values
+				const initialRiskData = data.initial_risk as Record<string, unknown> | undefined;
+				if (initialRiskData) {
+					initialSeverity = (initialRiskData.severity as number) ?? null;
+					initialOccurrence = (initialRiskData.occurrence as number) ?? null;
+					initialDetection = (initialRiskData.detection as number) ?? null;
+				}
+				// Load residual (post-mitigation) risk values
 				severity = (data.severity as number) ?? null;
 				occurrence = (data.occurrence as number) ?? null;
 				detection = (data.detection as number) ?? null;
@@ -189,6 +216,18 @@
 				delete data.category;
 			}
 
+			// Save initial risk if any values are set
+			if (initialSeverity !== null || initialOccurrence !== null || initialDetection !== null) {
+				const initialRisk: Record<string, unknown> = {};
+				if (initialSeverity !== null) initialRisk.severity = initialSeverity;
+				if (initialOccurrence !== null) initialRisk.occurrence = initialOccurrence;
+				if (initialDetection !== null) initialRisk.detection = initialDetection;
+				if (initialRpn !== null) initialRisk.rpn = initialRpn;
+				data.initial_risk = initialRisk;
+			} else {
+				delete data.initial_risk;
+			}
+
 			// Filter out empty mitigations and save
 			const validMitigations = mitigations.filter(m => m.action.trim());
 			if (validMitigations.length > 0) {
@@ -285,29 +324,72 @@
 								<Label for="effect">Effect</Label>
 								<Textarea id="effect" bind:value={riskEffect} placeholder="What are the consequences?" rows={2} />
 							</div>
+						</CardContent>
+					</Card>
 
-							<div class="mt-6">
-								<h4 class="mb-4 text-sm font-medium">Risk Priority Number (RPN)</h4>
-								<div class="grid gap-4 sm:grid-cols-4">
-									<div class="space-y-2">
-										<Label for="severity">Severity (1-10)</Label>
-										<Input id="severity" type="number" min={1} max={10} bind:value={severity} placeholder="1-10" />
-									</div>
-									<div class="space-y-2">
-										<Label for="occurrence">Occurrence (1-10)</Label>
-										<Input id="occurrence" type="number" min={1} max={10} bind:value={occurrence} placeholder="1-10" />
-									</div>
-									<div class="space-y-2">
-										<Label for="detection">Detection (1-10)</Label>
-										<Input id="detection" type="number" min={1} max={10} bind:value={detection} placeholder="1-10" />
-									</div>
-									<div class="space-y-2">
-										<Label>RPN</Label>
-										<div class={`flex h-9 items-center rounded-md border px-3 font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
-									</div>
+					<!-- Initial Risk (Before Mitigation) -->
+					<Card class="border-orange-200 dark:border-orange-800">
+						<CardHeader class="bg-orange-50 dark:bg-orange-950/30">
+							<CardTitle class="flex items-center gap-2 text-orange-700 dark:text-orange-300">
+								Initial Risk (Before Mitigation)
+							</CardTitle>
+						</CardHeader>
+						<CardContent class="space-y-4 pt-4">
+							<p class="text-sm text-muted-foreground">Enter the risk assessment before any mitigations are applied.</p>
+							<div class="grid gap-4 sm:grid-cols-4">
+								<div class="space-y-2">
+									<Label for="initial-severity">Severity (1-10)</Label>
+									<Input id="initial-severity" type="number" min={1} max={10} bind:value={initialSeverity} placeholder="1-10" />
 								</div>
-								<p class="mt-2 text-xs text-muted-foreground">RPN = Severity × Occurrence × Detection (Range: 1-1000)</p>
+								<div class="space-y-2">
+									<Label for="initial-occurrence">Occurrence (1-10)</Label>
+									<Input id="initial-occurrence" type="number" min={1} max={10} bind:value={initialOccurrence} placeholder="1-10" />
+								</div>
+								<div class="space-y-2">
+									<Label for="initial-detection">Detection (1-10)</Label>
+									<Input id="initial-detection" type="number" min={1} max={10} bind:value={initialDetection} placeholder="1-10" />
+								</div>
+								<div class="space-y-2">
+									<Label>Initial RPN</Label>
+									<div class={`flex h-9 items-center rounded-md border px-3 font-bold ${getRpnColor(initialRpn)}`}>{initialRpn ?? '—'}</div>
+								</div>
 							</div>
+						</CardContent>
+					</Card>
+
+					<!-- Residual Risk (After Mitigation) -->
+					<Card class="border-green-200 dark:border-green-800">
+						<CardHeader class="bg-green-50 dark:bg-green-950/30">
+							<CardTitle class="flex items-center gap-2 text-green-700 dark:text-green-300">
+								Residual Risk (After Mitigation)
+							</CardTitle>
+						</CardHeader>
+						<CardContent class="space-y-4 pt-4">
+							<p class="text-sm text-muted-foreground">Enter the risk assessment after mitigations are applied. This reflects the current risk level.</p>
+							<div class="grid gap-4 sm:grid-cols-4">
+								<div class="space-y-2">
+									<Label for="severity">Severity (1-10)</Label>
+									<Input id="severity" type="number" min={1} max={10} bind:value={severity} placeholder="1-10" />
+								</div>
+								<div class="space-y-2">
+									<Label for="occurrence">Occurrence (1-10)</Label>
+									<Input id="occurrence" type="number" min={1} max={10} bind:value={occurrence} placeholder="1-10" />
+								</div>
+								<div class="space-y-2">
+									<Label for="detection">Detection (1-10)</Label>
+									<Input id="detection" type="number" min={1} max={10} bind:value={detection} placeholder="1-10" />
+								</div>
+								<div class="space-y-2">
+									<Label>Residual RPN</Label>
+									<div class={`flex h-9 items-center rounded-md border px-3 font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
+								</div>
+							</div>
+							{#if rpnReduction !== null && rpnReduction > 0}
+								<div class="mt-2 rounded-lg bg-green-100 dark:bg-green-900/30 p-3 text-sm text-green-700 dark:text-green-300">
+									RPN reduced by {rpnReduction} ({rpnReductionPct}% improvement from initial assessment)
+								</div>
+							{/if}
+							<p class="text-xs text-muted-foreground">RPN = Severity × Occurrence × Detection (Range: 1-1000)</p>
 						</CardContent>
 					</Card>
 

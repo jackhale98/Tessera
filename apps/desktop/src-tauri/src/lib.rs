@@ -43,10 +43,12 @@ pub fn run() {
             commands::save_entity,
             commands::get_entity_count,
             commands::get_all_entity_counts,
+            commands::search_entities,
             // Requirement commands
             commands::list_requirements,
             commands::get_requirement,
             commands::get_requirement_stats,
+            commands::get_verification_matrix,
             // Risk commands
             commands::list_risks,
             commands::get_risk,
@@ -56,6 +58,7 @@ pub fn run() {
             commands::add_risk_mitigation,
             commands::get_risk_stats,
             commands::get_risk_matrix,
+            commands::get_fmea_data,
             // Component commands
             commands::list_components,
             commands::get_component,
@@ -289,6 +292,7 @@ pub fn run() {
             commands::trace_to,
             commands::get_coverage_report,
             commands::get_dsm,
+            commands::get_dmm,
             commands::find_orphans,
             commands::find_cycles,
             commands::add_link,

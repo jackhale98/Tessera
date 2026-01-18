@@ -87,6 +87,24 @@
 		return type === 'input' ? 'Input Requirement' : 'Output Requirement';
 	}
 
+	// Separate function to refresh just links (used after adding/removing links)
+	async function refreshLinks() {
+		if (!id) return;
+		linksLoading = true;
+		try {
+			const [fromLinks, toLinks] = await Promise.all([
+				traceability.getLinksFrom(id),
+				traceability.getLinksTo(id)
+			]);
+			linksFrom = fromLinks;
+			linksTo = toLinks;
+		} catch (e) {
+			console.error('Failed to refresh links:', e);
+		} finally {
+			linksLoading = false;
+		}
+	}
+
 	// Track if we've loaded for this ID to prevent double-loads
 	let loadedId = $state<string | null>(null);
 
@@ -213,7 +231,13 @@
 				{/if}
 
 				<!-- Links -->
-				<LinksSection {linksFrom} {linksTo} loading={linksLoading} />
+				<LinksSection
+					{linksFrom}
+					{linksTo}
+					loading={linksLoading}
+					entityId={entity?.id}
+					onLinksChanged={refreshLinks}
+				/>
 
 				<!-- History -->
 				<Card>

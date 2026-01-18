@@ -65,7 +65,8 @@ pub fn infer_link_type(source_prefix: EntityPrefix, target_prefix: EntityPrefix)
         (EntityPrefix::Risk, EntityPrefix::Proc) => Some("process".to_string()),
         (EntityPrefix::Risk, EntityPrefix::Feat) => Some("affects".to_string()),
         (EntityPrefix::Risk, EntityPrefix::Test) => Some("verified_by".to_string()),
-        (EntityPrefix::Risk, EntityPrefix::Ctrl) => Some("controls".to_string()),
+        // Controls mitigate risks, so link via mitigated_by
+        (EntityPrefix::Risk, EntityPrefix::Ctrl) => Some("mitigated_by".to_string()),
 
         // Entities referencing risks
         (EntityPrefix::Feat, EntityPrefix::Risk) => Some("risks".to_string()),
@@ -205,8 +206,8 @@ pub fn get_reciprocal_link_type(link_type: &str, target_prefix: EntityPrefix) ->
         ("assembly", EntityPrefix::Risk) => None,  // RISK.assembly is single-value
         ("process", EntityPrefix::Proc) => Some("risks".to_string()),
 
-        // RISK.controls -> CTRL means CTRL.risks -> RISK
-        ("controls", EntityPrefix::Ctrl) => Some("risks".to_string()),
+        // RISK.mitigated_by -> CTRL means CTRL.mitigates -> RISK
+        ("mitigated_by", EntityPrefix::Ctrl) => Some("mitigates".to_string()),
 
         // related_to is symmetric
         ("related_to", _) => Some("related_to".to_string()),
@@ -371,6 +372,39 @@ fn add_link_to_yaml(content: &str, link_type: &str, target_id: &str) -> Result<S
     serde_yml::to_string(&value).map_err(|e| format!("Failed to serialize YAML: {}", e))
 }
 
+/// Add a link to an entity file using an explicit link type.
+///
+/// This function reads the entity file, adds the link to the specified field,
+/// and writes the file back. Unlike `add_inferred_link`, this allows specifying
+/// any valid link type directly.
+///
+/// # Arguments
+/// * `source_path` - Path to the source entity file
+/// * `link_type` - The explicit link type field name (e.g., "mitigated_by", "verified_by")
+/// * `target_id` - Full ID of the target entity
+///
+/// # Returns
+/// * `Ok(())` - If the link was added successfully
+/// * `Err` - If file operations failed
+pub fn add_explicit_link(
+    source_path: &std::path::Path,
+    link_type: &str,
+    target_id: &str,
+) -> Result<(), String> {
+    // Read the file
+    let content =
+        std::fs::read_to_string(source_path).map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Add the link
+    let updated_content = add_link_to_yaml(&content, link_type, target_id)?;
+
+    // Write back
+    std::fs::write(source_path, &updated_content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(())
+}
+
 /// Determine if a link type should be an array (multiple values) or single-value
 fn is_array_link_type(link_type: &str) -> bool {
     match link_type {
@@ -380,6 +414,111 @@ fn is_array_link_type(link_type: &str) -> bool {
         // Everything else is an array (can have multiple targets)
         _ => true,
     }
+}
+
+/// Remove a link from YAML content.
+///
+/// This function parses the YAML, removes the link from the appropriate field in the links section,
+/// and returns the updated YAML string.
+fn remove_link_from_yaml(content: &str, link_type: &str, target_id: &str) -> Result<String, String> {
+    // Parse YAML
+    let mut value: serde_yml::Value =
+        serde_yml::from_str(content).map_err(|e| format!("Failed to parse YAML: {}", e))?;
+
+    // Navigate to links section
+    let links = match value.get_mut("links") {
+        Some(links) => links,
+        None => return Ok(content.to_string()), // No links section, nothing to remove
+    };
+
+    // Check if link type exists
+    let link_value = match links.get_mut(link_type) {
+        Some(v) => v,
+        None => return Ok(content.to_string()), // Link type doesn't exist, nothing to remove
+    };
+
+    // Handle both array links and single-value links
+    let mut removed = false;
+    if let Some(arr) = link_value.as_sequence_mut() {
+        // Array link - remove from array
+        let original_len = arr.len();
+        arr.retain(|v| {
+            if let Some(s) = v.as_str() {
+                s != target_id
+            } else {
+                true
+            }
+        });
+        removed = arr.len() < original_len;
+
+        // If array is now empty, remove the entire key
+        if arr.is_empty() {
+            if let Some(links_map) = links.as_mapping_mut() {
+                links_map.remove(&serde_yml::Value::String(link_type.to_string()));
+            }
+        }
+    } else if let Some(existing_id) = link_value.as_str() {
+        // Single-value link - set to null if it matches
+        if existing_id == target_id {
+            *link_value = serde_yml::Value::Null;
+            removed = true;
+            // Remove the key entirely if it's now null
+            if let Some(links_map) = links.as_mapping_mut() {
+                links_map.remove(&serde_yml::Value::String(link_type.to_string()));
+            }
+        }
+    }
+
+    if !removed {
+        return Err(format!(
+            "Link '{}' -> '{}' not found in entity",
+            link_type, target_id
+        ));
+    }
+
+    // If links section is now empty, remove it entirely
+    if let Some(links_map) = value.get("links").and_then(|l| l.as_mapping()) {
+        if links_map.is_empty() {
+            if let Some(root_map) = value.as_mapping_mut() {
+                root_map.remove(&serde_yml::Value::String("links".to_string()));
+            }
+        }
+    }
+
+    // Serialize back
+    serde_yml::to_string(&value).map_err(|e| format!("Failed to serialize YAML: {}", e))
+}
+
+/// Remove a link from an entity file.
+///
+/// This function reads the entity file, removes the link from the specified field,
+/// and writes the file back.
+///
+/// # Arguments
+/// * `source_path` - Path to the source entity file
+/// * `link_type` - The link type field name (e.g., "mitigated_by", "verified_by")
+/// * `target_id` - Full ID of the target entity to unlink
+///
+/// # Returns
+/// * `Ok(())` - If the link was removed successfully
+/// * `Err` - If file operations failed or link wasn't found
+pub fn remove_explicit_link(
+    source_path: &std::path::Path,
+    link_type: &str,
+    target_id: &str,
+) -> Result<(), String> {
+    // Read the file
+    let content =
+        std::fs::read_to_string(source_path).map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Remove the link
+    let updated_content = remove_link_from_yaml(&content, link_type, target_id)?;
+
+    // Write back
+    std::fs::write(source_path, &updated_content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

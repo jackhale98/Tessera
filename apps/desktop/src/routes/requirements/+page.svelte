@@ -164,7 +164,12 @@
 			<h1 class="text-2xl font-bold">Requirements</h1>
 			<p class="text-muted-foreground">Manage system and stakeholder requirements</p>
 		</div>
-		<Button onclick={() => goto('/requirements/new')}>New Requirement</Button>
+		<div class="flex items-center gap-2">
+			<Button variant="outline" onclick={() => goto('/requirements/verification')}>
+				Verification Matrix
+			</Button>
+			<Button onclick={() => goto('/requirements/new')}>New Requirement</Button>
+		</div>
 	</div>
 
 	<!-- Stats cards -->

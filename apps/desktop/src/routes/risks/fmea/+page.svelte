@@ -5,10 +5,10 @@
 	import { FmeaTable, RiskStatsCards } from '$lib/components/risk';
 	import { risks } from '$lib/api';
 	import { isProjectOpen } from '$lib/stores/project';
-	import type { RiskSummary, RiskStats } from '$lib/api/tauri';
+	import type { FmeaRiskData, RiskStats } from '$lib/api/tauri';
 	import { Download, Plus, RefreshCw } from 'lucide-svelte';
 
-	let risksData = $state<RiskSummary[]>([]);
+	let fmeaData = $state<FmeaRiskData[]>([]);
 	let stats = $state<RiskStats | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -20,28 +20,28 @@
 		error = null;
 
 		try {
-			const [risksResult, statsResult] = await Promise.all([
-				risks.list(),
+			const [fmeaResult, statsResult] = await Promise.all([
+				risks.getFmeaData(),
 				risks.getStats()
 			]);
 
-			risksData = risksResult.items;
+			fmeaData = fmeaResult;
 			stats = statsResult;
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
-			console.error('Failed to load risks:', e);
+			console.error('Failed to load FMEA data:', e);
 		} finally {
 			loading = false;
 		}
 	}
 
-	function handleRowClick(risk: RiskSummary) {
+	function handleRowClick(risk: { id: string }) {
 		goto(`/risks/${risk.id}`);
 	}
 
 	function exportCsv() {
-		const headers = ['ID', 'Title', 'Type', 'Failure Mode', 'Severity', 'Occurrence', 'Detection', 'RPN', 'Risk Level', 'Status', 'Mitigations'];
-		const rows = risksData.map(r => [
+		const headers = ['ID', 'Title', 'Type', 'Failure Mode', 'Severity', 'Occurrence', 'Detection', 'RPN', 'Risk Level', 'Status', 'Hazards', 'Mitigations', 'Controls'];
+		const rows = fmeaData.map(r => [
 			r.id,
 			`"${r.title.replace(/"/g, '""')}"`,
 			r.risk_type,
@@ -52,7 +52,9 @@
 			r.rpn ?? '',
 			r.risk_level ?? '',
 			r.status,
-			r.mitigation_count
+			r.hazards.map(h => h.title).join('; '),
+			r.mitigations.map(m => m.action).join('; '),
+			r.controls.filter(c => c.id).map(c => c.title).join('; ')
 		]);
 
 		const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -88,7 +90,7 @@
 				<RefreshCw class="mr-2 h-4 w-4 {loading ? 'animate-spin' : ''}" />
 				Refresh
 			</Button>
-			<Button variant="outline" onclick={exportCsv} disabled={risksData.length === 0}>
+			<Button variant="outline" onclick={exportCsv} disabled={fmeaData.length === 0}>
 				<Download class="mr-2 h-4 w-4" />
 				Export CSV
 			</Button>
@@ -132,10 +134,10 @@
 	{:else}
 		<Card>
 			<CardHeader>
-				<CardTitle>FMEA Register ({risksData.length} risks)</CardTitle>
+				<CardTitle>FMEA Register ({fmeaData.length} risks)</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<FmeaTable risks={risksData} onRowClick={handleRowClick} />
+				<FmeaTable fmeaData={fmeaData} onRowClick={handleRowClick} />
 			</CardContent>
 		</Card>
 	{/if}

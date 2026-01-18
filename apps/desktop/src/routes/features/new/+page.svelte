@@ -13,7 +13,7 @@
 	} from '$lib/components/ui';
 	import { entities } from '$lib/api';
 	import { refreshProject, projectAuthor } from '$lib/stores/project';
-	import { ArrowLeft, Plus, X } from 'lucide-svelte';
+	import { ArrowLeft, Plus, X, Ruler, Trash2 } from 'lucide-svelte';
 
 	let title = $state('');
 	let componentId = $state('');
@@ -30,6 +30,44 @@
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
+	// Dimension management
+	interface NewDimension {
+		name: string;
+		nominal: number;
+		plus_tol: number;
+		minus_tol: number;
+		units: string;
+		internal: boolean;
+		distribution: string;
+	}
+	let dimensions = $state<NewDimension[]>([]);
+
+	// Distribution type options
+	const distributionTypes = [
+		{ value: 'normal', label: 'Normal (Gaussian)' },
+		{ value: 'uniform', label: 'Uniform' },
+		{ value: 'triangular', label: 'Triangular' }
+	];
+
+	// Unit options
+	const unitOptions = ['mm', 'in', 'um', 'mil'];
+
+	function addDimension() {
+		dimensions = [...dimensions, {
+			name: '',
+			nominal: 0,
+			plus_tol: 0.1,
+			minus_tol: 0.1,
+			units: 'mm',
+			internal: featureType === 'internal',
+			distribution: 'normal'
+		}];
+	}
+
+	function removeDimension(index: number) {
+		dimensions = dimensions.filter((_, i) => i !== index);
+	}
+
 	function addTag() {
 		if (newTag.trim() && !tags.includes(newTag.trim())) {
 			tags = [...tags, newTag.trim()];
@@ -45,12 +83,25 @@
 		error = null;
 
 		try {
+			// Build dimensions list (only those with names)
+			const validDimensions = dimensions
+				.filter(d => d.name.trim())
+				.map(d => ({
+					name: d.name.trim(),
+					nominal: d.nominal,
+					plus_tol: d.plus_tol,
+					minus_tol: d.minus_tol,
+					units: d.units,
+					internal: d.internal,
+					distribution: d.distribution
+				}));
+
 			const data: Record<string, unknown> = {
 				title: title.trim(),
 				component: componentId.trim(),
 				feature_type: featureType,
 				author: $projectAuthor,
-				dimensions: [],
+				dimensions: validDimensions,
 				gdt: [],
 				tags
 			};
@@ -84,7 +135,7 @@
 		</Button>
 		<div>
 			<h1 class="text-2xl font-bold">New Feature</h1>
-			<p class="text-muted-foreground">Define a geometric feature (dimensions can be added after creation)</p>
+			<p class="text-muted-foreground">Define a geometric feature with dimensions and tolerances</p>
 		</div>
 	</div>
 
@@ -166,6 +217,113 @@
 								<Input id="drawing-zone" bind:value={drawingZone} placeholder="B3" />
 							</div>
 						</div>
+					</CardContent>
+				</Card>
+
+				<!-- Dimensions -->
+				<Card>
+					<CardHeader>
+						<div class="flex items-center justify-between">
+							<CardTitle class="flex items-center gap-2">
+								<Ruler class="h-5 w-5" />
+								Dimensions ({dimensions.length})
+							</CardTitle>
+							<Button type="button" variant="outline" size="sm" onclick={addDimension}>
+								<Plus class="mr-2 h-4 w-4" />
+								Add Dimension
+							</Button>
+						</div>
+					</CardHeader>
+					<CardContent class="space-y-4">
+						{#if dimensions.length === 0}
+							<p class="text-sm text-muted-foreground text-center py-4">
+								No dimensions defined yet. You can add them now or later when editing.
+							</p>
+						{:else}
+							{#each dimensions as dim, index}
+								<div class="rounded-lg border p-4 space-y-4">
+									<div class="flex items-center justify-between">
+										<Label class="font-medium">Dimension {index + 1}</Label>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											class="text-destructive hover:text-destructive"
+											onclick={() => removeDimension(index)}
+										>
+											<Trash2 class="h-4 w-4" />
+										</Button>
+									</div>
+									<div class="grid gap-4 sm:grid-cols-2">
+										<div class="space-y-2">
+											<Label for="dim-name-{index}">Name *</Label>
+											<Input
+												id="dim-name-{index}"
+												bind:value={dim.name}
+												placeholder="e.g., Diameter, Length"
+											/>
+										</div>
+										<div class="space-y-2">
+											<Label for="dim-dist-{index}">Distribution</Label>
+											<Select id="dim-dist-{index}" bind:value={dim.distribution}>
+												{#each distributionTypes as dt}
+													<option value={dt.value}>{dt.label}</option>
+												{/each}
+											</Select>
+											<p class="text-xs text-muted-foreground">For tolerance analysis</p>
+										</div>
+									</div>
+									<div class="grid gap-4 sm:grid-cols-4">
+										<div class="space-y-2">
+											<Label for="dim-nom-{index}">Nominal</Label>
+											<Input
+												id="dim-nom-{index}"
+												type="number"
+												step="any"
+												bind:value={dim.nominal}
+											/>
+										</div>
+										<div class="space-y-2">
+											<Label for="dim-plus-{index}">+Tolerance</Label>
+											<Input
+												id="dim-plus-{index}"
+												type="number"
+												step="any"
+												bind:value={dim.plus_tol}
+											/>
+										</div>
+										<div class="space-y-2">
+											<Label for="dim-minus-{index}">-Tolerance</Label>
+											<Input
+												id="dim-minus-{index}"
+												type="number"
+												step="any"
+												bind:value={dim.minus_tol}
+											/>
+										</div>
+										<div class="space-y-2">
+											<Label for="dim-units-{index}">Units</Label>
+											<Select id="dim-units-{index}" bind:value={dim.units}>
+												{#each unitOptions as unit}
+													<option value={unit}>{unit}</option>
+												{/each}
+											</Select>
+										</div>
+									</div>
+									<div class="flex items-center gap-2">
+										<input
+											type="checkbox"
+											id="dim-internal-{index}"
+											bind:checked={dim.internal}
+											class="h-4 w-4 rounded border-gray-300"
+										/>
+										<Label for="dim-internal-{index}" class="text-sm font-normal">
+											Internal dimension (hole/bore)
+										</Label>
+									</div>
+								</div>
+							{/each}
+						{/if}
 					</CardContent>
 				</Card>
 			</div>

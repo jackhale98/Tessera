@@ -40,7 +40,10 @@ export interface RiskSummary {
 	author: string;
 	created: string;
 	tags: string[];
+	/** Count of mitigations with actual content (non-empty action) */
 	mitigation_count: number;
+	/** Count of linked controls (via mitigated_by links) */
+	control_count: number;
 }
 
 export interface ListRisksResult {
@@ -51,12 +54,34 @@ export interface ListRisksResult {
 
 export interface RiskStats {
 	total: number;
-	by_level: Record<string, number>;
-	by_type: Record<string, number>;
-	by_status: Record<string, number>;
-	average_rpn?: number;
-	high_priority_count: number;
-	unmitigated_count: number;
+	unmitigated: number;
+	unverified: number;
+	by_type: {
+		design: number;
+		process: number;
+		use: number;
+		software: number;
+	};
+	by_level: {
+		low: number;
+		medium: number;
+		high: number;
+		critical: number;
+	};
+	by_status: {
+		draft: number;
+		review: number;
+		approved: number;
+		released: number;
+		obsolete: number;
+	};
+	rpn_stats: {
+		count: number;
+		min: number;
+		max: number;
+		sum: number;
+		avg: number;
+	};
 }
 
 // Component-specific types
@@ -206,11 +231,63 @@ export interface ListRequirementsResult {
 	total_count: number;
 }
 
+// Verification Matrix Types
+export interface LinkedEntitySummary {
+	id: string;
+	title: string;
+	status: string;
+}
+
+export interface TestResultSummary {
+	id: string;
+	verdict: string;
+	executed_date?: string;
+	executor?: string;
+}
+
+export interface TestWithResults {
+	id: string;
+	title: string;
+	status: string;
+	test_type: string;
+	level: string;
+	results: TestResultSummary[];
+	latest_verdict?: string;
+}
+
+export interface VerificationMatrixRow {
+	requirement: LinkedEntitySummary;
+	req_type: string;
+	level: string;
+	priority: string;
+	derived_requirements: LinkedEntitySummary[];
+	tests: TestWithResults[];
+	verification_status: string;
+	pass_count: number;
+	fail_count: number;
+	not_run_count: number;
+}
+
+export interface VerificationMatrixSummary {
+	total_requirements: number;
+	fully_verified: number;
+	partially_verified: number;
+	not_tested: number;
+	failed: number;
+	verification_coverage: number;
+}
+
+export interface VerificationMatrixResponse {
+	rows: VerificationMatrixRow[];
+	summary: VerificationMatrixSummary;
+}
+
 export const requirements = {
 	list: (params?: ListRequirementsParams) =>
 		call<ListRequirementsResult>('list_requirements', { params }),
 	get: (id: string) => call<unknown>('get_requirement', { id }),
-	getStats: () => call<RequirementStats>('get_requirement_stats')
+	getStats: () => call<RequirementStats>('get_requirement_stats'),
+	getVerificationMatrix: () => call<VerificationMatrixResponse>('get_verification_matrix')
 };
 
 /**
@@ -268,6 +345,55 @@ export interface AddMitigationInput {
 	due_date?: string;
 }
 
+// FMEA enriched types
+export interface LinkedEntity {
+	id: string;
+	title: string;
+	status?: string;
+}
+
+export interface FmeaMitigation {
+	action: string;
+	status?: string;
+	owner?: string;
+}
+
+export interface FmeaControl {
+	id: string;
+	title: string;
+	control_type?: string;
+	tests: LinkedEntity[];
+}
+
+export interface FmeaInitialRisk {
+	severity?: number;
+	occurrence?: number;
+	detection?: number;
+	rpn?: number;
+}
+
+export interface FmeaRiskData {
+	id: string;
+	title: string;
+	risk_type: string;
+	failure_mode: string;
+	/** Residual/current severity (after mitigations) */
+	severity?: number;
+	/** Residual/current occurrence (after mitigations) */
+	occurrence?: number;
+	/** Residual/current detection (after mitigations) */
+	detection?: number;
+	/** Residual/current RPN (after mitigations) */
+	rpn?: number;
+	/** Initial risk values (before mitigations) */
+	initial_risk?: FmeaInitialRisk;
+	risk_level?: string;
+	status: string;
+	hazards: LinkedEntity[];
+	mitigations: FmeaMitigation[];
+	controls: FmeaControl[];
+}
+
 export const risks = {
 	list: (params?: ListRisksParams) => call<ListRisksResult>('list_risks', { params }),
 	get: (id: string) => call<unknown>('get_risk', { id }),
@@ -277,7 +403,8 @@ export const risks = {
 	addMitigation: (id: string, input: AddMitigationInput) =>
 		call<unknown>('add_risk_mitigation', { id, input }),
 	getStats: () => call<RiskStats>('get_risk_stats'),
-	getMatrix: () => call<RiskMatrix>('get_risk_matrix')
+	getMatrix: () => call<RiskMatrix>('get_risk_matrix'),
+	getFmeaData: () => call<FmeaRiskData[]>('get_fmea_data')
 };
 
 /**
@@ -442,6 +569,36 @@ export interface TraceParams {
 	link_types?: string[];
 }
 
+// DMM (Domain Mapping Matrix) result types
+export interface DmmEntity {
+	id: string;
+	title: string;
+}
+
+export interface DmmLink {
+	row_id: string;
+	col_id: string;
+}
+
+export interface DmmCoverage {
+	row_coverage_pct: number;
+	col_coverage_pct: number;
+	rows_with_links: number;
+	total_rows: number;
+	cols_with_links: number;
+	total_cols: number;
+	total_links: number;
+}
+
+export interface DmmResult {
+	row_type: string;
+	col_type: string;
+	row_entities: DmmEntity[];
+	col_entities: DmmEntity[];
+	links: DmmLink[];
+	coverage: DmmCoverage;
+}
+
 export const traceability = {
 	getLinksFrom: (id: string) => call<LinkInfo[]>('get_links_from', { id }),
 	getLinksTo: (id: string) => call<LinkInfo[]>('get_links_to', { id }),
@@ -449,12 +606,14 @@ export const traceability = {
 	traceTo: (params: TraceParams) => call<TraceResult>('trace_to', { params }),
 	getCoverage: () => call<CoverageReport>('get_coverage_report'),
 	getDsm: (entityType?: string) => call<unknown>('get_dsm', { entity_type: entityType }),
+	getDmm: (rowType: string, colType: string) =>
+		call<DmmResult>('get_dmm', { rowType, colType }),
 	findOrphans: (entityType?: string) => call<string[]>('find_orphans', { entity_type: entityType }),
 	findCycles: (entityType?: string) =>
 		call<string[][]>('find_cycles', { entity_type: entityType }),
 	addLink: (sourceId: string, targetId: string, linkType?: string) =>
 		call<void>('add_link', { sourceId, targetId, linkType }),
-	removeLink: (sourceId: string, targetId: string, linkType?: string) =>
+	removeLink: (sourceId: string, targetId: string, linkType: string) =>
 		call<void>('remove_link', { sourceId, targetId, linkType }),
 	getLinkTypes: () => call<string[]>('get_link_types')
 };

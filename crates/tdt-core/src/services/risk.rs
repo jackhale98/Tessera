@@ -655,9 +655,12 @@ impl<'a> RiskService<'a> {
             }
         }
 
-        // Unmitigated filter
-        if filter.unmitigated_only && !risk.mitigations.is_empty() {
-            return false;
+        // Unmitigated filter - check for real mitigations (non-empty action)
+        if filter.unmitigated_only {
+            let has_real_mitigations = risk.mitigations.iter().any(|m| !m.action.trim().is_empty());
+            if has_real_mitigations {
+                return false;
+            }
         }
 
         // Needs mitigation filter (has mitigations but none are completed/verified)
@@ -771,7 +774,9 @@ impl<'a> RiskService<'a> {
                 Status::Obsolete => stats.by_status.obsolete += 1,
             }
 
-            if risk.mitigations.is_empty() {
+            // Check if risk has any mitigations with actual content (not just placeholder entries)
+            let has_real_mitigations = risk.mitigations.iter().any(|m| !m.action.trim().is_empty());
+            if !has_real_mitigations {
                 stats.unmitigated += 1;
             }
 
@@ -804,17 +809,44 @@ impl<'a> RiskService<'a> {
     pub fn get_risk_matrix(&self) -> ServiceResult<RiskMatrix> {
         let risks = self.load_all()?;
 
-        let mut matrix = RiskMatrix::default();
+        // Use a HashMap to collect cells by (severity, occurrence)
+        use std::collections::HashMap;
+        let mut cell_map: HashMap<(u8, u8), RiskMatrixCell> = HashMap::new();
 
         for risk in &risks {
             if let (Some(severity), Some(occurrence)) = (risk.severity, risk.occurrence) {
-                let cell = &mut matrix.cells[severity as usize - 1][occurrence as usize - 1];
+                let key = (severity, occurrence);
+                let cell = cell_map.entry(key).or_insert_with(|| RiskMatrixCell {
+                    severity,
+                    occurrence,
+                    count: 0,
+                    risk_ids: Vec::new(),
+                    risk_level: calculate_risk_level_from_coords(severity, occurrence),
+                });
                 cell.count += 1;
                 cell.risk_ids.push(risk.id.to_string());
             }
         }
 
-        Ok(matrix)
+        Ok(RiskMatrix {
+            cells: cell_map.into_values().collect(),
+            max_severity: 10,
+            max_occurrence: 10,
+        })
+    }
+}
+
+/// Calculate risk level from severity and occurrence coordinates
+fn calculate_risk_level_from_coords(severity: u8, occurrence: u8) -> RiskLevel {
+    let product = severity as u16 * occurrence as u16;
+    if product >= 64 {
+        RiskLevel::Critical
+    } else if product >= 36 {
+        RiskLevel::High
+    } else if product >= 16 {
+        RiskLevel::Medium
+    } else {
+        RiskLevel::Low
     }
 }
 
@@ -868,17 +900,23 @@ pub struct RpnStats {
     pub avg: f64,
 }
 
-/// Risk matrix for visualization (10x10 severity vs occurrence)
+/// Risk matrix for visualization (severity vs occurrence)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskMatrix {
-    /// 10x10 matrix: cells[severity-1][occurrence-1]
-    pub cells: [[RiskMatrixCell; 10]; 10],
+    /// Flat array of cells (only cells with risks are included)
+    pub cells: Vec<RiskMatrixCell>,
+    /// Maximum severity value (typically 10)
+    pub max_severity: u8,
+    /// Maximum occurrence value (typically 10)
+    pub max_occurrence: u8,
 }
 
 impl Default for RiskMatrix {
     fn default() -> Self {
         Self {
-            cells: std::array::from_fn(|_| std::array::from_fn(|_| RiskMatrixCell::default())),
+            cells: Vec::new(),
+            max_severity: 10,
+            max_occurrence: 10,
         }
     }
 }
@@ -886,8 +924,16 @@ impl Default for RiskMatrix {
 /// A cell in the risk matrix
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RiskMatrixCell {
+    /// Severity value (1-10)
+    pub severity: u8,
+    /// Occurrence value (1-10)
+    pub occurrence: u8,
+    /// Number of risks in this cell
     pub count: usize,
+    /// IDs of risks in this cell
     pub risk_ids: Vec<String>,
+    /// Aggregated risk level for this cell
+    pub risk_level: RiskLevel,
 }
 
 #[cfg(test)]

@@ -28,7 +28,9 @@
 		AlertOctagon,
 		FileSpreadsheet,
 		Building2,
-		ShoppingCart
+		ShoppingCart,
+		CheckSquare,
+		List
 	} from 'lucide-svelte';
 
 	interface NavItem {
@@ -55,7 +57,11 @@
 				label: 'Requirements',
 				href: '/requirements',
 				icon: FileText,
-				count: counts?.requirements ?? 0
+				count: counts?.requirements ?? 0,
+				children: [
+					{ label: 'All Requirements', href: '/requirements', icon: List, count: counts?.requirements ?? 0 },
+					{ label: 'Verification Matrix', href: '/requirements/verification', icon: CheckSquare }
+				]
 			},
 			{
 				label: 'Safety',

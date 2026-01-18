@@ -8,8 +8,11 @@
 		link_types: string[];
 	}
 
+	// Support both square (DSM) and rectangular (DMM) matrices
 	interface DsmData {
-		entity_ids: string[];
+		entity_ids: string[]; // For square matrix (deprecated for DMM)
+		row_entity_ids?: string[]; // For rectangular matrix
+		col_entity_ids?: string[]; // For rectangular matrix
 		entity_titles: Record<string, string>;
 		entity_types: Record<string, string>;
 		cells: MatrixCell[];
@@ -21,6 +24,15 @@
 	}
 
 	let { data, onSelectEntity }: Props = $props();
+
+	// Get row and column IDs - support both square and rectangular matrices
+	const rowIds = $derived(data.row_entity_ids ?? data.entity_ids);
+	const colIds = $derived(data.col_entity_ids ?? data.entity_ids);
+
+	// Determine if this is a rectangular matrix (DMM mode)
+	const isRectangular = $derived(
+		data.row_entity_ids !== undefined && data.col_entity_ids !== undefined
+	);
 
 	// Create a lookup for quick cell access
 	const cellLookup = $derived(() => {
@@ -43,7 +55,9 @@
 			TEST: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
 			RSLT: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
 			CMP: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-			ASM: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
+			ASM: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200',
+			PROC: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+			CTRL: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200'
 		};
 		return colors[type] ?? 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
 	}
@@ -59,7 +73,9 @@
 				HAZ: 'hazards',
 				TEST: 'tests',
 				CMP: 'components',
-				ASM: 'assemblies'
+				ASM: 'assemblies',
+				PROC: 'manufacturing/processes',
+				CTRL: 'manufacturing/controls'
 			};
 			goto(`/${routes[prefix] ?? 'entities'}/${id}`);
 		}
@@ -74,7 +90,7 @@
 	}
 </script>
 
-{#if data.entity_ids.length === 0}
+{#if rowIds.length === 0 || colIds.length === 0}
 	<div class="flex h-64 items-center justify-center text-muted-foreground">
 		No entities to display in matrix
 	</div>
@@ -84,7 +100,7 @@
 			<thead>
 				<tr>
 					<th class="sticky left-0 z-10 border bg-background p-2"></th>
-					{#each data.entity_ids as colId}
+					{#each colIds as colId}
 						<th class="border bg-muted/50 p-1">
 							<button
 								class="w-full rounded px-1 py-0.5 text-center hover:bg-muted {getEntityColor(data.entity_types[colId])}"
@@ -98,7 +114,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each data.entity_ids as rowId}
+				{#each rowIds as rowId}
 					<tr>
 						<th class="sticky left-0 z-10 border bg-muted/50 p-1 text-left">
 							<button
@@ -109,16 +125,17 @@
 								{truncateId(rowId)}
 							</button>
 						</th>
-						{#each data.entity_ids as colId}
+						{#each colIds as colId}
 							{@const cell = getCell(rowId, colId)}
+							{@const isDiagonal = !isRectangular && rowId === colId}
 							<td
-								class="border p-1 text-center {rowId === colId ? 'bg-muted' : cell ? 'bg-primary/20 hover:bg-primary/30' : 'hover:bg-muted/30'}"
+								class="border p-1 text-center {isDiagonal ? 'bg-muted' : cell ? 'bg-primary/20 hover:bg-primary/30' : 'hover:bg-muted/30'}"
 								title={cell ? cell.link_types.join(', ') : ''}
 							>
-								{#if rowId === colId}
+								{#if isDiagonal}
 									<span class="text-muted-foreground">-</span>
 								{:else if cell}
-									<span class="font-bold text-primary">{cell.link_types.length}</span>
+									<span class="font-bold text-primary">X</span>
 								{/if}
 							</td>
 						{/each}
@@ -133,9 +150,11 @@
 			<div class="h-4 w-4 rounded bg-primary/20"></div>
 			<span>Has relationship</span>
 		</div>
-		<div class="flex items-center gap-2">
-			<div class="h-4 w-4 rounded bg-muted"></div>
-			<span>Self (diagonal)</span>
-		</div>
+		{#if !isRectangular}
+			<div class="flex items-center gap-2">
+				<div class="h-4 w-4 rounded bg-muted"></div>
+				<span>Self (diagonal)</span>
+			</div>
+		{/if}
 	</div>
 {/if}

@@ -32,7 +32,7 @@
 			<div class="flex items-center justify-between">
 				<div>
 					<p class="text-sm text-muted-foreground">High Priority</p>
-					<p class="text-3xl font-bold text-red-500">{stats.high_priority_count}</p>
+					<p class="text-3xl font-bold text-red-500">{stats.by_level.high + stats.by_level.critical}</p>
 				</div>
 				<div class="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
 					<AlertCircle class="h-6 w-6 text-red-600 dark:text-red-400" />
@@ -47,7 +47,7 @@
 			<div class="flex items-center justify-between">
 				<div>
 					<p class="text-sm text-muted-foreground">Unmitigated</p>
-					<p class="text-3xl font-bold text-orange-500">{stats.unmitigated_count}</p>
+					<p class="text-3xl font-bold text-orange-500">{stats.unmitigated}</p>
 				</div>
 				<div class="flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
 					<Shield class="h-6 w-6 text-orange-600 dark:text-orange-400" />
@@ -62,7 +62,7 @@
 			<div class="flex items-center justify-between">
 				<div>
 					<p class="text-sm text-muted-foreground">Avg RPN</p>
-					<p class="text-3xl font-bold">{stats.average_rpn?.toFixed(0) ?? '-'}</p>
+					<p class="text-3xl font-bold">{stats.rpn_stats.count > 0 ? stats.rpn_stats.avg.toFixed(0) : '-'}</p>
 				</div>
 				<div class="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/30">
 					<TrendingUp class="h-6 w-6 text-purple-600 dark:text-purple-400" />

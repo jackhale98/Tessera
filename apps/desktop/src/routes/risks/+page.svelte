@@ -24,7 +24,13 @@
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 
 	const filteredRisks = $derived(() => {
-		let result = risksData;
+		// Dedupe by ID to prevent "each_key_duplicate" Svelte error
+		const seen = new Set<string>();
+		let result = risksData.filter((r) => {
+			if (seen.has(r.id)) return false;
+			seen.add(r.id);
+			return true;
+		});
 
 		// Apply client-side search
 		if (searchQuery) {
@@ -209,7 +215,7 @@
 					<CardTitle class="text-sm font-medium text-muted-foreground">Avg RPN</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{stats.average_rpn?.toFixed(0) ?? '-'}</div>
+					<div class="text-2xl font-bold">{stats.rpn_stats.count > 0 ? stats.rpn_stats.avg.toFixed(0) : '-'}</div>
 				</CardContent>
 			</Card>
 			<Card>
@@ -217,7 +223,7 @@
 					<CardTitle class="text-sm font-medium text-muted-foreground">High Priority</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold text-orange-400">{stats.high_priority_count}</div>
+					<div class="text-2xl font-bold text-orange-400">{stats.by_level.high + stats.by_level.critical}</div>
 				</CardContent>
 			</Card>
 			<Card>
@@ -225,7 +231,7 @@
 					<CardTitle class="text-sm font-medium text-muted-foreground">Unmitigated</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold text-destructive">{stats.unmitigated_count}</div>
+					<div class="text-2xl font-bold text-destructive">{stats.unmitigated}</div>
 				</CardContent>
 			</Card>
 		</div>
@@ -436,6 +442,11 @@
 									{/if}
 								</div>
 							</TableHead>
+							<TableHead class="w-24">
+								<div class="flex items-center gap-1">
+									Mitigated
+								</div>
+							</TableHead>
 							<TableHead
 								class="cursor-pointer select-none w-24 hover:bg-muted/50"
 								onclick={() => handleSort('status')}
@@ -452,7 +463,7 @@
 					<TableBody>
 						{#if loading}
 							<TableRow>
-								<TableCell colspan={9} class="h-24 text-center">
+								<TableCell colspan={10} class="h-24 text-center">
 									<div class="flex items-center justify-center gap-2">
 										<div class="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
 										Loading...
@@ -461,7 +472,7 @@
 							</TableRow>
 						{:else if filteredRisks().length === 0}
 							<TableRow>
-								<TableCell colspan={9} class="h-24 text-center text-muted-foreground">
+								<TableCell colspan={10} class="h-24 text-center text-muted-foreground">
 									No risks found
 								</TableCell>
 							</TableRow>
@@ -479,6 +490,20 @@
 										<Badge class={getRiskLevelColor(risk.risk_level)}>
 											{risk.risk_level ?? 'N/A'}
 										</Badge>
+									</TableCell>
+									<TableCell>
+										{#if risk.mitigation_count > 0 || risk.control_count > 0}
+											<div class="flex items-center gap-1">
+												{#if risk.mitigation_count > 0}
+													<Badge variant="outline" class="text-xs">{risk.mitigation_count} mit</Badge>
+												{/if}
+												{#if risk.control_count > 0}
+													<Badge variant="secondary" class="text-xs">{risk.control_count} ctrl</Badge>
+												{/if}
+											</div>
+										{:else}
+											<span class="text-muted-foreground text-xs">None</span>
+										{/if}
 									</TableCell>
 									<TableCell>
 										<Badge variant={getStatusVariant(risk.status)} class="capitalize">

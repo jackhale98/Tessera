@@ -366,3 +366,80 @@ pub async fn get_all_entity_counts(
 
     Ok(counts)
 }
+
+/// Lightweight entity search result for picker components
+#[derive(Debug, Clone, Serialize)]
+pub struct EntitySearchResult {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub prefix: String,
+}
+
+/// Parameters for searching entities (lightweight, for picker components)
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchEntitiesParams {
+    /// Entity types to search (e.g., ["CTRL", "TEST"])
+    pub entity_types: Vec<String>,
+    /// Search text to match against id and title
+    pub search: Option<String>,
+    /// Maximum results to return
+    pub limit: Option<usize>,
+}
+
+/// Search entities for picker components - returns lightweight results from cache only
+#[tauri::command]
+pub async fn search_entities(
+    params: SearchEntitiesParams,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<EntitySearchResult>> {
+    let cache = state.cache.lock().unwrap();
+    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+
+    let mut results = Vec::new();
+    let limit = params.limit.unwrap_or(50);
+    let search_lower = params.search.as_ref().map(|s| s.to_lowercase());
+
+    for entity_type in &params.entity_types {
+        let prefix = match prefix_from_string(entity_type) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        let filter = EntityFilter {
+            prefix: Some(prefix),
+            search: params.search.clone(),
+            ..Default::default()
+        };
+
+        let entities = cache.list_entities(&filter);
+
+        for entity in entities {
+            // Additional client-side filtering for better matching
+            if let Some(ref search) = search_lower {
+                let id_lower = entity.id.to_lowercase();
+                let title_lower = entity.title.to_lowercase();
+                if !id_lower.contains(search) && !title_lower.contains(search) {
+                    continue;
+                }
+            }
+
+            results.push(EntitySearchResult {
+                id: entity.id.clone(),
+                title: entity.title.clone(),
+                status: format!("{:?}", entity.status).to_lowercase(),
+                prefix: entity_type.to_uppercase(),
+            });
+
+            if results.len() >= limit {
+                break;
+            }
+        }
+
+        if results.len() >= limit {
+            break;
+        }
+    }
+
+    Ok(results)
+}

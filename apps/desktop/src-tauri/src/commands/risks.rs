@@ -45,11 +45,24 @@ pub struct RiskSummary {
     pub author: String,
     pub created: String,
     pub tags: Vec<String>,
+    /// Count of mitigations with actual content (non-empty action)
     pub mitigation_count: usize,
+    /// Count of linked controls (via mitigated_by links)
+    pub control_count: usize,
 }
 
 impl From<&Risk> for RiskSummary {
     fn from(risk: &Risk) -> Self {
+        // Count only mitigations with actual content (non-empty action)
+        let mitigation_count = risk
+            .mitigations
+            .iter()
+            .filter(|m| !m.action.trim().is_empty())
+            .count();
+
+        // Count linked controls (via mitigated_by links)
+        let control_count = risk.links.mitigated_by.len();
+
         Self {
             id: risk.id.to_string(),
             title: risk.title.clone(),
@@ -64,7 +77,8 @@ impl From<&Risk> for RiskSummary {
             author: risk.author.clone(),
             created: risk.created.to_rfc3339(),
             tags: risk.tags.clone(),
-            mitigation_count: risk.mitigations.len(),
+            mitigation_count,
+            control_count,
         }
     }
 }
@@ -416,4 +430,206 @@ pub async fn get_risk_matrix(state: State<'_, AppState>) -> CommandResult<RiskMa
     let matrix = service.get_risk_matrix()?;
 
     Ok(matrix)
+}
+
+/// Linked entity info for FMEA display
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkedEntity {
+    pub id: String,
+    pub title: String,
+    pub status: Option<String>,
+}
+
+/// Mitigation info for FMEA display
+#[derive(Debug, Clone, Serialize)]
+pub struct FmeaMitigation {
+    pub action: String,
+    pub status: Option<String>,
+    pub owner: Option<String>,
+}
+
+/// Control with its verification info for FMEA
+#[derive(Debug, Clone, Serialize)]
+pub struct FmeaControl {
+    pub id: String,
+    pub title: String,
+    pub control_type: Option<String>,
+    pub tests: Vec<LinkedEntity>,
+}
+
+/// Initial risk values (before mitigations)
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct FmeaInitialRisk {
+    pub severity: Option<u8>,
+    pub occurrence: Option<u8>,
+    pub detection: Option<u8>,
+    pub rpn: Option<u32>,
+}
+
+/// Enriched FMEA risk data with linked entities
+#[derive(Debug, Clone, Serialize)]
+pub struct FmeaRiskData {
+    pub id: String,
+    pub title: String,
+    pub risk_type: String,
+    pub failure_mode: String,
+    /// Residual/current severity (after mitigations)
+    pub severity: Option<u8>,
+    /// Residual/current occurrence (after mitigations)
+    pub occurrence: Option<u8>,
+    /// Residual/current detection (after mitigations)
+    pub detection: Option<u8>,
+    /// Residual/current RPN (after mitigations)
+    pub rpn: Option<u32>,
+    /// Initial risk values (before mitigations)
+    pub initial_risk: Option<FmeaInitialRisk>,
+    pub risk_level: Option<String>,
+    pub status: String,
+    /// Hazards that cause this risk
+    pub hazards: Vec<LinkedEntity>,
+    /// Inline mitigations
+    pub mitigations: Vec<FmeaMitigation>,
+    /// Linked controls with their verification tests
+    pub controls: Vec<FmeaControl>,
+}
+
+/// Get enriched FMEA data with hazards, controls, and tests
+#[tauri::command]
+pub async fn get_fmea_data(state: State<'_, AppState>) -> CommandResult<Vec<FmeaRiskData>> {
+    let project = state.project.lock().unwrap();
+    let cache = state.cache.lock().unwrap();
+
+    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+
+    let service = RiskService::new(project, cache);
+
+    // Load all risks
+    let filter = RiskFilter::default();
+    let result = service.list(&filter, RiskSortField::Created, SortDirection::Descending)?;
+
+    let mut fmea_data = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for risk in result.items {
+        // Skip duplicates
+        let risk_id = risk.id.to_string();
+        if seen_ids.contains(&risk_id) {
+            continue;
+        }
+        seen_ids.insert(risk_id.clone());
+
+        // Find hazards that cause this risk (links TO this risk with "causes" type)
+        let hazard_links = cache.get_links_to(&risk_id);
+        let hazards: Vec<LinkedEntity> = hazard_links
+            .iter()
+            .filter(|link| link.link_type == "causes")
+            .filter_map(|link| {
+                cache.get_entity(&link.source_id).map(|e| LinkedEntity {
+                    id: e.id.clone(),
+                    title: e.title.clone(),
+                    status: Some(format!("{:?}", e.status).to_lowercase()),
+                })
+            })
+            .collect();
+
+        // Get inline mitigations
+        let mitigations: Vec<FmeaMitigation> = risk
+            .mitigations
+            .iter()
+            .filter(|m| !m.action.trim().is_empty())
+            .map(|m| FmeaMitigation {
+                action: m.action.clone(),
+                status: m.status.as_ref().map(|s| format!("{:?}", s).to_lowercase()),
+                owner: m.owner.clone(),
+            })
+            .collect();
+
+        // Get linked controls and their verification tests
+        let controls: Vec<FmeaControl> = risk
+            .links
+            .mitigated_by
+            .iter()
+            .filter_map(|ctrl_id| {
+                let ctrl_id_str = ctrl_id.to_string();
+                let ctrl_entity = cache.get_entity(&ctrl_id_str)?;
+
+                // Find tests that verify this control
+                // Look for links FROM the control with type "verifies" (CTRL verifies REQ)
+                // OR look for links TO the control (TEST verifies CTRL via risk's verified_by)
+                let ctrl_links = cache.get_links_to(&ctrl_id_str);
+                let tests: Vec<LinkedEntity> = ctrl_links
+                    .iter()
+                    .filter(|link| link.link_type == "verifies" || link.link_type == "verified_by")
+                    .filter(|link| link.source_id.starts_with("TEST-") || link.source_id.starts_with("RSLT-"))
+                    .filter_map(|link| {
+                        cache.get_entity(&link.source_id).map(|e| LinkedEntity {
+                            id: e.id.clone(),
+                            title: e.title.clone(),
+                            status: Some(format!("{:?}", e.status).to_lowercase()),
+                        })
+                    })
+                    .collect();
+
+                Some(FmeaControl {
+                    id: ctrl_id_str,
+                    title: ctrl_entity.title.clone(),
+                    control_type: None, // Would need to load full control entity for this
+                    tests,
+                })
+            })
+            .collect();
+
+        // Also check risk's verified_by links for direct test verification
+        let risk_tests: Vec<LinkedEntity> = risk
+            .links
+            .verified_by
+            .iter()
+            .filter_map(|test_id| {
+                let test_id_str = test_id.to_string();
+                cache.get_entity(&test_id_str).map(|e| LinkedEntity {
+                    id: e.id.clone(),
+                    title: e.title.clone(),
+                    status: Some(format!("{:?}", e.status).to_lowercase()),
+                })
+            })
+            .collect();
+
+        // Build initial risk if present
+        let initial_risk = risk.initial_risk.as_ref().map(|ir| FmeaInitialRisk {
+            severity: ir.severity,
+            occurrence: ir.occurrence,
+            detection: ir.detection,
+            rpn: ir.rpn.map(|r| r as u32),
+        });
+
+        fmea_data.push(FmeaRiskData {
+            id: risk_id,
+            title: risk.title.clone(),
+            risk_type: format!("{:?}", risk.risk_type).to_lowercase(),
+            failure_mode: risk.failure_mode.clone().unwrap_or_default(),
+            severity: risk.severity,
+            occurrence: risk.occurrence,
+            detection: risk.detection,
+            rpn: risk.get_rpn().map(|r| r as u32),
+            initial_risk,
+            risk_level: risk.get_risk_level().map(|l| format!("{:?}", l).to_lowercase()),
+            status: format!("{:?}", risk.status).to_lowercase(),
+            hazards,
+            mitigations,
+            controls: if controls.is_empty() && !risk_tests.is_empty() {
+                // If no controls but risk has direct verified_by, create a pseudo-control for display
+                vec![FmeaControl {
+                    id: String::new(),
+                    title: "Direct Verification".to_string(),
+                    control_type: None,
+                    tests: risk_tests,
+                }]
+            } else {
+                controls
+            },
+        });
+    }
+
+    Ok(fmea_data)
 }

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '$lib/components/ui';
 	import { EntityDetailHeader, LinksSection, AddFeatureDialog, AddQuoteDialog } from '$lib/components/entities';
+	import EntityHistory from '$lib/components/EntityHistory.svelte';
 	import { StatusBadge } from '$lib/components/common';
 	import { entities, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
@@ -22,7 +23,8 @@
 		CircleDot,
 		Plus,
 		Receipt,
-		Layers
+		Layers,
+		History
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -164,6 +166,24 @@
 		// Load features and quotes for this component
 		loadFeatures();
 		loadQuotes();
+	}
+
+	// Separate function to refresh just links (used after adding/removing links)
+	async function refreshLinks() {
+		if (!id) return;
+		linksLoading = true;
+		try {
+			const [fromLinks, toLinks] = await Promise.all([
+				traceability.getLinksFrom(id),
+				traceability.getLinksTo(id)
+			]);
+			linksFrom = fromLinks;
+			linksTo = toLinks;
+		} catch (e) {
+			console.error('Failed to refresh links:', e);
+		} finally {
+			linksLoading = false;
+		}
 	}
 
 	async function loadFeatures() {
@@ -641,7 +661,26 @@
 				{/if}
 
 				<!-- Links -->
-				<LinksSection {linksFrom} {linksTo} loading={linksLoading} />
+				<LinksSection
+					{linksFrom}
+					{linksTo}
+					loading={linksLoading}
+					entityId={entity?.id}
+					onLinksChanged={refreshLinks}
+				/>
+
+				<!-- History -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<History class="h-5 w-5" />
+							History
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<EntityHistory entityId={entity.id} />
+					</CardContent>
+				</Card>
 			</div>
 
 			<!-- Sidebar -->

@@ -36,13 +36,8 @@
 
 	const overallHealth = $derived(() => {
 		if (!coverage) return 0;
-		const scores = [
-			coverage.requirements_verified.percentage,
-			coverage.requirements_tested.percentage,
-			coverage.risks_mitigated.percentage,
-			coverage.tests_executed.percentage
-		];
-		return scores.reduce((a, b) => a + b, 0) / scores.length;
+		// Use the pre-calculated health_score from the backend
+		return coverage.health_score;
 	});
 
 	const healthStatus = $derived(() => {
@@ -144,7 +139,7 @@
 		</Card>
 
 		<!-- Coverage Metrics -->
-		<div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+		<div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 			<CoverageCard
 				title="Requirements Verified"
 				stats={coverage.requirements_verified}
@@ -152,8 +147,8 @@
 				colorClass="text-blue-500"
 			/>
 			<CoverageCard
-				title="Requirements Tested"
-				stats={coverage.requirements_tested}
+				title="Requirements Satisfied"
+				stats={coverage.requirements_satisfied}
 				icon={TestTube}
 				colorClass="text-green-500"
 			/>
@@ -164,10 +159,22 @@
 				colorClass="text-red-500"
 			/>
 			<CoverageCard
-				title="Tests Executed"
-				stats={coverage.tests_executed}
+				title="Risks Verified"
+				stats={coverage.risks_verified}
+				icon={AlertTriangle}
+				colorClass="text-orange-500"
+			/>
+			<CoverageCard
+				title="Tests Linked"
+				stats={coverage.tests_linked}
 				icon={PlayCircle}
 				colorClass="text-purple-500"
+			/>
+			<CoverageCard
+				title="Components with Suppliers"
+				stats={coverage.components_with_suppliers}
+				icon={TrendingUp}
+				colorClass="text-cyan-500"
 			/>
 		</div>
 
@@ -195,15 +202,15 @@
 					</div>
 					<div>
 						<div class="mb-2 flex items-center justify-between text-sm">
-							<span>Tested Requirements</span>
+							<span>Satisfied Requirements</span>
 							<span class="font-medium">
-								{coverage.requirements_tested.covered} of {coverage.requirements_tested.total}
+								{coverage.requirements_satisfied.covered} of {coverage.requirements_satisfied.total}
 							</span>
 						</div>
 						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
 							<div
 								class="h-full bg-green-500 transition-all"
-								style="width: {coverage.requirements_tested.percentage}%"
+								style="width: {coverage.requirements_satisfied.percentage}%"
 							></div>
 						</div>
 					</div>
@@ -238,15 +245,29 @@
 					</div>
 					<div>
 						<div class="mb-2 flex items-center justify-between text-sm">
-							<span>Executed Tests</span>
+							<span>Verified Risks</span>
 							<span class="font-medium">
-								{coverage.tests_executed.covered} of {coverage.tests_executed.total}
+								{coverage.risks_verified.covered} of {coverage.risks_verified.total}
+							</span>
+						</div>
+						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
+							<div
+								class="h-full bg-orange-500 transition-all"
+								style="width: {coverage.risks_verified.percentage}%"
+							></div>
+						</div>
+					</div>
+					<div>
+						<div class="mb-2 flex items-center justify-between text-sm">
+							<span>Tests Linked to Requirements</span>
+							<span class="font-medium">
+								{coverage.tests_linked.covered} of {coverage.tests_linked.total}
 							</span>
 						</div>
 						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
 							<div
 								class="h-full bg-purple-500 transition-all"
-								style="width: {coverage.tests_executed.percentage}%"
+								style="width: {coverage.tests_linked.percentage}%"
 							></div>
 						</div>
 					</div>

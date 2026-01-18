@@ -248,9 +248,12 @@ export interface CoverageStats {
 
 export interface CoverageReport {
 	requirements_verified: CoverageStats;
-	requirements_tested: CoverageStats;
+	requirements_satisfied: CoverageStats;
 	risks_mitigated: CoverageStats;
-	tests_executed: CoverageStats;
+	risks_verified: CoverageStats;
+	tests_linked: CoverageStats;
+	components_with_suppliers: CoverageStats;
+	health_score: number;
 }
 
 // Risk matrix
