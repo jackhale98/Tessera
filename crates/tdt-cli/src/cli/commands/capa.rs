@@ -241,7 +241,7 @@ pub struct ArchiveArgs {
 }
 
 /// Directories where CAPAs are stored
-const CAPA_DIRS: &[&str] = &["manufacturing/capas"];
+const CAPA_DIRS: &[&str] = &["quality/capas", "manufacturing/capas"];
 
 /// Entity configuration for CAPAs
 const ENTITY_CONFIG: crate::cli::EntityConfig = crate::cli::EntityConfig {
@@ -626,7 +626,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Get file path for the created CAPA
     let file_path = project
         .root()
-        .join("manufacturing/capas")
+        .join("quality/capas")
         .join(format!("{}.tdt.yaml", capa.id));
 
     // Add to short ID index
