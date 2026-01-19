@@ -1,24 +1,23 @@
-<script lang="ts">
+<script lang="ts" generics="T extends { id: string; title: string; status: string; tags?: string[] }">
 	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/ui';
 	import { Badge } from '$lib/components/ui';
 	import { Input } from '$lib/components/ui';
 	import { cn } from '$lib/utils/cn';
-	import type { EntityData } from '$lib/api/types';
 
 	interface Column {
 		key: string;
 		label: string;
 		sortable?: boolean;
-		render?: (value: unknown, entity: EntityData) => string;
+		render?: (value: unknown, entity: T) => string;
 		class?: string;
 	}
 
 	interface Props {
-		entities: EntityData[];
+		entities: T[];
 		columns: Column[];
 		loading?: boolean;
 		searchPlaceholder?: string;
-		onRowClick?: (entity: EntityData) => void;
+		onRowClick?: (entity: T) => void;
 		class?: string;
 	}
 
@@ -43,7 +42,7 @@
 			(e) =>
 				e.title.toLowerCase().includes(query) ||
 				e.id.toLowerCase().includes(query) ||
-				e.tags.some((t) => t.toLowerCase().includes(query))
+				(e.tags?.some((t) => t.toLowerCase().includes(query)) ?? false)
 		);
 	});
 
@@ -65,7 +64,7 @@
 		});
 	});
 
-	function getNestedValue(obj: EntityData, path: string): unknown {
+	function getNestedValue(obj: T, path: string): unknown {
 		return path.split('.').reduce((current, key) => {
 			if (current && typeof current === 'object') {
 				return (current as Record<string, unknown>)[key];
@@ -85,7 +84,7 @@
 		}
 	}
 
-	function handleRowClick(entity: EntityData) {
+	function handleRowClick(entity: T) {
 		if (onRowClick) {
 			onRowClick(entity);
 		}
@@ -105,7 +104,7 @@
 		}
 	}
 
-	function formatValue(column: Column, entity: EntityData): string {
+	function formatValue(column: Column, entity: T): string {
 		const value = getNestedValue(entity, column.key);
 
 		if (column.render) {
@@ -188,7 +187,7 @@
 										<Badge variant={getStatusVariant(entity.status)}>
 											{entity.status}
 										</Badge>
-									{:else if column.key === 'tags'}
+									{:else if column.key === 'tags' && entity.tags}
 										<div class="flex flex-wrap gap-1">
 											{#each entity.tags.slice(0, 3) as tag}
 												<Badge variant="outline" class="text-xs">

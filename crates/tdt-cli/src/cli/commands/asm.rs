@@ -661,25 +661,34 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         revision = args.revision.clone();
     }
 
-    // Parse BOM items from --bom flags
-    let bom_items: Vec<BomItem> = args
-        .bom
-        .iter()
-        .filter_map(|item_str| {
-            let (component_id, qty) = parse_bom_item(item_str).ok()?;
+    // Parse BOM items from --bom flags, separating components from subassemblies
+    let mut bom_items: Vec<BomItem> = Vec::new();
+    let mut subassembly_ids: Vec<String> = Vec::new();
+
+    for item_str in &args.bom {
+        if let Ok((id, qty)) = parse_bom_item(item_str) {
             let resolved_id = short_ids
-                .resolve(&component_id)
-                .unwrap_or_else(|| component_id.clone());
-            Some(BomItem {
-                component_id: resolved_id,
-                quantity: qty,
-                reference_designators: Vec::new(),
-                notes: None,
-            })
-        })
-        .collect();
+                .resolve(&id)
+                .unwrap_or_else(|| id.clone());
+
+            // Check if this is an assembly (ASM-) or component (CMP-)
+            if resolved_id.starts_with("ASM-") {
+                // Subassemblies - just store the ID (quantity is ignored for subassemblies)
+                subassembly_ids.push(resolved_id);
+            } else {
+                // Components - store as BOM item with quantity
+                bom_items.push(BomItem {
+                    component_id: resolved_id,
+                    quantity: qty,
+                    reference_designators: Vec::new(),
+                    notes: None,
+                });
+            }
+        }
+    }
 
     let bom_count = bom_items.len();
+    let subasm_count = subassembly_ids.len();
 
     // Create assembly via service
     let input = CreateAssembly {
@@ -689,7 +698,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         revision,
         description,
         bom: bom_items,
-        subassemblies: Vec::new(),
+        subassemblies: subassembly_ids,
         tags: Vec::new(),
     };
 
@@ -730,13 +739,21 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         global,
     );
 
-    // Report BOM items if any were added
+    // Report BOM items and subassemblies if any were added
     if bom_count > 0 {
         println!(
             "   {} Added {} BOM item{}",
             style("→").dim(),
             style(bom_count).cyan(),
             if bom_count == 1 { "" } else { "s" }
+        );
+    }
+    if subasm_count > 0 {
+        println!(
+            "   {} Added {} subassembl{}",
+            style("→").dim(),
+            style(subasm_count).cyan(),
+            if subasm_count == 1 { "y" } else { "ies" }
         );
     }
 

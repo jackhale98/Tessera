@@ -276,6 +276,10 @@ pub struct NewArgs {
     #[arg(long, short = 'D')]
     pub detection: Option<u8>,
 
+    /// Risk description - detailed explanation of the risk and its consequences
+    #[arg(long, short = 'd')]
+    pub description: Option<String>,
+
     /// Use interactive wizard to fill in fields
     #[arg(long, short = 'i')]
     pub interactive: bool,
@@ -702,6 +706,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         let severity = args.severity;
         let occurrence = args.occurrence;
         let detection = args.detection;
+        let description = args.description.unwrap_or_default();
 
         (
             risk_type,
@@ -710,7 +715,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             severity,
             occurrence,
             detection,
-            String::new(),
+            description,
             None,
             None,
             None,

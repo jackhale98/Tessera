@@ -343,6 +343,7 @@
 						<tbody class="divide-y">
 							{#each filteredRows() as row (row.requirement.id)}
 								{@const statusBadge = getVerificationStatusBadge(row.verification_status)}
+								{@const StatusIcon = statusBadge.icon}
 								{@const isExpanded = expandedRows.has(row.requirement.id)}
 								<tr
 									class="cursor-pointer transition-colors hover:bg-muted/50"
@@ -432,7 +433,7 @@
 									<!-- Verification Status -->
 									<td class="px-3 py-3 text-center">
 										<Badge variant={statusBadge.variant} class="{statusBadge.class} text-xs">
-											<svelte:component this={statusBadge.icon} class="h-3 w-3 mr-1" />
+											<StatusIcon class="h-3 w-3 mr-1" />
 											{statusBadge.label}
 										</Badge>
 									</td>

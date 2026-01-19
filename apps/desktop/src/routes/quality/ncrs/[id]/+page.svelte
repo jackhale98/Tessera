@@ -21,7 +21,7 @@
 		History
 	} from 'lucide-svelte';
 
-	const id = $derived($page.params.id);
+	const id = $derived($page.params.id ?? '');
 
 	let entity = $state<Record<string, unknown> | null>(null);
 	let linksFrom = $state<LinkInfo[]>([]);

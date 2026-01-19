@@ -348,6 +348,10 @@ pub struct NewArgs {
     #[arg(long, short = 'T')]
     pub title: Option<String>,
 
+    /// Test objective - what this test aims to verify or validate
+    #[arg(long, short = 'O')]
+    pub objective: Option<String>,
+
     /// Category
     #[arg(long, short = 'c')]
     pub category: Option<String>,
@@ -1022,6 +1026,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 .unwrap_or_else(|| "New Test Protocol".to_string());
             let category = args.category;
             let priority: Priority = args.priority.into();
+            let objective = args.objective.unwrap_or_default();
 
             (
                 test_type,
@@ -1030,7 +1035,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 title,
                 category,
                 priority,
-                String::new(), // Default empty objective
+                objective,
                 None,
             )
         };

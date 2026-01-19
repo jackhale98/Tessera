@@ -24,7 +24,7 @@
 		History
 	} from 'lucide-svelte';
 
-	const id = $derived($page.params.id);
+	const id = $derived($page.params.id ?? '');
 
 	// Full deviation data from API
 	let deviation = $state<Record<string, unknown> | null>(null);

@@ -36,7 +36,7 @@
 		defaultExpanded = false
 	}: Props = $props();
 
-	// Internal filter state
+	// Internal filter state (intentionally captures initial prop values only)
 	let filterState = $state<FilterState>({ ...initialFilters });
 	let isExpanded = $state(defaultExpanded);
 

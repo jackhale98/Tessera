@@ -344,6 +344,10 @@ pub struct NewArgs {
     #[arg(long, value_delimiter = ',')]
     pub tags: Vec<String>,
 
+    /// Requirement text - the full statement of the requirement
+    #[arg(long, short = 'x')]
+    pub text: Option<String>,
+
     /// Use interactive wizard to fill in fields
     #[arg(long, short = 'i')]
     pub interactive: bool,
@@ -884,6 +888,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             let priority: Priority = args.priority.into();
             let category = args.category;
             let tags = args.tags;
+            let text = args.text.unwrap_or_default();
 
             (
                 req_type,
@@ -892,7 +897,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 priority,
                 category,
                 tags,
-                String::new(), // Default empty text
+                text,
                 None,
                 vec![],
             )
