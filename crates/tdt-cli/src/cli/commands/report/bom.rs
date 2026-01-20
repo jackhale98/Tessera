@@ -31,6 +31,10 @@ pub struct BomArgs {
     /// Include mass rollup
     #[arg(long)]
     pub with_mass: bool,
+
+    /// Flatten nested assemblies (show all components in a single list)
+    #[arg(long)]
+    pub flat: bool,
 }
 
 pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
@@ -59,146 +63,364 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
     let quotes = load_all_quotes(&project);
     let quote_map: HashMap<String, &Quote> = quotes.iter().map(|q| (q.id.to_string(), q)).collect();
 
-    // Generate indented BOM
+    // Generate BOM output
     let mut output = String::new();
     output.push_str(&format!("# Bill of Materials: {}\n\n", assembly.title));
     output.push_str(&format!("Assembly ID: {}\n", assembly.id));
-    output.push_str(&format!("Part Number: {}\n\n", assembly.part_number));
+    output.push_str(&format!("Part Number: {}\n", assembly.part_number));
+    if args.flat {
+        output.push_str("View: Flattened (all components from subassemblies)\n");
+    }
+    output.push_str("\n");
 
     let mut total_cost = 0.0;
     let mut total_mass = 0.0;
 
-    output.push_str("```\n");
+    if args.flat {
+        // Flatten: collect all components recursively and output as a table
+        struct FlatBomItem {
+            component_id: String,
+            title: String,
+            part_number: String,
+            quantity: u32,
+            unit_cost: f64,
+            line_cost: f64,
+            mass_kg: f64,
+            line_mass: f64,
+            source_assembly: String,
+        }
 
-    // Recursively print BOM
-    fn print_bom_item(
-        output: &mut String,
-        component_map: &HashMap<String, &Component>,
-        assembly_map: &HashMap<String, &tdt_core::entities::assembly::Assembly>,
-        quote_map: &HashMap<String, &Quote>,
-        short_ids: &ShortIdIndex,
-        bom: &[tdt_core::entities::assembly::BomItem],
-        indent: usize,
-        total_cost: &mut f64,
-        total_mass: &mut f64,
-        with_cost: bool,
-        with_mass: bool,
-        visited: &mut std::collections::HashSet<String>,
-    ) {
-        let prefix = "│  ".repeat(indent);
-        for (i, item) in bom.iter().enumerate() {
-            let is_last = i == bom.len() - 1;
-            let branch = if is_last { "└─ " } else { "├─ " };
+        fn collect_flat_bom(
+            bom: &[tdt_core::entities::assembly::BomItem],
+            subassemblies: &[String],
+            component_map: &HashMap<String, &Component>,
+            assembly_map: &HashMap<String, &tdt_core::entities::assembly::Assembly>,
+            quote_map: &HashMap<String, &Quote>,
+            short_ids: &ShortIdIndex,
+            flat_items: &mut Vec<FlatBomItem>,
+            visited: &mut HashSet<String>,
+            source_asm: &str,
+            qty_multiplier: u32,
+        ) {
+            for item in bom {
+                let item_id = item.component_id.to_string();
 
-            let item_id = item.component_id.to_string();
-            let item_short = short_ids
-                .get_short_id(&item_id)
-                .unwrap_or_else(|| item_id.clone());
+                if item_id.starts_with("ASM-") {
+                    // Subassembly - recurse
+                    if !visited.contains(&item_id) {
+                        visited.insert(item_id.clone());
+                        if let Some(sub_asm) = assembly_map.get(&item_id) {
+                            collect_flat_bom(
+                                &sub_asm.bom,
+                                &sub_asm.subassemblies,
+                                component_map,
+                                assembly_map,
+                                quote_map,
+                                short_ids,
+                                flat_items,
+                                visited,
+                                &sub_asm.title,
+                                qty_multiplier * item.quantity,
+                            );
+                        }
+                        visited.remove(&item_id);
+                    }
+                } else if let Some(cmp) = component_map.get(&item_id) {
+                    // Component - add to flat list
+                    let actual_qty = item.quantity * qty_multiplier;
 
-            // Check if it's a component or subassembly
-            if let Some(cmp) = component_map.get(&item_id) {
-                let cost_str = if with_cost {
-                    // Priority 1: Use selected quote if set
+                    // Get unit price
                     let unit_price = if let Some(ref quote_id) = cmp.selected_quote {
                         if let Some(quote) = quote_map.get(quote_id) {
-                            quote.price_for_qty(item.quantity).unwrap_or(0.0)
+                            quote.price_for_qty(actual_qty).unwrap_or(0.0)
                         } else {
                             cmp.unit_cost.unwrap_or(0.0)
                         }
                     } else {
-                        // Priority 2: Fall back to unit_cost
                         cmp.unit_cost.unwrap_or(0.0)
                     };
 
-                    if unit_price > 0.0 {
-                        let line_cost = unit_price * item.quantity as f64;
-                        *total_cost += line_cost;
-                        format!(" ${:.2}", line_cost)
-                    } else {
-                        "".to_string()
-                    }
-                } else {
-                    "".to_string()
-                };
+                    let line_cost = unit_price * actual_qty as f64;
+                    let mass = cmp.mass_kg.unwrap_or(0.0);
+                    let line_mass = mass * actual_qty as f64;
 
-                let mass_str = if with_mass {
-                    cmp.mass_kg.map_or("".to_string(), |m| {
-                        let line_mass = m * item.quantity as f64;
-                        *total_mass += line_mass;
-                        format!(" {:.3}kg", line_mass)
-                    })
-                } else {
-                    "".to_string()
-                };
+                    let item_short = short_ids
+                        .get_short_id(&item_id)
+                        .unwrap_or_else(|| item_id.clone());
 
-                output.push_str(&format!(
-                    "{}{}{}: {} (qty: {}){}{}\n",
-                    prefix, branch, item_short, cmp.title, item.quantity, cost_str, mass_str
-                ));
-            } else if let Some(asm) = assembly_map.get(&item_id) {
-                // Subassembly - check for cycles
-                if visited.contains(&item_id) {
-                    output.push_str(&format!(
-                        "{}{}{}: {} (qty: {}) [CYCLE DETECTED]\n",
-                        prefix, branch, item_short, asm.title, item.quantity
-                    ));
-                } else {
-                    output.push_str(&format!(
-                        "{}{}{}: {} (qty: {})\n",
-                        prefix, branch, item_short, asm.title, item.quantity
-                    ));
-
-                    visited.insert(item_id.clone());
-                    print_bom_item(
-                        output,
-                        component_map,
-                        assembly_map,
-                        quote_map,
-                        short_ids,
-                        &asm.bom,
-                        indent + 1,
-                        total_cost,
-                        total_mass,
-                        with_cost,
-                        with_mass,
-                        visited,
-                    );
-                    visited.remove(&item_id);
+                    flat_items.push(FlatBomItem {
+                        component_id: item_short,
+                        title: cmp.title.clone(),
+                        part_number: cmp.part_number.clone(),
+                        quantity: actual_qty,
+                        unit_cost: unit_price,
+                        line_cost,
+                        mass_kg: mass,
+                        line_mass,
+                        source_assembly: source_asm.to_string(),
+                    });
                 }
-            } else {
-                output.push_str(&format!(
-                    "{}{}{}: (not found) (qty: {})\n",
-                    prefix, branch, item_short, item.quantity
-                ));
+            }
+
+            // Also process subassemblies field
+            for sub_id in subassemblies {
+                if !visited.contains(sub_id) {
+                    visited.insert(sub_id.clone());
+                    if let Some(sub_asm) = assembly_map.get(sub_id) {
+                        collect_flat_bom(
+                            &sub_asm.bom,
+                            &sub_asm.subassemblies,
+                            component_map,
+                            assembly_map,
+                            quote_map,
+                            short_ids,
+                            flat_items,
+                            visited,
+                            &sub_asm.title,
+                            qty_multiplier,
+                        );
+                    }
+                    visited.remove(sub_id);
+                }
             }
         }
-    }
 
-    let mut visited = std::collections::HashSet::new();
-    visited.insert(assembly.id.to_string());
-    print_bom_item(
-        &mut output,
-        &component_map,
-        &assembly_map,
-        &quote_map,
-        &short_ids,
-        &assembly.bom,
-        0,
-        &mut total_cost,
-        &mut total_mass,
-        args.with_cost,
-        args.with_mass,
-        &mut visited,
-    );
+        let mut flat_items: Vec<FlatBomItem> = Vec::new();
+        let mut visited: HashSet<String> = HashSet::new();
+        visited.insert(assembly.id.to_string());
 
-    output.push_str("```\n");
+        collect_flat_bom(
+            &assembly.bom,
+            &assembly.subassemblies,
+            &component_map,
+            &assembly_map,
+            &quote_map,
+            &short_ids,
+            &mut flat_items,
+            &mut visited,
+            "(top-level)",
+            1,
+        );
 
-    // Totals
-    if args.with_cost {
-        output.push_str(&format!("\n**Total Cost:** ${:.2}\n", total_cost));
-    }
-    if args.with_mass {
-        output.push_str(&format!("**Total Mass:** {:.3} kg\n", total_mass));
+        // Aggregate duplicates by component_id
+        let mut aggregated: HashMap<String, FlatBomItem> = HashMap::new();
+        for item in flat_items {
+            if let Some(existing) = aggregated.get_mut(&item.component_id) {
+                existing.quantity += item.quantity;
+                existing.line_cost += item.line_cost;
+                existing.line_mass += item.line_mass;
+                // Keep the first source_assembly as representative
+            } else {
+                aggregated.insert(item.component_id.clone(), item);
+            }
+        }
+
+        let mut flat_items: Vec<FlatBomItem> = aggregated.into_values().collect();
+        flat_items.sort_by(|a, b| a.component_id.cmp(&b.component_id));
+
+        // Build table
+        let mut table = Builder::default();
+        let mut headers = vec!["Component", "Part #", "Title", "Qty"];
+        if args.with_cost {
+            headers.push("Unit $");
+            headers.push("Line $");
+        }
+        if args.with_mass {
+            headers.push("Mass (kg)");
+        }
+        headers.push("Source");
+        table.push_record(headers);
+
+        for item in &flat_items {
+            total_cost += item.line_cost;
+            total_mass += item.line_mass;
+
+            let mut row = vec![
+                item.component_id.clone(),
+                if item.part_number.len() > 12 {
+                    format!("{}...", &item.part_number[..9])
+                } else {
+                    item.part_number.clone()
+                },
+                if item.title.len() > 25 {
+                    format!("{}...", &item.title[..22])
+                } else {
+                    item.title.clone()
+                },
+                item.quantity.to_string(),
+            ];
+            if args.with_cost {
+                row.push(if item.unit_cost > 0.0 {
+                    format!("${:.2}", item.unit_cost)
+                } else {
+                    "-".to_string()
+                });
+                row.push(if item.line_cost > 0.0 {
+                    format!("${:.2}", item.line_cost)
+                } else {
+                    "-".to_string()
+                });
+            }
+            if args.with_mass {
+                row.push(if item.line_mass > 0.0 {
+                    format!("{:.3}", item.line_mass)
+                } else {
+                    "-".to_string()
+                });
+            }
+            row.push(if item.source_assembly.len() > 15 {
+                format!("{}...", &item.source_assembly[..12])
+            } else {
+                item.source_assembly.clone()
+            });
+            table.push_record(row);
+        }
+
+        output.push_str(&table.build().with(Style::markdown()).to_string());
+        output.push_str("\n");
+
+        // Summary
+        output.push_str(&format!("\n**Total Components:** {} unique items\n", flat_items.len()));
+        if args.with_cost {
+            output.push_str(&format!("**Total Cost:** ${:.2}\n", total_cost));
+        }
+        if args.with_mass {
+            output.push_str(&format!("**Total Mass:** {:.3} kg\n", total_mass));
+        }
+    } else {
+        // Tree view (original behavior)
+        output.push_str("```\n");
+
+        // Recursively print BOM
+        fn print_bom_item(
+            output: &mut String,
+            component_map: &HashMap<String, &Component>,
+            assembly_map: &HashMap<String, &tdt_core::entities::assembly::Assembly>,
+            quote_map: &HashMap<String, &Quote>,
+            short_ids: &ShortIdIndex,
+            bom: &[tdt_core::entities::assembly::BomItem],
+            indent: usize,
+            total_cost: &mut f64,
+            total_mass: &mut f64,
+            with_cost: bool,
+            with_mass: bool,
+            visited: &mut std::collections::HashSet<String>,
+        ) {
+            let prefix = "│  ".repeat(indent);
+            for (i, item) in bom.iter().enumerate() {
+                let is_last = i == bom.len() - 1;
+                let branch = if is_last { "└─ " } else { "├─ " };
+
+                let item_id = item.component_id.to_string();
+                let item_short = short_ids
+                    .get_short_id(&item_id)
+                    .unwrap_or_else(|| item_id.clone());
+
+                // Check if it's a component or subassembly
+                if let Some(cmp) = component_map.get(&item_id) {
+                    let cost_str = if with_cost {
+                        // Priority 1: Use selected quote if set
+                        let unit_price = if let Some(ref quote_id) = cmp.selected_quote {
+                            if let Some(quote) = quote_map.get(quote_id) {
+                                quote.price_for_qty(item.quantity).unwrap_or(0.0)
+                            } else {
+                                cmp.unit_cost.unwrap_or(0.0)
+                            }
+                        } else {
+                            // Priority 2: Fall back to unit_cost
+                            cmp.unit_cost.unwrap_or(0.0)
+                        };
+
+                        if unit_price > 0.0 {
+                            let line_cost = unit_price * item.quantity as f64;
+                            *total_cost += line_cost;
+                            format!(" ${:.2}", line_cost)
+                        } else {
+                            "".to_string()
+                        }
+                    } else {
+                        "".to_string()
+                    };
+
+                    let mass_str = if with_mass {
+                        cmp.mass_kg.map_or("".to_string(), |m| {
+                            let line_mass = m * item.quantity as f64;
+                            *total_mass += line_mass;
+                            format!(" {:.3}kg", line_mass)
+                        })
+                    } else {
+                        "".to_string()
+                    };
+
+                    output.push_str(&format!(
+                        "{}{}{}: {} (qty: {}){}{}\n",
+                        prefix, branch, item_short, cmp.title, item.quantity, cost_str, mass_str
+                    ));
+                } else if let Some(asm) = assembly_map.get(&item_id) {
+                    // Subassembly - check for cycles
+                    if visited.contains(&item_id) {
+                        output.push_str(&format!(
+                            "{}{}{}: {} (qty: {}) [CYCLE DETECTED]\n",
+                            prefix, branch, item_short, asm.title, item.quantity
+                        ));
+                    } else {
+                        output.push_str(&format!(
+                            "{}{}{}: {} (qty: {})\n",
+                            prefix, branch, item_short, asm.title, item.quantity
+                        ));
+
+                        visited.insert(item_id.clone());
+                        print_bom_item(
+                            output,
+                            component_map,
+                            assembly_map,
+                            quote_map,
+                            short_ids,
+                            &asm.bom,
+                            indent + 1,
+                            total_cost,
+                            total_mass,
+                            with_cost,
+                            with_mass,
+                            visited,
+                        );
+                        visited.remove(&item_id);
+                    }
+                } else {
+                    output.push_str(&format!(
+                        "{}{}{}: (not found) (qty: {})\n",
+                        prefix, branch, item_short, item.quantity
+                    ));
+                }
+            }
+        }
+
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(assembly.id.to_string());
+        print_bom_item(
+            &mut output,
+            &component_map,
+            &assembly_map,
+            &quote_map,
+            &short_ids,
+            &assembly.bom,
+            0,
+            &mut total_cost,
+            &mut total_mass,
+            args.with_cost,
+            args.with_mass,
+            &mut visited,
+        );
+
+        output.push_str("```\n");
+
+        // Totals
+        if args.with_cost {
+            output.push_str(&format!("\n**Total Cost:** ${:.2}\n", total_cost));
+        }
+        if args.with_mass {
+            output.push_str(&format!("**Total Mass:** {:.3} kg\n", total_mass));
+        }
     }
 
     // Collect all unique components in the BOM for supply risk analysis

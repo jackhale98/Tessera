@@ -363,6 +363,10 @@ pub struct CostArgs {
     #[arg(long)]
     pub breakdown: bool,
 
+    /// Flatten nested assemblies (show all individual components instead of subassembly totals)
+    #[arg(long)]
+    pub flat: bool,
+
     /// Include NRE/tooling costs amortized over this production run quantity
     /// (e.g., --amortize 1000 spreads tooling cost over 1000 units)
     #[arg(long, short = 'a')]
@@ -930,6 +934,11 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
         .map(|c| (c.id.to_string(), c))
         .collect();
 
+    // Load all assemblies for subassembly lookup (needed for --flat)
+    let all_assemblies = asm_service.load_all().unwrap_or_default();
+    let assembly_map: std::collections::HashMap<String, &tdt_core::entities::assembly::Assembly> =
+        all_assemblies.iter().map(|a| (a.id.to_string(), a)).collect();
+
     // Display BOM
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
@@ -943,7 +952,114 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
         style(&assembly.part_number).yellow(),
         style(&assembly.title).white()
     );
+    if args.flat {
+        println!("{}", style("(flattened view - all components from subassemblies)").dim());
+    }
     println!();
+
+    // Collect BOM items - either flat or hierarchical
+    let bom_items: Vec<(BomItem, Option<String>)> = if args.flat {
+        // Flatten: collect all components recursively from subassemblies
+        let mut flat_items: Vec<(BomItem, Option<String>)> = Vec::new();
+        let mut visited: HashSet<String> = HashSet::new();
+        visited.insert(assembly.id.to_string());
+
+        fn collect_flat_bom(
+            bom: &[BomItem],
+            subassemblies: &[String],
+            assembly_map: &std::collections::HashMap<String, &tdt_core::entities::assembly::Assembly>,
+            flat_items: &mut Vec<(BomItem, Option<String>)>,
+            visited: &mut HashSet<String>,
+            parent_asm: Option<&str>,
+            qty_multiplier: u32,
+        ) {
+            // Process direct BOM items
+            for item in bom {
+                let item_id = item.component_id.to_string();
+
+                if item_id.starts_with("ASM-") {
+                    // This is a subassembly in the BOM - recurse into it
+                    if !visited.contains(&item_id) {
+                        visited.insert(item_id.clone());
+                        if let Some(sub_asm) = assembly_map.get(&item_id) {
+                            collect_flat_bom(
+                                &sub_asm.bom,
+                                &sub_asm.subassemblies,
+                                assembly_map,
+                                flat_items,
+                                visited,
+                                Some(&sub_asm.title),
+                                qty_multiplier * item.quantity,
+                            );
+                        }
+                        visited.remove(&item_id);
+                    }
+                } else {
+                    // Regular component - add to flat list with multiplied quantity
+                    flat_items.push((
+                        BomItem {
+                            component_id: item.component_id.clone(),
+                            quantity: item.quantity * qty_multiplier,
+                            reference_designators: item.reference_designators.clone(),
+                            notes: item.notes.clone(),
+                        },
+                        parent_asm.map(String::from),
+                    ));
+                }
+            }
+
+            // Process subassemblies field
+            for sub_id in subassemblies {
+                if !visited.contains(sub_id) {
+                    visited.insert(sub_id.clone());
+                    if let Some(sub_asm) = assembly_map.get(sub_id) {
+                        collect_flat_bom(
+                            &sub_asm.bom,
+                            &sub_asm.subassemblies,
+                            assembly_map,
+                            flat_items,
+                            visited,
+                            Some(&sub_asm.title),
+                            qty_multiplier,
+                        );
+                    }
+                    visited.remove(sub_id);
+                }
+            }
+        }
+
+        collect_flat_bom(
+            &assembly.bom,
+            &assembly.subassemblies,
+            &assembly_map,
+            &mut flat_items,
+            &mut visited,
+            None,
+            1,
+        );
+
+        // Aggregate duplicate components (sum quantities)
+        let mut aggregated: std::collections::HashMap<String, (BomItem, Option<String>)> =
+            std::collections::HashMap::new();
+        for (item, source) in flat_items {
+            if let Some((existing, _)) = aggregated.get_mut(&item.component_id) {
+                existing.quantity += item.quantity;
+                // Merge reference designators
+                for r in &item.reference_designators {
+                    if !existing.reference_designators.contains(r) {
+                        existing.reference_designators.push(r.clone());
+                    }
+                }
+            } else {
+                aggregated.insert(item.component_id.clone(), (item, source));
+            }
+        }
+
+        aggregated.into_values().collect()
+    } else {
+        // Non-flat: just use direct BOM items
+        assembly.bom.iter().map(|item| (item.clone(), None)).collect()
+    };
 
     match format {
         OutputFormat::Tsv
@@ -951,42 +1067,65 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            println!(
-                "{:<6} {:<15} {:<12} {:<30} {:<20}",
-                style("QTY").bold(),
-                style("COMPONENT ID").bold(),
-                style("PART #").bold(),
-                style("TITLE").bold(),
-                style("REFERENCES").bold()
-            );
+            if args.flat {
+                println!(
+                    "{:<6} {:<15} {:<12} {:<30} {:<15}",
+                    style("QTY").bold(),
+                    style("COMPONENT ID").bold(),
+                    style("PART #").bold(),
+                    style("TITLE").bold(),
+                    style("FROM ASM").bold()
+                );
+            } else {
+                println!(
+                    "{:<6} {:<15} {:<12} {:<30} {:<20}",
+                    style("QTY").bold(),
+                    style("COMPONENT ID").bold(),
+                    style("PART #").bold(),
+                    style("TITLE").bold(),
+                    style("REFERENCES").bold()
+                );
+            }
             println!("{}", "-".repeat(85));
 
-            for item in &assembly.bom {
+            for (item, source_asm) in &bom_items {
                 let cmp_info = components.get(&item.component_id);
                 let part_number = cmp_info.map(|c| c.part_number.as_str()).unwrap_or("-");
                 let title = cmp_info.map(|c| c.title.as_str()).unwrap_or("(not found)");
-                let refs = if item.reference_designators.is_empty() {
-                    String::new()
-                } else {
-                    item.reference_designators.join(", ")
-                };
 
                 // Use short ID if available, otherwise truncate the full ID
                 let cmp_display = short_ids
                     .get_short_id(&item.component_id)
                     .unwrap_or_else(|| truncate_str(&item.component_id, 13).to_string());
 
-                println!(
-                    "{:<6} {:<15} {:<12} {:<30} {:<20}",
-                    item.quantity,
-                    cmp_display,
-                    truncate_str(part_number, 10),
-                    truncate_str(title, 28),
-                    truncate_str(&refs, 18)
-                );
+                if args.flat {
+                    let source = source_asm.as_deref().unwrap_or("-");
+                    println!(
+                        "{:<6} {:<15} {:<12} {:<30} {:<15}",
+                        item.quantity,
+                        cmp_display,
+                        truncate_str(part_number, 10),
+                        truncate_str(title, 28),
+                        truncate_str(source, 13)
+                    );
+                } else {
+                    let refs = if item.reference_designators.is_empty() {
+                        String::new()
+                    } else {
+                        item.reference_designators.join(", ")
+                    };
+                    println!(
+                        "{:<6} {:<15} {:<12} {:<30} {:<20}",
+                        item.quantity,
+                        cmp_display,
+                        truncate_str(part_number, 10),
+                        truncate_str(title, 28),
+                        truncate_str(&refs, 18)
+                    );
+                }
             }
 
-            if !assembly.subassemblies.is_empty() {
+            if !args.flat && !assembly.subassemblies.is_empty() {
                 println!();
                 println!("{}", style("Sub-assemblies:").bold());
                 for sub_id in &assembly.subassemblies {
@@ -998,39 +1137,78 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
             }
 
             println!();
-            println!(
-                "{} Total: {} line items, {} total components",
-                style("Summary").bold(),
-                assembly.bom.len(),
-                assembly.total_component_count()
-            );
+            if args.flat {
+                println!(
+                    "{} Total: {} unique components",
+                    style("Summary").bold(),
+                    bom_items.len()
+                );
+            } else {
+                println!(
+                    "{} Total: {} line items, {} total components",
+                    style("Summary").bold(),
+                    assembly.bom.len(),
+                    assembly.total_component_count()
+                );
+            }
         }
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&assembly.bom).into_diagnostic()?;
-            println!("{}", json);
+            if args.flat {
+                let items: Vec<&BomItem> = bom_items.iter().map(|(item, _)| item).collect();
+                let json = serde_json::to_string_pretty(&items).into_diagnostic()?;
+                println!("{}", json);
+            } else {
+                let json = serde_json::to_string_pretty(&assembly.bom).into_diagnostic()?;
+                println!("{}", json);
+            }
         }
         OutputFormat::Yaml => {
-            let yaml = serde_yml::to_string(&assembly.bom).into_diagnostic()?;
-            print!("{}", yaml);
+            if args.flat {
+                let items: Vec<&BomItem> = bom_items.iter().map(|(item, _)| item).collect();
+                let yaml = serde_yml::to_string(&items).into_diagnostic()?;
+                print!("{}", yaml);
+            } else {
+                let yaml = serde_yml::to_string(&assembly.bom).into_diagnostic()?;
+                print!("{}", yaml);
+            }
         }
         OutputFormat::Csv => {
-            println!("quantity,component_id,part_number,title,reference_designators,notes");
-            for item in &assembly.bom {
-                let cmp_info = components.get(&item.component_id);
-                let part_number = cmp_info.map(|c| c.part_number.as_str()).unwrap_or("");
-                let title = cmp_info.map(|c| c.title.as_str()).unwrap_or("");
-                let refs = item.reference_designators.join(";");
-                let notes = item.notes.as_deref().unwrap_or("");
+            if args.flat {
+                println!("quantity,component_id,part_number,title,from_assembly");
+                for (item, source_asm) in &bom_items {
+                    let cmp_info = components.get(&item.component_id);
+                    let part_number = cmp_info.map(|c| c.part_number.as_str()).unwrap_or("");
+                    let title = cmp_info.map(|c| c.title.as_str()).unwrap_or("");
+                    let source = source_asm.as_deref().unwrap_or("");
 
-                println!(
-                    "{},{},{},{},{},{}",
-                    item.quantity,
-                    item.component_id,
-                    escape_csv(part_number),
-                    escape_csv(title),
-                    escape_csv(&refs),
-                    escape_csv(notes)
-                );
+                    println!(
+                        "{},{},{},{},{}",
+                        item.quantity,
+                        item.component_id,
+                        escape_csv(part_number),
+                        escape_csv(title),
+                        escape_csv(source)
+                    );
+                }
+            } else {
+                println!("quantity,component_id,part_number,title,reference_designators,notes");
+                for (item, _) in &bom_items {
+                    let cmp_info = components.get(&item.component_id);
+                    let part_number = cmp_info.map(|c| c.part_number.as_str()).unwrap_or("");
+                    let title = cmp_info.map(|c| c.title.as_str()).unwrap_or("");
+                    let refs = item.reference_designators.join(";");
+                    let notes = item.notes.as_deref().unwrap_or("");
+
+                    println!(
+                        "{},{},{},{},{},{}",
+                        item.quantity,
+                        item.component_id,
+                        escape_csv(part_number),
+                        escape_csv(title),
+                        escape_csv(&refs),
+                        escape_csv(notes)
+                    );
+                }
             }
         }
         _ => {}
@@ -1294,31 +1472,37 @@ fn run_cost(args: CostArgs) -> Result<()> {
     let mut nre_items: Vec<(String, String, f64)> = Vec::new(); // (quote_id, component_title, nre_amount)
 
     // Calculate costs recursively
-    // breakdown: (id, title, bom_qty, unit_price, line_cost, price_source, nre)
-    let mut breakdown: Vec<(String, String, u32, f64, f64, String, f64)> = Vec::new();
+    // breakdown: (id, title, bom_qty, unit_price, line_cost, price_source, nre, source_asm)
+    let mut breakdown: Vec<(String, String, u32, f64, f64, String, f64, String)> = Vec::new();
     let mut visited = std::collections::HashSet::new();
     visited.insert(assembly.id.to_string());
 
     fn calculate_bom_cost(
         bom: &[tdt_core::entities::assembly::BomItem],
+        subassemblies: &[String],
         component_map: &std::collections::HashMap<String, &Component>,
         assembly_map: &std::collections::HashMap<String, &Assembly>,
         quote_map: &std::collections::HashMap<String, &Quote>,
         component_quotes: &std::collections::HashMap<String, Vec<&Quote>>,
-        breakdown: &mut Vec<(String, String, u32, f64, f64, String, f64)>,
+        breakdown: &mut Vec<(String, String, u32, f64, f64, String, f64, String)>,
         unselected_warnings: &mut Vec<(String, String, usize)>,
         expired_warnings: &mut Vec<(String, String, String)>,
         nre_items: &mut Vec<(String, String, f64)>,
         visited: &mut std::collections::HashSet<String>,
         production_qty: u32,
         warn_expired: bool,
+        flat: bool,
+        qty_multiplier: u32,
+        source_asm: &str,
     ) -> f64 {
         let mut total = 0.0;
         for item in bom {
             let item_id = item.component_id.to_string();
+            let effective_qty = item.quantity * qty_multiplier;
+
             if let Some(cmp) = component_map.get(&item_id) {
                 // Determine price: selected quote > unit_cost > 0.0
-                let purchase_qty = item.quantity * production_qty;
+                let purchase_qty = effective_qty * production_qty;
                 let (unit_price, price_source, nre, is_expired, valid_until) =
                     get_component_price_with_nre(
                         cmp,
@@ -1354,49 +1538,143 @@ fn run_cost(args: CostArgs) -> Result<()> {
                     }
                 }
 
-                let line_cost = unit_price * item.quantity as f64;
+                let line_cost = unit_price * effective_qty as f64;
                 total += line_cost;
                 breakdown.push((
                     item_id,
                     cmp.title.clone(),
-                    item.quantity,
+                    effective_qty,
                     unit_price,
                     line_cost,
                     price_source,
                     nre,
+                    source_asm.to_string(),
                 ));
             } else if let Some(sub_asm) = assembly_map.get(&item_id) {
                 if !visited.contains(&item_id) {
                     visited.insert(item_id.clone());
-                    let sub_cost = calculate_bom_cost(
-                        &sub_asm.bom,
-                        component_map,
-                        assembly_map,
-                        quote_map,
-                        component_quotes,
-                        breakdown,
-                        unselected_warnings,
-                        expired_warnings,
-                        nre_items,
-                        visited,
-                        production_qty,
-                        warn_expired,
-                    );
-                    let line_cost = sub_cost * item.quantity as f64;
-                    total += line_cost;
-                    breakdown.push((
-                        item_id.clone(),
-                        sub_asm.title.clone(),
-                        item.quantity,
-                        sub_cost,
-                        line_cost,
-                        "sub-asm".to_string(),
-                        0.0,
-                    ));
+
+                    if flat {
+                        // In flat mode, recurse into subassembly and collect individual components
+                        let sub_cost = calculate_bom_cost(
+                            &sub_asm.bom,
+                            &sub_asm.subassemblies,
+                            component_map,
+                            assembly_map,
+                            quote_map,
+                            component_quotes,
+                            breakdown,
+                            unselected_warnings,
+                            expired_warnings,
+                            nre_items,
+                            visited,
+                            production_qty,
+                            warn_expired,
+                            flat,
+                            effective_qty,
+                            &sub_asm.title,
+                        );
+                        total += sub_cost;
+                    } else {
+                        // In hierarchical mode, show subassembly as a single line
+                        let sub_cost = calculate_bom_cost(
+                            &sub_asm.bom,
+                            &sub_asm.subassemblies,
+                            component_map,
+                            assembly_map,
+                            quote_map,
+                            component_quotes,
+                            breakdown,
+                            unselected_warnings,
+                            expired_warnings,
+                            nre_items,
+                            visited,
+                            production_qty,
+                            warn_expired,
+                            flat,
+                            1,
+                            "",
+                        );
+                        let line_cost = sub_cost * effective_qty as f64;
+                        total += line_cost;
+                        breakdown.push((
+                            item_id.clone(),
+                            sub_asm.title.clone(),
+                            effective_qty,
+                            sub_cost,
+                            line_cost,
+                            "sub-asm".to_string(),
+                            0.0,
+                            "".to_string(),
+                        ));
+                    }
                     visited.remove(&item_id);
                 }
             }
         }
+
+        // Also process items from the subassemblies field
+        for sub_id in subassemblies {
+            if !visited.contains(sub_id) {
+                if let Some(sub_asm) = assembly_map.get(sub_id) {
+                    visited.insert(sub_id.clone());
+
+                    if flat {
+                        let sub_cost = calculate_bom_cost(
+                            &sub_asm.bom,
+                            &sub_asm.subassemblies,
+                            component_map,
+                            assembly_map,
+                            quote_map,
+                            component_quotes,
+                            breakdown,
+                            unselected_warnings,
+                            expired_warnings,
+                            nre_items,
+                            visited,
+                            production_qty,
+                            warn_expired,
+                            flat,
+                            qty_multiplier,
+                            &sub_asm.title,
+                        );
+                        total += sub_cost;
+                    } else {
+                        let sub_cost = calculate_bom_cost(
+                            &sub_asm.bom,
+                            &sub_asm.subassemblies,
+                            component_map,
+                            assembly_map,
+                            quote_map,
+                            component_quotes,
+                            breakdown,
+                            unselected_warnings,
+                            expired_warnings,
+                            nre_items,
+                            visited,
+                            production_qty,
+                            warn_expired,
+                            flat,
+                            1,
+                            "",
+                        );
+                        total += sub_cost * qty_multiplier as f64;
+                        breakdown.push((
+                            sub_id.clone(),
+                            sub_asm.title.clone(),
+                            qty_multiplier,
+                            sub_cost,
+                            sub_cost * qty_multiplier as f64,
+                            "sub-asm".to_string(),
+                            0.0,
+                            "".to_string(),
+                        ));
+                    }
+                    visited.remove(sub_id);
+                }
+            }
+        }
+
         total
     }
 
@@ -1465,6 +1743,7 @@ fn run_cost(args: CostArgs) -> Result<()> {
 
     let total_piece_cost = calculate_bom_cost(
         &assembly.bom,
+        &assembly.subassemblies,
         &component_map,
         &assembly_map,
         &quote_map,
@@ -1476,6 +1755,9 @@ fn run_cost(args: CostArgs) -> Result<()> {
         &mut visited,
         production_qty,
         args.warn_expired,
+        args.flat,
+        1,
+        "",
     );
 
     // Calculate total NRE
@@ -1497,6 +1779,9 @@ fn run_cost(args: CostArgs) -> Result<()> {
         style(&assembly.title).cyan()
     );
     println!("{} {}", style("Part Number:").bold(), assembly.part_number);
+    if args.flat {
+        println!("{}", style("(flattened view - all components from subassemblies)").dim());
+    }
     if production_qty > 1 {
         println!(
             "{} {}",
@@ -1515,9 +1800,38 @@ fn run_cost(args: CostArgs) -> Result<()> {
     }
     println!();
 
-    if args.breakdown && !breakdown.is_empty() {
+    if (args.breakdown || args.flat) && !breakdown.is_empty() {
         let show_nre_col = include_nre && total_nre > 0.0;
-        if show_nre_col {
+
+        // Print header based on mode
+        if args.flat {
+            if show_nre_col {
+                println!(
+                    "{:<10} {:<20} {:<5} {:<10} {:<10} {:<8} {:<10} {:<12}",
+                    style("ID").bold(),
+                    style("TITLE").bold(),
+                    style("QTY").bold(),
+                    style("UNIT").bold(),
+                    style("LINE").bold(),
+                    style("NRE").bold(),
+                    style("SOURCE").bold(),
+                    style("FROM ASM").bold()
+                );
+                println!("{}", "-".repeat(95));
+            } else {
+                println!(
+                    "{:<10} {:<22} {:<5} {:<10} {:<10} {:<10} {:<15}",
+                    style("ID").bold(),
+                    style("TITLE").bold(),
+                    style("QTY").bold(),
+                    style("UNIT").bold(),
+                    style("LINE").bold(),
+                    style("SOURCE").bold(),
+                    style("FROM ASM").bold()
+                );
+                println!("{}", "-".repeat(90));
+            }
+        } else if show_nre_col {
             println!(
                 "{:<10} {:<24} {:<5} {:<10} {:<10} {:<10} {:<10}",
                 style("ID").bold(),
@@ -1542,12 +1856,44 @@ fn run_cost(args: CostArgs) -> Result<()> {
             println!("{}", "-".repeat(75));
         }
 
-        for (id, title, qty, unit_price, line_cost, source, nre) in &breakdown {
+        for (id, title, qty, unit_price, line_cost, source, nre, source_asm) in &breakdown {
             let id_short = short_ids
                 .get_short_id(id)
                 .unwrap_or_else(|| truncate_str(id, 8));
+            let from_asm = if source_asm.is_empty() { "-".to_string() } else { truncate_str(source_asm, 13) };
+
             if *line_cost > 0.0 || *unit_price > 0.0 {
-                if show_nre_col {
+                if args.flat {
+                    if show_nre_col {
+                        let nre_str = if *nre > 0.0 {
+                            format!("${:.0}", nre)
+                        } else {
+                            "-".to_string()
+                        };
+                        println!(
+                            "{:<10} {:<20} {:<5} ${:<9.2} ${:<9.2} {:<8} {:<10} {:<12}",
+                            id_short,
+                            truncate_str(title, 18),
+                            qty,
+                            unit_price,
+                            line_cost,
+                            nre_str,
+                            style(source).dim(),
+                            from_asm
+                        );
+                    } else {
+                        println!(
+                            "{:<10} {:<22} {:<5} ${:<9.2} ${:<9.2} {:<10} {:<15}",
+                            id_short,
+                            truncate_str(title, 20),
+                            qty,
+                            unit_price,
+                            line_cost,
+                            style(source).dim(),
+                            from_asm
+                        );
+                    }
+                } else if show_nre_col {
                     let nre_str = if *nre > 0.0 {
                         format!("${:.0}", nre)
                     } else {
@@ -1575,7 +1921,32 @@ fn run_cost(args: CostArgs) -> Result<()> {
                     );
                 }
             } else {
-                if show_nre_col {
+                if args.flat {
+                    if show_nre_col {
+                        println!(
+                            "{:<10} {:<20} {:<5} {:<10} {:<10} {:<8} {:<10} {:<12}",
+                            id_short,
+                            truncate_str(title, 18),
+                            qty,
+                            style("-").dim(),
+                            style("-").dim(),
+                            style("-").dim(),
+                            style(source).dim(),
+                            from_asm
+                        );
+                    } else {
+                        println!(
+                            "{:<10} {:<22} {:<5} {:<10} {:<10} {:<10} {:<15}",
+                            id_short,
+                            truncate_str(title, 20),
+                            qty,
+                            style("-").dim(),
+                            style("-").dim(),
+                            style(source).dim(),
+                            from_asm
+                        );
+                    }
+                } else if show_nre_col {
                     println!(
                         "{:<10} {:<24} {:<5} {:<10} {:<10} {:<10} {}",
                         id_short,
@@ -1599,7 +1970,10 @@ fn run_cost(args: CostArgs) -> Result<()> {
                 }
             }
         }
-        println!("{}", "-".repeat(if show_nre_col { 85 } else { 75 }));
+        let line_width = if args.flat {
+            if show_nre_col { 95 } else { 90 }
+        } else if show_nre_col { 85 } else { 75 };
+        println!("{}", "-".repeat(line_width));
     }
 
     // Cost summary
