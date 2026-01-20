@@ -656,7 +656,7 @@ pub fn render_isometric_ascii(stackup: &Stackup, contributors_3d: &[ChainContrib
         };
 
         if i > 0 {
-            output.push_str(" ");
+            output.push(' ');
         }
         output.push_str(&format!("{}{:.1}", sign, contrib.nominal));
     }

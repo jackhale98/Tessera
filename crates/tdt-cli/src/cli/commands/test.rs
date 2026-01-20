@@ -1019,7 +1019,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
             let priority = result
                 .get_string("priority")
-                .map(|s| parse_priority(s))
+                .map(parse_priority)
                 .unwrap_or(Priority::Medium);
 
             // Extract text fields

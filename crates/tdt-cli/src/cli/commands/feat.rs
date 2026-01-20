@@ -1038,7 +1038,7 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
     // Handle output
     let short_id = short_ids
         .get_short_id(&feat.id.to_string())
-        .unwrap_or_else(|| format!("FEAT@?"));
+        .unwrap_or_else(|| "FEAT@?".to_string());
 
     if !args.quiet {
         match global.output {

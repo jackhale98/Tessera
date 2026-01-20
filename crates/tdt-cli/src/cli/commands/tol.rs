@@ -709,7 +709,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&id))
+                short_id.clone().unwrap_or_else(|| format_short_id(id))
             );
         }
         OutputFormat::Path => {
@@ -719,7 +719,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created stackup {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&id))).cyan()
+                style(short_id.clone().unwrap_or_else(|| format_short_id(id))).cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
@@ -2287,7 +2287,6 @@ fn run_3d_analysis(
         if let Some(ref label) = feat.datum_label {
             let geom_class = feat
                 .geometry_class
-                .clone()
                 .unwrap_or(GeometryClass::Complex);
             let position = feat
                 .geometry_3d
@@ -2358,7 +2357,7 @@ fn run_3d_analysis(
             if geometry_class == GeometryClass::Complex {
                 missing_geometry_class.push(contrib.name.clone());
             } else {
-                inferred_geometry_class.push((contrib.name.clone(), geometry_class.clone()));
+                inferred_geometry_class.push((contrib.name.clone(), geometry_class));
             }
         }
 
@@ -2387,10 +2386,10 @@ fn run_3d_analysis(
 
         // Determine which DOFs the tolerance applies to based on datum order
         let tolerance_dofs = if !datum_refs.is_empty() && !datum_features.is_empty() {
-            sdt::get_tolerance_dofs(&datum_refs, &datum_features, geometry_class.clone())
+            sdt::get_tolerance_dofs(&datum_refs, &datum_features, geometry_class)
         } else {
             // Fallback: use all DOFs the geometry can deviate in
-            sdt::get_constrained_dof(geometry_class.clone())
+            sdt::get_constrained_dof(geometry_class)
         };
 
         // Use feature's pre-computed torsor_bounds (from GD&T) if available,
@@ -2416,7 +2415,7 @@ fn run_3d_analysis(
         }
 
         // Map distribution type
-        let distribution = contrib.distribution.clone();
+        let distribution = contrib.distribution;
 
         contributors_3d.push(ChainContributor3D {
             name: contrib.name.clone(),

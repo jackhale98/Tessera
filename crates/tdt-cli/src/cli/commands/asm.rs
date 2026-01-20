@@ -1940,54 +1940,52 @@ fn run_cost(args: CostArgs) -> Result<()> {
                         style(source).dim()
                     );
                 }
-            } else {
-                if args.flat {
-                    if show_nre_col {
-                        println!(
-                            "{:<10} {:<20} {:<5} {:<10} {:<10} {:<8} {:<10} {:<12}",
-                            id_short,
-                            truncate_str(title, 18),
-                            qty,
-                            style("-").dim(),
-                            style("-").dim(),
-                            style("-").dim(),
-                            style(source).dim(),
-                            from_asm
-                        );
-                    } else {
-                        println!(
-                            "{:<10} {:<22} {:<5} {:<10} {:<10} {:<10} {:<15}",
-                            id_short,
-                            truncate_str(title, 20),
-                            qty,
-                            style("-").dim(),
-                            style("-").dim(),
-                            style(source).dim(),
-                            from_asm
-                        );
-                    }
-                } else if show_nre_col {
+            } else if args.flat {
+                if show_nre_col {
                     println!(
-                        "{:<10} {:<24} {:<5} {:<10} {:<10} {:<10} {}",
+                        "{:<10} {:<20} {:<5} {:<10} {:<10} {:<8} {:<10} {:<12}",
                         id_short,
-                        truncate_str(title, 22),
+                        truncate_str(title, 18),
                         qty,
                         style("-").dim(),
                         style("-").dim(),
                         style("-").dim(),
-                        style(source).dim()
+                        style(source).dim(),
+                        from_asm
                     );
                 } else {
                     println!(
-                        "{:<10} {:<26} {:<5} {:<10} {:<10} {}",
+                        "{:<10} {:<22} {:<5} {:<10} {:<10} {:<10} {:<15}",
                         id_short,
-                        truncate_str(title, 24),
+                        truncate_str(title, 20),
                         qty,
                         style("-").dim(),
                         style("-").dim(),
-                        style(source).dim()
+                        style(source).dim(),
+                        from_asm
                     );
                 }
+            } else if show_nre_col {
+                println!(
+                    "{:<10} {:<24} {:<5} {:<10} {:<10} {:<10} {}",
+                    id_short,
+                    truncate_str(title, 22),
+                    qty,
+                    style("-").dim(),
+                    style("-").dim(),
+                    style("-").dim(),
+                    style(source).dim()
+                );
+            } else {
+                println!(
+                    "{:<10} {:<26} {:<5} {:<10} {:<10} {}",
+                    id_short,
+                    truncate_str(title, 24),
+                    qty,
+                    style("-").dim(),
+                    style("-").dim(),
+                    style(source).dim()
+                );
             }
         }
         let line_width = if args.flat {

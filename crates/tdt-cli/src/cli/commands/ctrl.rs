@@ -573,7 +573,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         description = result.get_string("description").map(String::from);
         control_category = result
             .get_string("control_category")
-            .map(|s| parse_control_category(s))
+            .map(parse_control_category)
             .unwrap_or_default();
     } else {
         title = args.title.unwrap_or_else(|| "New Control".to_string());

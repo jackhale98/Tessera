@@ -1408,7 +1408,7 @@ fn run_step(args: StepArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     // Update the step
-    lot.execution[step_idx].status = new_status.clone();
+    lot.execution[step_idx].status = new_status;
     lot.execution[step_idx].operator = Some(operator.clone());
 
     // Set started_date if transitioning to in_progress

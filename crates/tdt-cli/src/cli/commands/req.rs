@@ -1290,8 +1290,7 @@ fn run_stats(args: StatsArgs, global: &GlobalOpts) -> Result<()> {
                 let cat = req
                     .category
                     .as_ref()
-                    .filter(|c| !c.is_empty())
-                    .map(|c| c.clone())
+                    .filter(|c| !c.is_empty()).cloned()
                     .unwrap_or_else(|| "(uncategorized)".to_string());
                 *cat_counts.entry(cat).or_default() += 1;
             }

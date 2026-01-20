@@ -71,7 +71,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
     if args.flat {
         output.push_str("View: Flattened (all components from subassemblies)\n");
     }
-    output.push_str("\n");
+    output.push('\n');
 
     let mut total_cost = 0.0;
     let mut total_mass = 0.0;
@@ -85,7 +85,6 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
             quantity: u32,
             unit_cost: f64,
             line_cost: f64,
-            mass_kg: f64,
             line_mass: f64,
             source_assembly: String,
         }
@@ -141,8 +140,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                     };
 
                     let line_cost = unit_price * actual_qty as f64;
-                    let mass = cmp.mass_kg.unwrap_or(0.0);
-                    let line_mass = mass * actual_qty as f64;
+                    let line_mass = cmp.mass_kg.unwrap_or(0.0) * actual_qty as f64;
 
                     let item_short = short_ids
                         .get_short_id(&item_id)
@@ -155,7 +153,6 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                         quantity: actual_qty,
                         unit_cost: unit_price,
                         line_cost,
-                        mass_kg: mass,
                         line_mass,
                         source_assembly: source_asm.to_string(),
                     });
@@ -277,7 +274,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
         }
 
         output.push_str(&table.build().with(Style::markdown()).to_string());
-        output.push_str("\n");
+        output.push('\n');
 
         // Summary
         output.push_str(&format!(

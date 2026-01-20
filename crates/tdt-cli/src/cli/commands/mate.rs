@@ -321,7 +321,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     if let Some(ref sort_col) = args.sort {
         match sort_col {
             ListColumn::Match => {
-                mates.sort_by(|a, b| fit_matches_type(a).cmp(&fit_matches_type(b)))
+                mates.sort_by_key(|a| fit_matches_type(a))
             }
             ListColumn::FeatureA => {
                 mates.sort_by(|a, b| a.feature_a.id.to_string().cmp(&b.feature_a.id.to_string()))
@@ -615,7 +615,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&id))
+                short_id.clone().unwrap_or_else(|| format_short_id(id))
             );
         }
         OutputFormat::Path => {
@@ -625,7 +625,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created mate {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&id))).cyan()
+                style(short_id.clone().unwrap_or_else(|| format_short_id(id))).cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(

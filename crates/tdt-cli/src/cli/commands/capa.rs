@@ -533,7 +533,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
     // Apply overdue actions filter (requires full entity data)
     if args.overdue_actions {
-        capas.retain(|capa| has_overdue_actions(capa));
+        capas.retain(has_overdue_actions);
     }
 
     // Apply limit

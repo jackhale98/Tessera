@@ -622,7 +622,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .unwrap_or_else(|| "New Process".to_string());
         process_type = result
             .get_string("process_type")
-            .map(|s| parse_process_type(s))
+            .map(parse_process_type)
             .unwrap_or_default();
         operation_number = result.get_string("operation_number").map(String::from);
         description = result.get_string("description").map(String::from);
@@ -630,7 +630,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         setup_time = result.get_f64("setup_time_minutes");
         operator_skill = result
             .get_string("operator_skill")
-            .map(|s| parse_skill_level(s))
+            .map(parse_skill_level)
             .unwrap_or_default();
     } else {
         title = args.title.unwrap_or_else(|| "New Process".to_string());
