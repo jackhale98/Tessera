@@ -273,8 +273,7 @@ fn collect_quality_metrics(project: &Project, cache: &EntityCache) -> QualityMet
     ncr_by_severity.insert("minor".to_string(), ncr_stats.by_severity.minor);
 
     // Count open CAPAs (not closed)
-    let open_capas = capa_stats.total
-        - capa_stats.by_status.closed;
+    let open_capas = capa_stats.total - capa_stats.by_status.closed;
 
     QualityMetrics {
         open_ncrs: ncr_stats.open,
@@ -297,7 +296,8 @@ fn collect_bom_metrics(project: &Project, cache: &EntityCache) -> BomMetrics {
 
     // Count single-source components from cache
     // Group quotes by component_id and count unique suppliers per component
-    let mut component_suppliers: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
+    let mut component_suppliers: HashMap<String, std::collections::HashSet<String>> =
+        HashMap::new();
     for quote in &quotes {
         if let (Some(cmp_id), Some(sup_id)) = (&quote.component_id, &quote.supplier_id) {
             component_suppliers

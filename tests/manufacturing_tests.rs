@@ -1377,10 +1377,7 @@ fn test_lot_wi_step_show() {
         ])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("Completed")
-                .or(predicate::str::contains("Status")),
-        );
+        .stdout(predicate::str::contains("Completed").or(predicate::str::contains("Status")));
 }
 
 #[test]
@@ -1458,10 +1455,7 @@ fn test_lot_router_show_pending() {
         .args(["lot", "router", &lot_id, "--pending"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("Pending")
-                .or(predicate::str::contains("Approval")),
-        );
+        .stdout(predicate::str::contains("Pending").or(predicate::str::contains("Approval")));
 }
 
 #[test]

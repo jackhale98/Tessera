@@ -149,8 +149,7 @@ impl<'a> ServiceBase<'a> {
         }
 
         // Serialize and write
-        let yaml =
-            serde_yml::to_string(entity).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(entity).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(path, yaml)?;
 
         Ok(())
@@ -318,8 +317,7 @@ mod tests {
         let base = ServiceBase::new(&project, &cache);
 
         let dir = tmp.path().join("requirements/inputs");
-        let result: Result<(PathBuf, Requirement), _> =
-            base.find_entity("REQ-NONEXISTENT", &dir);
+        let result: Result<(PathBuf, Requirement), _> = base.find_entity("REQ-NONEXISTENT", &dir);
 
         assert!(result.is_err());
         match result.unwrap_err() {

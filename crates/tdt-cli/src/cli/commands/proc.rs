@@ -16,7 +16,9 @@ use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
 use tdt_core::entities::process::{Process, ProcessType, SkillLevel};
 use tdt_core::schema::wizard::SchemaWizard;
-use tdt_core::services::{CommonFilter, CreateProcess, ProcessFilter, ProcessService, ProcessSortField, SortDirection};
+use tdt_core::services::{
+    CommonFilter, CreateProcess, ProcessFilter, ProcessService, ProcessSortField, SortDirection,
+};
 
 /// Column definitions for process list output
 const PROC_COLUMNS: &[ColumnDef] = &[
@@ -373,13 +375,17 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
     // Full entity loading path
     let (sort_field, sort_dir) = build_proc_sort(&args);
-    let result = service.list(&filter, sort_field, sort_dir).map_err(|e| miette::miette!("{}", e))?;
+    let result = service
+        .list(&filter, sort_field, sort_dir)
+        .map_err(|e| miette::miette!("{}", e))?;
     let mut processes = result.items;
 
     // Post-sort for Operation column (not in service sort for cached path)
     if matches!(args.sort, ListColumn::Operation) {
         processes.sort_by(|a, b| {
-            a.operation_number.as_deref().unwrap_or("")
+            a.operation_number
+                .as_deref()
+                .unwrap_or("")
                 .cmp(b.operation_number.as_deref().unwrap_or(""))
         });
     }
@@ -474,7 +480,9 @@ fn sort_cached_processes(entities: &mut [CachedEntity], args: &ListArgs) {
         ListColumn::Id => entities.sort_by(|a, b| a.id.cmp(&b.id)),
         ListColumn::Title => entities.sort_by(|a, b| a.title.cmp(&b.title)),
         ListColumn::ProcessType => entities.sort_by(|a, b| {
-            a.entity_type.as_deref().unwrap_or("")
+            a.entity_type
+                .as_deref()
+                .unwrap_or("")
                 .cmp(b.entity_type.as_deref().unwrap_or(""))
         }),
         ListColumn::Operation => {} // Not in cache
@@ -503,7 +511,8 @@ fn output_processes(
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&processes).map_err(|e| miette::miette!("{}", e))?;
+            let json =
+                serde_json::to_string_pretty(&processes).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
@@ -533,7 +542,8 @@ fn output_processes(
                 None => TableConfig::default(),
             };
 
-            let formatter = TableFormatter::new(PROC_COLUMNS, "process", "PROC").with_config(config);
+            let formatter =
+                TableFormatter::new(PROC_COLUMNS, "process", "PROC").with_config(config);
             formatter.output(rows, format, &visible_columns);
         }
         OutputFormat::Auto | OutputFormat::Path => unreachable!(),

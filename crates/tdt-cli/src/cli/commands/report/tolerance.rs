@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use crate::cli::helpers::truncate_str;
 use crate::cli::GlobalOpts;
+use tabled::{builder::Builder, settings::Style};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::entities::assembly::Assembly;
@@ -13,7 +14,6 @@ use tdt_core::entities::component::Component;
 use tdt_core::entities::feature::Feature;
 use tdt_core::entities::mate::Mate;
 use tdt_core::entities::stackup::{AnalysisResult, Stackup};
-use tabled::{builder::Builder, settings::Style};
 
 use super::{
     load_all_assemblies, load_all_components, load_all_features, load_all_mates, load_all_stackups,

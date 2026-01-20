@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 use tauri::State;
-use tdt_core::core::Git;
 use tdt_core::core::workflow::ApprovalRecord;
+use tdt_core::core::Git;
 
 // ============================================================================
 // Types
@@ -351,7 +351,10 @@ pub async fn get_entity_workflow_history(
     // Created event
     events.push(WorkflowEvent {
         event_type: "created".to_string(),
-        actor: entity.author.clone().unwrap_or_else(|| "Unknown".to_string()),
+        actor: entity
+            .author
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string()),
         timestamp: entity.created.to_rfc3339(),
         role: None,
         comment: None,
@@ -470,7 +473,11 @@ pub async fn list_git_branches(state: State<'_, AppState>) -> CommandResult<Vec<
 
     // Get local branches
     let output = Command::new("git")
-        .args(["branch", "-v", "--format=%(refname:short)|%(objectname:short)|%(subject)"])
+        .args([
+            "branch",
+            "-v",
+            "--format=%(refname:short)|%(objectname:short)|%(subject)",
+        ])
         .current_dir(project.root())
         .output()
         .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
@@ -493,7 +500,12 @@ pub async fn list_git_branches(state: State<'_, AppState>) -> CommandResult<Vec<
 
     // Get remote branches
     let output = Command::new("git")
-        .args(["branch", "-r", "-v", "--format=%(refname:short)|%(objectname:short)|%(subject)"])
+        .args([
+            "branch",
+            "-r",
+            "-v",
+            "--format=%(refname:short)|%(objectname:short)|%(subject)",
+        ])
         .current_dir(project.root())
         .output();
 
@@ -529,7 +541,8 @@ pub async fn list_git_tags(
 
     let git = Git::new(project.root());
 
-    let tag_names = git.list_tags(pattern.as_deref())
+    let tag_names = git
+        .list_tags(pattern.as_deref())
         .map_err(|e| CommandError::Other(format!("Failed to list tags: {}", e)))?;
 
     // Get detailed info for each tag
@@ -537,7 +550,12 @@ pub async fn list_git_tags(
     for name in tag_names {
         // Get tag info using git show
         let output = Command::new("git")
-            .args(["tag", "-l", "--format=%(taggername)|%(taggerdate:iso)|%(contents:subject)|%(objectname:short)", &name])
+            .args([
+                "tag",
+                "-l",
+                "--format=%(taggername)|%(taggerdate:iso)|%(contents:subject)|%(objectname:short)",
+                &name,
+            ])
             .current_dir(project.root())
             .output();
 
@@ -545,10 +563,22 @@ pub async fn list_git_tags(
             let line = String::from_utf8_lossy(&output.stdout);
             let parts: Vec<&str> = line.trim().split('|').collect();
             (
-                parts.first().filter(|s| !s.is_empty()).map(|s| s.to_string()),
-                parts.get(1).filter(|s| !s.is_empty()).map(|s| s.to_string()),
-                parts.get(2).filter(|s| !s.is_empty()).map(|s| s.to_string()),
-                parts.get(3).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+                parts
+                    .first()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+                parts
+                    .get(1)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+                parts
+                    .get(2)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+                parts
+                    .get(3)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
             )
         } else {
             (None, None, None, None)
@@ -568,10 +598,7 @@ pub async fn list_git_tags(
 
 /// Checkout a branch
 #[tauri::command]
-pub async fn checkout_git_branch(
-    branch: String,
-    state: State<'_, AppState>,
-) -> CommandResult<()> {
+pub async fn checkout_git_branch(branch: String, state: State<'_, AppState>) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -580,7 +607,8 @@ pub async fn checkout_git_branch(
     // Check for uncommitted changes
     if !git.is_clean() {
         return Err(CommandError::Other(
-            "Cannot checkout: you have uncommitted changes. Commit or stash them first.".to_string()
+            "Cannot checkout: you have uncommitted changes. Commit or stash them first."
+                .to_string(),
         ));
     }
 
@@ -620,10 +648,7 @@ pub async fn create_git_branch(
 
 /// Stage files for commit
 #[tauri::command]
-pub async fn stage_files(
-    paths: Vec<String>,
-    state: State<'_, AppState>,
-) -> CommandResult<()> {
+pub async fn stage_files(paths: Vec<String>, state: State<'_, AppState>) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -638,10 +663,7 @@ pub async fn stage_files(
 
 /// Stage a specific entity file
 #[tauri::command]
-pub async fn stage_entity(
-    id: String,
-    state: State<'_, AppState>,
-) -> CommandResult<()> {
+pub async fn stage_entity(id: String, state: State<'_, AppState>) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
     let cache_guard = state.cache.lock().unwrap();
@@ -683,7 +705,9 @@ pub async fn commit_changes(
         .count();
 
     if files_changed == 0 {
-        return Err(CommandError::Other("No staged changes to commit".to_string()));
+        return Err(CommandError::Other(
+            "No staged changes to commit".to_string(),
+        ));
     }
 
     // Commit
@@ -713,7 +737,8 @@ pub async fn push_changes(
 
     let git = Git::new(project.root());
 
-    let branch_name = branch.unwrap_or_else(|| git.current_branch().unwrap_or_else(|_| "HEAD".to_string()));
+    let branch_name =
+        branch.unwrap_or_else(|| git.current_branch().unwrap_or_else(|_| "HEAD".to_string()));
 
     git.push(&branch_name, set_upstream)
         .map_err(|e| CommandError::Other(format!("Failed to push: {}", e)))?;
@@ -904,7 +929,10 @@ fn find_entity_file(
         }
     }
 
-    Err(CommandError::NotFound(format!("Entity file not found: {}", id)))
+    Err(CommandError::NotFound(format!(
+        "Entity file not found: {}",
+        id
+    )))
 }
 
 /// Recursively search a directory for an entity file by ID
@@ -952,10 +980,14 @@ fn extract_entity_info_from_path(
 
         for line in content.lines().take(20) {
             if line.starts_with("id:") {
-                entity_id = line.get(3..).map(|s| s.trim().trim_matches('"').to_string());
+                entity_id = line
+                    .get(3..)
+                    .map(|s| s.trim().trim_matches('"').to_string());
             }
             if line.starts_with("title:") {
-                entity_title = line.get(6..).map(|s| s.trim().trim_matches('"').to_string());
+                entity_title = line
+                    .get(6..)
+                    .map(|s| s.trim().trim_matches('"').to_string());
                 break; // Title usually comes after id
             }
         }

@@ -67,9 +67,7 @@ impl Sortable for Result {
     fn sort_key(&self, field: &Self::SortField) -> SortKey {
         match field {
             ResultSortField::Id => SortKey::String(self.id.to_string()),
-            ResultSortField::Title => {
-                SortKey::OptionalString(NoneLast(self.title.clone()))
-            }
+            ResultSortField::Title => SortKey::OptionalString(NoneLast(self.title.clone())),
             ResultSortField::Test => SortKey::String(self.test_id.to_string()),
             ResultSortField::Verdict => {
                 // Sort failures first, then conditional, incomplete, pass, N/A
@@ -976,7 +974,11 @@ mod tests {
         (tmp, project, cache)
     }
 
-    fn make_create_result(test_id: EntityId, title: Option<String>, verdict: Verdict) -> CreateResult {
+    fn make_create_result(
+        test_id: EntityId,
+        title: Option<String>,
+        verdict: Verdict,
+    ) -> CreateResult {
         CreateResult {
             test_id,
             test_revision: None,
@@ -999,7 +1001,11 @@ mod tests {
     fn create_test_result(service: &ResultService) -> Result {
         let test_id = EntityId::new(EntityPrefix::Test);
         service
-            .create(make_create_result(test_id, Some("Test Run 1".to_string()), Verdict::Pass))
+            .create(make_create_result(
+                test_id,
+                Some("Test Run 1".to_string()),
+                Verdict::Pass,
+            ))
             .unwrap()
     }
 
@@ -1010,7 +1016,11 @@ mod tests {
 
         let test_id = EntityId::new(EntityPrefix::Test);
         let result = service
-            .create(make_create_result(test_id.clone(), Some("Test Run".to_string()), Verdict::Pass))
+            .create(make_create_result(
+                test_id.clone(),
+                Some("Test Run".to_string()),
+                Verdict::Pass,
+            ))
             .unwrap();
 
         assert!(result.id.to_string().starts_with("RSLT-"));
@@ -1198,7 +1208,10 @@ mod tests {
 
         assert_eq!(updated.equipment_used.len(), 1);
         assert_eq!(updated.equipment_used[0].name, "Multimeter");
-        assert_eq!(updated.equipment_used[0].asset_id, Some("DMM-001".to_string()));
+        assert_eq!(
+            updated.equipment_used[0].asset_id,
+            Some("DMM-001".to_string())
+        );
     }
 
     #[test]

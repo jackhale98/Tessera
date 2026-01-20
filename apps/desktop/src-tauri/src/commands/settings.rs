@@ -510,9 +510,7 @@ pub async fn update_team_member(
         .members
         .iter()
         .position(|m| m.username.eq_ignore_ascii_case(&username))
-        .ok_or_else(|| {
-            CommandError::NotFound(format!("Team member '{}' not found", username))
-        })?;
+        .ok_or_else(|| CommandError::NotFound(format!("Team member '{}' not found", username)))?;
 
     let team_member = TeamMember::try_from(member)
         .map_err(|e| CommandError::InvalidInput(format!("Invalid team member: {}", e)))?;
@@ -566,9 +564,7 @@ pub async fn set_team_member_active(
         .members
         .iter_mut()
         .find(|m| m.username.eq_ignore_ascii_case(&username))
-        .ok_or_else(|| {
-            CommandError::NotFound(format!("Team member '{}' not found", username))
-        })?;
+        .ok_or_else(|| CommandError::NotFound(format!("Team member '{}' not found", username)))?;
 
     member.active = active;
     roster.save(project)?;
@@ -597,9 +593,7 @@ pub async fn update_approval_matrix(
     if parsed_roles.is_empty() {
         roster.approval_matrix.remove(&entity_prefix);
     } else {
-        roster
-            .approval_matrix
-            .insert(entity_prefix, parsed_roles);
+        roster.approval_matrix.insert(entity_prefix, parsed_roles);
     }
 
     roster.save(project)?;

@@ -724,10 +724,7 @@ fn run_check(args: CheckLinksArgs) -> Result<()> {
                 );
 
                 if args.fix {
-                    println!(
-                        "  {} Would remove broken link",
-                        style("fix:").yellow()
-                    );
+                    println!("  {} Would remove broken link", style("fix:").yellow());
                 }
             }
         }
@@ -1113,7 +1110,10 @@ fn find_entity_file(project: &Project, id: &EntityId) -> Result<PathBuf> {
             project.root().join("requirements/inputs"),
             project.root().join("requirements/outputs"),
         ],
-        EntityPrefix::Haz => vec![project.root().join("risks/hazards"), project.root().join("safety/hazards")],
+        EntityPrefix::Haz => vec![
+            project.root().join("risks/hazards"),
+            project.root().join("safety/hazards"),
+        ],
         EntityPrefix::Risk => vec![
             project.root().join("risks/design"),
             project.root().join("risks/process"),
@@ -1134,13 +1134,22 @@ fn find_entity_file(project: &Project, id: &EntityId) -> Result<PathBuf> {
         EntityPrefix::Feat => vec![project.root().join("tolerances/features")],
         EntityPrefix::Mate => vec![project.root().join("tolerances/mates")],
         EntityPrefix::Tol => vec![project.root().join("tolerances/stackups")],
-        EntityPrefix::Quot => vec![project.root().join("bom/quotes"), project.root().join("sourcing/quotes")],
-        EntityPrefix::Sup => vec![project.root().join("bom/suppliers"), project.root().join("sourcing/suppliers")],
+        EntityPrefix::Quot => vec![
+            project.root().join("bom/quotes"),
+            project.root().join("sourcing/quotes"),
+        ],
+        EntityPrefix::Sup => vec![
+            project.root().join("bom/suppliers"),
+            project.root().join("sourcing/suppliers"),
+        ],
         EntityPrefix::Proc => vec![project.root().join("manufacturing/processes")],
         EntityPrefix::Ctrl => vec![project.root().join("manufacturing/controls")],
         EntityPrefix::Work => vec![project.root().join("manufacturing/work_instructions")],
         EntityPrefix::Ncr => vec![project.root().join("manufacturing/ncrs")],
-        EntityPrefix::Capa => vec![project.root().join("quality/capas"), project.root().join("manufacturing/capas")],
+        EntityPrefix::Capa => vec![
+            project.root().join("quality/capas"),
+            project.root().join("manufacturing/capas"),
+        ],
         EntityPrefix::Act => vec![project.root().join("manufacturing/actions")],
         EntityPrefix::Lot => vec![project.root().join("manufacturing/lots")],
         EntityPrefix::Dev => vec![project.root().join("manufacturing/deviations")],

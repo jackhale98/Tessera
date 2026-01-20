@@ -6,7 +6,9 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tdt_core::core::entity::{Priority, Status};
-use tdt_core::entities::risk::{Mitigation, MitigationStatus, MitigationType, Risk, RiskLevel, RiskType};
+use tdt_core::entities::risk::{
+    Mitigation, MitigationStatus, MitigationType, Risk, RiskLevel, RiskType,
+};
 use tdt_core::services::{
     CreateRisk, RiskFilter, RiskMatrix, RiskService, RiskSortField, RiskStats, SortDirection,
     UpdateRisk,
@@ -72,7 +74,9 @@ impl From<&Risk> for RiskSummary {
             occurrence: risk.occurrence,
             detection: risk.detection,
             rpn: risk.get_rpn().map(|r| r as u32),
-            risk_level: risk.get_risk_level().map(|l| format!("{:?}", l).to_lowercase()),
+            risk_level: risk
+                .get_risk_level()
+                .map(|l| format!("{:?}", l).to_lowercase()),
             status: format!("{:?}", risk.status).to_lowercase(),
             author: risk.author.clone(),
             created: risk.created.to_rfc3339(),
@@ -200,8 +204,12 @@ pub async fn list_risks(
 
     let filter = RiskFilter {
         common: tdt_core::services::CommonFilter {
-            status: params.status.map(|v| v.iter().filter_map(|s| parse_status(s)).collect()),
-            priority: params.priority.map(|v| v.iter().filter_map(|s| parse_priority(s)).collect()),
+            status: params
+                .status
+                .map(|v| v.iter().filter_map(|s| parse_status(s)).collect()),
+            priority: params
+                .priority
+                .map(|v| v.iter().filter_map(|s| parse_priority(s)).collect()),
             search: params.search,
             tags: params.tags,
             limit: params.limit,
@@ -209,7 +217,10 @@ pub async fn list_risks(
             ..Default::default()
         },
         risk_type: params.risk_type.and_then(|s| parse_risk_type(&s)),
-        risk_level: params.risk_level.and_then(|s| parse_risk_level(&s)).map(|l| vec![l]),
+        risk_level: params
+            .risk_level
+            .and_then(|s| parse_risk_level(&s))
+            .map(|l| vec![l]),
         min_rpn: params.min_rpn.map(|r| r as u16),
         max_rpn: None,
         min_severity: None,
@@ -283,7 +294,10 @@ pub async fn create_risk(
             title: input.title,
             description: input.description,
             author: input.author,
-            risk_type: input.risk_type.and_then(|s| parse_risk_type(&s)).unwrap_or(RiskType::Design),
+            risk_type: input
+                .risk_type
+                .and_then(|s| parse_risk_type(&s))
+                .unwrap_or(RiskType::Design),
             category: input.category,
             failure_mode: input.failure_mode,
             cause: input.cause,
@@ -392,10 +406,14 @@ pub async fn add_risk_mitigation(
 
     let mitigation = Mitigation {
         action: input.action,
-        mitigation_type: input.mitigation_type.and_then(|s| parse_mitigation_type(&s)),
+        mitigation_type: input
+            .mitigation_type
+            .and_then(|s| parse_mitigation_type(&s)),
         status: Some(MitigationStatus::Proposed),
         owner: input.owner,
-        due_date: input.due_date.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
+        due_date: input
+            .due_date
+            .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
     };
 
     let risk = service.add_mitigation(&id, mitigation)?;
@@ -561,7 +579,9 @@ pub async fn get_fmea_data(state: State<'_, AppState>) -> CommandResult<Vec<Fmea
                 let tests: Vec<LinkedEntity> = ctrl_links
                     .iter()
                     .filter(|link| link.link_type == "verifies" || link.link_type == "verified_by")
-                    .filter(|link| link.source_id.starts_with("TEST-") || link.source_id.starts_with("RSLT-"))
+                    .filter(|link| {
+                        link.source_id.starts_with("TEST-") || link.source_id.starts_with("RSLT-")
+                    })
                     .filter_map(|link| {
                         cache.get_entity(&link.source_id).map(|e| LinkedEntity {
                             id: e.id.clone(),
@@ -613,7 +633,9 @@ pub async fn get_fmea_data(state: State<'_, AppState>) -> CommandResult<Vec<Fmea
             detection: risk.detection,
             rpn: risk.get_rpn().map(|r| r as u32),
             initial_risk,
-            risk_level: risk.get_risk_level().map(|l| format!("{:?}", l).to_lowercase()),
+            risk_level: risk
+                .get_risk_level()
+                .map(|l| format!("{:?}", l).to_lowercase()),
             status: format!("{:?}", risk.status).to_lowercase(),
             hazards,
             mitigations,

@@ -671,9 +671,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
     for item_str in &args.bom {
         if let Ok((id, qty)) = parse_bom_item(item_str) {
-            let resolved_id = short_ids
-                .resolve(&id)
-                .unwrap_or_else(|| id.clone());
+            let resolved_id = short_ids.resolve(&id).unwrap_or_else(|| id.clone());
 
             // Check if this is an assembly (ASM-) or component (CMP-)
             if resolved_id.starts_with("ASM-") {
@@ -706,7 +704,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         tags: Vec::new(),
     };
 
-    let assembly = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let assembly = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get file path for the created assembly
     let file_path = project
@@ -937,7 +937,10 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
     // Load all assemblies for subassembly lookup (needed for --flat)
     let all_assemblies = asm_service.load_all().unwrap_or_default();
     let assembly_map: std::collections::HashMap<String, &tdt_core::entities::assembly::Assembly> =
-        all_assemblies.iter().map(|a| (a.id.to_string(), a)).collect();
+        all_assemblies
+            .iter()
+            .map(|a| (a.id.to_string(), a))
+            .collect();
 
     // Display BOM
     let format = match global.output {
@@ -953,7 +956,10 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
         style(&assembly.title).white()
     );
     if args.flat {
-        println!("{}", style("(flattened view - all components from subassemblies)").dim());
+        println!(
+            "{}",
+            style("(flattened view - all components from subassemblies)").dim()
+        );
     }
     println!();
 
@@ -967,7 +973,10 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
         fn collect_flat_bom(
             bom: &[BomItem],
             subassemblies: &[String],
-            assembly_map: &std::collections::HashMap<String, &tdt_core::entities::assembly::Assembly>,
+            assembly_map: &std::collections::HashMap<
+                String,
+                &tdt_core::entities::assembly::Assembly,
+            >,
             flat_items: &mut Vec<(BomItem, Option<String>)>,
             visited: &mut HashSet<String>,
             parent_asm: Option<&str>,
@@ -1058,7 +1067,11 @@ fn run_bom(args: BomArgs, global: &GlobalOpts) -> Result<()> {
         aggregated.into_values().collect()
     } else {
         // Non-flat: just use direct BOM items
-        assembly.bom.iter().map(|item| (item.clone(), None)).collect()
+        assembly
+            .bom
+            .iter()
+            .map(|item| (item.clone(), None))
+            .collect()
     };
 
     match format {
@@ -1780,7 +1793,10 @@ fn run_cost(args: CostArgs) -> Result<()> {
     );
     println!("{} {}", style("Part Number:").bold(), assembly.part_number);
     if args.flat {
-        println!("{}", style("(flattened view - all components from subassemblies)").dim());
+        println!(
+            "{}",
+            style("(flattened view - all components from subassemblies)").dim()
+        );
     }
     if production_qty > 1 {
         println!(
@@ -1860,7 +1876,11 @@ fn run_cost(args: CostArgs) -> Result<()> {
             let id_short = short_ids
                 .get_short_id(id)
                 .unwrap_or_else(|| truncate_str(id, 8));
-            let from_asm = if source_asm.is_empty() { "-".to_string() } else { truncate_str(source_asm, 13) };
+            let from_asm = if source_asm.is_empty() {
+                "-".to_string()
+            } else {
+                truncate_str(source_asm, 13)
+            };
 
             if *line_cost > 0.0 || *unit_price > 0.0 {
                 if args.flat {
@@ -1971,8 +1991,16 @@ fn run_cost(args: CostArgs) -> Result<()> {
             }
         }
         let line_width = if args.flat {
-            if show_nre_col { 95 } else { 90 }
-        } else if show_nre_col { 85 } else { 75 };
+            if show_nre_col {
+                95
+            } else {
+                90
+            }
+        } else if show_nre_col {
+            85
+        } else {
+            75
+        };
         println!("{}", "-".repeat(line_width));
     }
 
@@ -2267,7 +2295,8 @@ fn find_assembly(project: &Project, id: &str) -> Result<Assembly> {
             };
             let matches: Vec<_> = cache.list_entities(&filter);
             if matches.len() == 1 {
-                if let Ok(asm) = tdt_core::yaml::parse_yaml_file::<Assembly>(&matches[0].file_path) {
+                if let Ok(asm) = tdt_core::yaml::parse_yaml_file::<Assembly>(&matches[0].file_path)
+                {
                     return Ok(asm);
                 }
             }

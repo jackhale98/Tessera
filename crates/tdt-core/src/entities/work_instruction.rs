@@ -73,7 +73,10 @@ pub struct StepApprovalRequirement {
     pub requires_signoff: bool,
 
     /// Minimum number of approvals required (default: 1)
-    #[serde(default = "default_min_approvals", skip_serializing_if = "is_default_min_approvals")]
+    #[serde(
+        default = "default_min_approvals",
+        skip_serializing_if = "is_default_min_approvals"
+    )]
     pub min_approvals: u32,
 
     /// Required roles for approval (any of these roles can approve)
@@ -216,7 +219,6 @@ pub struct ProcedureStep {
     pub estimated_time_minutes: Option<f64>,
 
     // === Electronic Router Fields ===
-
     /// Approval requirements for this step (if any)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<StepApprovalRequirement>,
@@ -499,8 +501,10 @@ mod tests {
 
     #[test]
     fn test_step_approval_requirement_signed() {
-        let req =
-            StepApprovalRequirement::signed_approval(vec!["quality".to_string(), "engineering".to_string()]);
+        let req = StepApprovalRequirement::signed_approval(vec![
+            "quality".to_string(),
+            "engineering".to_string(),
+        ]);
         assert!(req.requires_signoff);
         assert!(req.require_signature);
         assert_eq!(req.required_roles.len(), 2);
@@ -584,8 +588,13 @@ mod tests {
         let step = ProcedureStep::new(3, "Torque screws".to_string())
             .with_verification("All screws at 25 Nm".to_string())
             .with_caution("Do not over-torque".to_string())
-            .with_approval(StepApprovalRequirement::quality_hold(vec!["quality".to_string()]))
-            .with_data_field("screw_1_torque".to_string(), "Screw 1 Torque (Nm)".to_string());
+            .with_approval(StepApprovalRequirement::quality_hold(vec![
+                "quality".to_string()
+            ]))
+            .with_data_field(
+                "screw_1_torque".to_string(),
+                "Screw 1 Torque (Nm)".to_string(),
+            );
 
         assert_eq!(step.step, 3);
         assert_eq!(step.verification.as_deref(), Some("All screws at 25 Nm"));
@@ -607,8 +616,9 @@ mod tests {
         assert!(step_with_approval.requires_approval());
         assert!(!step_with_approval.is_hold_point());
 
-        let step_hold_point = ProcedureStep::new(3, "Quality check".to_string())
-            .with_approval(StepApprovalRequirement::quality_hold(vec!["quality".to_string()]));
+        let step_hold_point = ProcedureStep::new(3, "Quality check".to_string()).with_approval(
+            StepApprovalRequirement::quality_hold(vec!["quality".to_string()]),
+        );
         assert!(step_hold_point.requires_approval());
         assert!(step_hold_point.is_hold_point());
     }
@@ -626,16 +636,14 @@ mod tests {
                 quality_hold_point: true,
                 ..Default::default()
             }),
-            data_fields: vec![
-                StepDataField {
-                    key: "dim_a".to_string(),
-                    label: "Dimension A (mm)".to_string(),
-                    data_type: "number".to_string(),
-                    required: true,
-                    units: Some("mm".to_string()),
-                    options: vec![],
-                },
-            ],
+            data_fields: vec![StepDataField {
+                key: "dim_a".to_string(),
+                label: "Dimension A (mm)".to_string(),
+                data_type: "number".to_string(),
+                required: true,
+                units: Some("mm".to_string()),
+                options: vec![],
+            }],
             equipment: vec!["Caliper (Cal# CAL-001)".to_string()],
             ..Default::default()
         };
@@ -660,7 +668,8 @@ mod tests {
 
     #[test]
     fn test_work_instruction_with_router_steps() {
-        let mut work = WorkInstruction::new("Assembly with QA holds".to_string(), "test".to_string());
+        let mut work =
+            WorkInstruction::new("Assembly with QA holds".to_string(), "test".to_string());
 
         work.procedure = vec![
             ProcedureStep::new(1, "Load components".to_string()),
@@ -668,7 +677,9 @@ mod tests {
                 .with_caution("Use within 30 min of mixing".to_string()),
             ProcedureStep::new(3, "Verify bond".to_string())
                 .with_verification("Bond passes pull test".to_string())
-                .with_approval(StepApprovalRequirement::quality_hold(vec!["quality".to_string()]))
+                .with_approval(StepApprovalRequirement::quality_hold(vec![
+                    "quality".to_string()
+                ]))
                 .with_data_field("pull_force".to_string(), "Pull Force (N)".to_string()),
             ProcedureStep::new(4, "Final assembly".to_string()),
         ];

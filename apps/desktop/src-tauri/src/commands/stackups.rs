@@ -244,8 +244,14 @@ fn build_stackup_filter(params: &ListStackupsParams) -> StackupFilter {
 
     StackupFilter {
         common,
-        disposition: params.disposition.as_ref().and_then(|d| parse_disposition(d)),
-        result: params.result.as_ref().and_then(|r| parse_analysis_result(r)),
+        disposition: params
+            .disposition
+            .as_ref()
+            .and_then(|d| parse_disposition(d)),
+        result: params
+            .result
+            .as_ref()
+            .and_then(|r| parse_analysis_result(r)),
         critical_only: params.critical_only.unwrap_or(false),
         recent_days: params.recent_days,
         sort,
@@ -426,9 +432,10 @@ pub async fn add_stackup_contributor(
     })?;
 
     let feature_id = if let Some(ref fid) = input.feature_id {
-        Some(fid.parse::<EntityId>().map_err(|_| {
-            CommandError::InvalidInput(format!("Invalid feature ID: {}", fid))
-        })?)
+        Some(
+            fid.parse::<EntityId>()
+                .map_err(|_| CommandError::InvalidInput(format!("Invalid feature ID: {}", fid)))?,
+        )
     } else {
         None
     };

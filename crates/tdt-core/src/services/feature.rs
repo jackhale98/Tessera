@@ -458,8 +458,7 @@ impl<'a> FeatureService<'a> {
         // Check for references unless force is true
         if !force {
             // Check if used in mates or stackups
-            if !feature.links.used_in_mates.is_empty()
-                || !feature.links.used_in_stackups.is_empty()
+            if !feature.links.used_in_mates.is_empty() || !feature.links.used_in_stackups.is_empty()
             {
                 return Err(ServiceError::HasReferences);
             }

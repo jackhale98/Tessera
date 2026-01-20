@@ -429,8 +429,8 @@ pub async fn close_ncr(
         let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
         let service = NcrService::new(project, cache);
 
-        let decision = parse_disposition_decision(&input.decision)
-            .unwrap_or(DispositionDecision::UseAsIs);
+        let decision =
+            parse_disposition_decision(&input.decision).unwrap_or(DispositionDecision::UseAsIs);
 
         service.close(&id, decision, input.justification, input.decision_maker)?
     };

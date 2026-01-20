@@ -329,10 +329,8 @@ impl<'a> CapaService<'a> {
             if !filter.common.matches_author(&capa.author) {
                 return false;
             }
-            let search_fields: Vec<&str> = vec![
-                &capa.title,
-                capa.problem_statement.as_deref().unwrap_or(""),
-            ];
+            let search_fields: Vec<&str> =
+                vec![&capa.title, capa.problem_statement.as_deref().unwrap_or("")];
             if !filter.common.matches_search(&search_fields) {
                 return false;
             }
@@ -481,7 +479,9 @@ impl<'a> CapaService<'a> {
             let incomplete = capa
                 .actions
                 .iter()
-                .filter(|a| a.status != ActionStatus::Completed && a.status != ActionStatus::Verified)
+                .filter(|a| {
+                    a.status != ActionStatus::Completed && a.status != ActionStatus::Verified
+                })
                 .count();
             if incomplete > 0 {
                 return Err(ServiceError::ValidationFailed(format!(
@@ -559,7 +559,13 @@ impl<'a> CapaService<'a> {
     pub fn add_action(&self, id: &str, input: AddActionInput) -> ServiceResult<Capa> {
         let (_, mut capa) = self.find_capa(id)?;
 
-        let next_number = capa.actions.iter().map(|a| a.action_number).max().unwrap_or(0) + 1;
+        let next_number = capa
+            .actions
+            .iter()
+            .map(|a| a.action_number)
+            .max()
+            .unwrap_or(0)
+            + 1;
 
         let action = ActionItem {
             action_number: next_number,
@@ -745,7 +751,9 @@ impl<'a> CapaService<'a> {
             stats.completed_actions += capa
                 .actions
                 .iter()
-                .filter(|a| a.status == ActionStatus::Completed || a.status == ActionStatus::Verified)
+                .filter(|a| {
+                    a.status == ActionStatus::Completed || a.status == ActionStatus::Verified
+                })
                 .count();
         }
 
@@ -987,9 +995,7 @@ mod tests {
         let capa = service.create(input).unwrap();
 
         let ncr_id = EntityId::new(EntityPrefix::Ncr);
-        let capa = service
-            .add_ncr_link(&capa.id.to_string(), &ncr_id)
-            .unwrap();
+        let capa = service.add_ncr_link(&capa.id.to_string(), &ncr_id).unwrap();
 
         assert!(capa.links.ncrs.contains(&ncr_id));
     }
@@ -1021,11 +1027,7 @@ mod tests {
 
         // Verify effectiveness on CAPA B
         service
-            .verify_effectiveness(
-                &capa_b.id.to_string(),
-                EffectivenessResult::Effective,
-                None,
-            )
+            .verify_effectiveness(&capa_b.id.to_string(), EffectivenessResult::Effective, None)
             .unwrap();
 
         let stats = service.stats().unwrap();

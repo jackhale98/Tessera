@@ -91,7 +91,9 @@ pub async fn get_links_from(
                 target_id: link.target_id.clone(),
                 link_type: link.link_type.clone(),
                 target_title: target.as_ref().map(|e| e.title.clone()),
-                target_status: target.as_ref().map(|e| format!("{:?}", e.status).to_lowercase()),
+                target_status: target
+                    .as_ref()
+                    .map(|e| format!("{:?}", e.status).to_lowercase()),
             }
         })
         .collect();
@@ -101,10 +103,7 @@ pub async fn get_links_from(
 
 /// Get all links to an entity
 #[tauri::command]
-pub async fn get_links_to(
-    id: String,
-    state: State<'_, AppState>,
-) -> CommandResult<Vec<LinkInfo>> {
+pub async fn get_links_to(id: String, state: State<'_, AppState>) -> CommandResult<Vec<LinkInfo>> {
     let cache = state.cache.lock().unwrap();
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -120,7 +119,9 @@ pub async fn get_links_to(
                 target_id: link.target_id.clone(),
                 link_type: link.link_type.clone(),
                 target_title: source.as_ref().map(|e| e.title.clone()),
-                target_status: source.as_ref().map(|e| format!("{:?}", e.status).to_lowercase()),
+                target_status: source
+                    .as_ref()
+                    .map(|e| format!("{:?}", e.status).to_lowercase()),
             }
         })
         .collect();
@@ -150,7 +151,8 @@ pub async fn trace_from(
         include_source: true,
     };
 
-    let result = service.trace_from(&params.id, &options)
+    let result = service
+        .trace_from(&params.id, &options)
         .map_err(|e| CommandError::Other(e.to_string()))?;
     Ok(result)
 }
@@ -177,16 +179,15 @@ pub async fn trace_to(
         include_source: true,
     };
 
-    let result = service.trace_to(&params.id, &options)
+    let result = service
+        .trace_to(&params.id, &options)
         .map_err(|e| CommandError::Other(e.to_string()))?;
     Ok(result)
 }
 
 /// Get coverage report
 #[tauri::command]
-pub async fn get_coverage_report(
-    state: State<'_, AppState>,
-) -> CommandResult<CoverageReport> {
+pub async fn get_coverage_report(state: State<'_, AppState>) -> CommandResult<CoverageReport> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
 
@@ -318,7 +319,9 @@ pub async fn add_link(
         .map_err(|_| CommandError::InvalidInput(format!("Invalid target ID: {}", target_id)))?;
 
     // Find the source entity file
-    let source_dir = project.root().join(entity_dir_name(source_entity_id.prefix()));
+    let source_dir = project
+        .root()
+        .join(entity_dir_name(source_entity_id.prefix()));
     let source_path = loader::find_entity_file(&source_dir, &source_id)
         .ok_or_else(|| CommandError::NotFound(format!("Source entity not found: {}", source_id)))?;
 
@@ -341,9 +344,13 @@ pub async fn add_link(
     }
 
     // Now add the reciprocal link on the target entity
-    if let Some(reciprocal_type) = links::get_reciprocal_link_type(&actual_link_type, target_entity_id.prefix()) {
+    if let Some(reciprocal_type) =
+        links::get_reciprocal_link_type(&actual_link_type, target_entity_id.prefix())
+    {
         // Find the target entity file
-        let target_dir = project.root().join(entity_dir_name(target_entity_id.prefix()));
+        let target_dir = project
+            .root()
+            .join(entity_dir_name(target_entity_id.prefix()));
         if let Some(target_path) = loader::find_entity_file(&target_dir, &target_id) {
             // Add reciprocal link (ignore errors - target may not support this link type)
             let _ = links::add_explicit_link(&target_path, &reciprocal_type, &source_id);
@@ -385,7 +392,9 @@ pub async fn remove_link(
         .map_err(|_| CommandError::InvalidInput(format!("Invalid target ID: {}", target_id)))?;
 
     // Find the source entity file
-    let source_dir = project.root().join(entity_dir_name(source_entity_id.prefix()));
+    let source_dir = project
+        .root()
+        .join(entity_dir_name(source_entity_id.prefix()));
     let source_path = loader::find_entity_file(&source_dir, &source_id)
         .ok_or_else(|| CommandError::NotFound(format!("Source entity not found: {}", source_id)))?;
 
@@ -394,9 +403,13 @@ pub async fn remove_link(
         .map_err(|e| CommandError::Other(e))?;
 
     // Now remove the reciprocal link from the target entity
-    if let Some(reciprocal_type) = links::get_reciprocal_link_type(&link_type, target_entity_id.prefix()) {
+    if let Some(reciprocal_type) =
+        links::get_reciprocal_link_type(&link_type, target_entity_id.prefix())
+    {
         // Find the target entity file
-        let target_dir = project.root().join(entity_dir_name(target_entity_id.prefix()));
+        let target_dir = project
+            .root()
+            .join(entity_dir_name(target_entity_id.prefix()));
         if let Some(target_path) = loader::find_entity_file(&target_dir, &target_id) {
             // Remove reciprocal link (ignore errors - it may not exist)
             let _ = links::remove_explicit_link(&target_path, &reciprocal_type, &source_id);
@@ -529,8 +542,10 @@ pub async fn get_dmm(
 
     // Build links
     let mut links: Vec<DmmLink> = Vec::new();
-    let mut row_ids_with_links: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut col_ids_with_links: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut row_ids_with_links: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    let mut col_ids_with_links: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     // Check outgoing links from row entities to col entities
     for row_entity in &row_entities {
@@ -565,7 +580,9 @@ pub async fn get_dmm(
         for link in entity_links {
             if link.target_id.starts_with(&row_prefix_str) {
                 // Add if not already present
-                let link_exists = links.iter().any(|l| l.row_id == link.target_id && l.col_id == col_entity.id);
+                let link_exists = links
+                    .iter()
+                    .any(|l| l.row_id == link.target_id && l.col_id == col_entity.id);
                 if !link_exists {
                     links.push(DmmLink {
                         row_id: link.target_id.clone(),
@@ -617,9 +634,7 @@ pub async fn get_dmm(
 
 /// Get all link types used in the project
 #[tauri::command]
-pub async fn get_link_types(
-    state: State<'_, AppState>,
-) -> CommandResult<Vec<String>> {
+pub async fn get_link_types(state: State<'_, AppState>) -> CommandResult<Vec<String>> {
     let cache = state.cache.lock().unwrap();
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 

@@ -147,7 +147,9 @@ pub async fn list_components(
 
     let filter = ComponentFilter {
         common: tdt_core::services::CommonFilter {
-            status: params.status.map(|v| v.iter().filter_map(|s| parse_status(s)).collect()),
+            status: params
+                .status
+                .map(|v| v.iter().filter_map(|s| parse_status(s)).collect()),
             search: params.search,
             tags: params.tags,
             limit: params.limit,
@@ -244,8 +246,14 @@ pub async fn create_component(
             author: input.author,
             revision: input.revision,
             description: input.description,
-            category: input.category.and_then(|s| parse_category(&s)).unwrap_or_default(),
-            make_buy: input.make_buy.and_then(|s| parse_make_buy(&s)).unwrap_or_default(),
+            category: input
+                .category
+                .and_then(|s| parse_category(&s))
+                .unwrap_or_default(),
+            make_buy: input
+                .make_buy
+                .and_then(|s| parse_make_buy(&s))
+                .unwrap_or_default(),
             unit_cost: input.unit_cost,
             mass_kg: input.mass_kg,
             material: input.material,

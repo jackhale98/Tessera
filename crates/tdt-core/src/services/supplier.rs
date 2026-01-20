@@ -761,11 +761,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("bom/suppliers")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();

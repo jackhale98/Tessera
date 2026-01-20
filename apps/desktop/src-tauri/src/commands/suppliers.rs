@@ -9,7 +9,8 @@ use tdt_core::core::entity::Status;
 use tdt_core::entities::supplier::{Capability, Currency, Supplier};
 use tdt_core::services::common::SortDirection;
 use tdt_core::services::supplier::{
-    CreateSupplier, SupplierFilter, SupplierService, SupplierSortField, SupplierStats, UpdateSupplier,
+    CreateSupplier, SupplierFilter, SupplierService, SupplierSortField, SupplierStats,
+    UpdateSupplier,
 };
 
 use crate::error::{CommandError, CommandResult};
@@ -164,7 +165,11 @@ fn build_supplier_filter(params: &ListSuppliersParams) -> SupplierFilter {
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
@@ -198,7 +203,11 @@ pub async fn list_suppliers(
     let params = params.unwrap_or_default();
     let filter = build_supplier_filter(&params);
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -214,7 +223,10 @@ pub async fn list_suppliers(
 }
 
 #[tauri::command]
-pub async fn get_supplier(id: String, state: State<'_, AppState>) -> CommandResult<Option<Supplier>> {
+pub async fn get_supplier(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<Supplier>> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
     let project = project.as_ref().ok_or(CommandError::NoProject)?;
@@ -225,7 +237,10 @@ pub async fn get_supplier(id: String, state: State<'_, AppState>) -> CommandResu
 }
 
 #[tauri::command]
-pub async fn create_supplier(input: CreateSupplierInput, state: State<'_, AppState>) -> CommandResult<Supplier> {
+pub async fn create_supplier(
+    input: CreateSupplierInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Supplier> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -234,7 +249,8 @@ pub async fn create_supplier(input: CreateSupplierInput, state: State<'_, AppSta
         let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
         let service = SupplierService::new(project, cache);
 
-        let capabilities: Vec<Capability> = input.capabilities
+        let capabilities: Vec<Capability> = input
+            .capabilities
             .unwrap_or_default()
             .iter()
             .filter_map(|c| parse_capability(c))
@@ -246,7 +262,10 @@ pub async fn create_supplier(input: CreateSupplierInput, state: State<'_, AppSta
             short_name: input.short_name,
             website: input.website,
             payment_terms: input.payment_terms,
-            currency: input.currency.and_then(|c| parse_currency(&c)).unwrap_or_default(),
+            currency: input
+                .currency
+                .and_then(|c| parse_currency(&c))
+                .unwrap_or_default(),
             notes: input.notes,
             capabilities,
             tags: input.tags.unwrap_or_default(),
@@ -256,13 +275,19 @@ pub async fn create_supplier(input: CreateSupplierInput, state: State<'_, AppSta
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(supplier)
 }
 
 #[tauri::command]
-pub async fn update_supplier(id: String, input: UpdateSupplierInput, state: State<'_, AppState>) -> CommandResult<Supplier> {
+pub async fn update_supplier(
+    id: String,
+    input: UpdateSupplierInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Supplier> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -287,13 +312,19 @@ pub async fn update_supplier(id: String, input: UpdateSupplierInput, state: Stat
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(supplier)
 }
 
 #[tauri::command]
-pub async fn delete_supplier(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_supplier(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -306,7 +337,9 @@ pub async fn delete_supplier(id: String, force: Option<bool>, state: State<'_, A
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }

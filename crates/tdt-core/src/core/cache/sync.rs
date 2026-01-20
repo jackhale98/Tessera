@@ -424,7 +424,11 @@ impl EntityCache {
                 for (i, contrib) in contributors.iter().enumerate() {
                     if let Some(feature) = contrib.get("feature") {
                         if let Some(feature_id) = feature.get("id").and_then(|v| v.as_str()) {
-                            self.insert_link(source_id, feature_id, &format!("contributor[{}]", i))?;
+                            self.insert_link(
+                                source_id,
+                                feature_id,
+                                &format!("contributor[{}]", i),
+                            )?;
                         }
                     }
                 }

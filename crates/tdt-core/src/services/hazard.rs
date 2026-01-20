@@ -228,7 +228,12 @@ impl<'a> HazardService<'a> {
             author: filter.common.author.clone(),
             search: filter.common.search.clone(),
             limit: None, // Apply limit after all filters
-            priority: filter.common.priority.as_ref().and_then(|p| p.first()).copied(),
+            priority: filter
+                .common
+                .priority
+                .as_ref()
+                .and_then(|p| p.first())
+                .copied(),
             entity_type: None,
             category: None,
         };
@@ -291,7 +296,10 @@ impl<'a> HazardService<'a> {
             if !filter.common.matches_author(&hazard.author) {
                 return false;
             }
-            if !filter.common.matches_search(&[&hazard.title, &hazard.description]) {
+            if !filter
+                .common
+                .matches_search(&[&hazard.title, &hazard.description])
+            {
                 return false;
             }
 
@@ -463,7 +471,10 @@ impl<'a> HazardService<'a> {
     pub fn add_population(&self, id: &str, population: &str) -> ServiceResult<Hazard> {
         let (_, mut hazard) = self.find_hazard(id)?;
 
-        if !hazard.affected_populations.contains(&population.to_string()) {
+        if !hazard
+            .affected_populations
+            .contains(&population.to_string())
+        {
             hazard.affected_populations.push(population.to_string());
         }
         hazard.revision += 1;
@@ -699,12 +710,16 @@ mod tests {
         let hazard = service
             .add_harm(&hazard.id.to_string(), "Electric shock")
             .unwrap();
-        assert!(hazard.potential_harms.contains(&"Electric shock".to_string()));
+        assert!(hazard
+            .potential_harms
+            .contains(&"Electric shock".to_string()));
 
         let hazard = service
             .remove_harm(&hazard.id.to_string(), "Electric shock")
             .unwrap();
-        assert!(!hazard.potential_harms.contains(&"Electric shock".to_string()));
+        assert!(!hazard
+            .potential_harms
+            .contains(&"Electric shock".to_string()));
     }
 
     #[test]

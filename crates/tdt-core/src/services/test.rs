@@ -992,7 +992,10 @@ impl<'a> TestService<'a> {
         if !filter.common.matches_tags(&test.tags) {
             return false;
         }
-        if !filter.common.matches_search(&[&test.title, &test.objective]) {
+        if !filter
+            .common
+            .matches_search(&[&test.title, &test.objective])
+        {
             return false;
         }
         if !filter.common.matches_recent(&test.created) {
@@ -1024,9 +1027,7 @@ impl<'a> TestService<'a> {
                         |m: &Option<TestMethod>| m.map(|m| m.to_string()).unwrap_or_default();
                     method_str(&a.test_method).cmp(&method_str(&b.test_method))
                 }
-                TestSortField::Status => {
-                    format!("{:?}", a.status).cmp(&format!("{:?}", b.status))
-                }
+                TestSortField::Status => format!("{:?}", a.status).cmp(&format!("{:?}", b.status)),
                 TestSortField::Priority => {
                     let priority_order = |p: &Priority| match p {
                         Priority::Critical => 0,
@@ -1065,11 +1066,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("validation/results")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();

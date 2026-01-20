@@ -232,7 +232,10 @@ pub async fn list_assemblies(
 
 /// Get a single assembly by ID
 #[tauri::command]
-pub async fn get_assembly(id: String, state: State<'_, AppState>) -> CommandResult<Option<Assembly>> {
+pub async fn get_assembly(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<Assembly>> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
 
@@ -515,7 +518,11 @@ pub async fn remove_subassembly(
 /// The `quantity` parameter determines how many assemblies are being built,
 /// which affects price break calculations. Defaults to 1 if not provided.
 #[tauri::command]
-pub async fn get_bom_tree(id: String, quantity: Option<u32>, state: State<'_, AppState>) -> CommandResult<BomNode> {
+pub async fn get_bom_tree(
+    id: String,
+    quantity: Option<u32>,
+    state: State<'_, AppState>,
+) -> CommandResult<BomNode> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
 

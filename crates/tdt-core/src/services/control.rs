@@ -374,8 +374,7 @@ impl<'a> ControlService<'a> {
 
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
@@ -434,8 +433,7 @@ impl<'a> ControlService<'a> {
         control.entity_revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
@@ -467,8 +465,7 @@ impl<'a> ControlService<'a> {
         control.characteristic = characteristic;
         control.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
@@ -481,8 +478,7 @@ impl<'a> ControlService<'a> {
         control.measurement = Some(measurement);
         control.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
@@ -495,26 +491,20 @@ impl<'a> ControlService<'a> {
         control.sampling = Some(sampling);
         control.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
     }
 
     /// Set the control limits (for SPC)
-    pub fn set_control_limits(
-        &self,
-        id: &str,
-        limits: ControlLimits,
-    ) -> ServiceResult<Control> {
+    pub fn set_control_limits(&self, id: &str, limits: ControlLimits) -> ServiceResult<Control> {
         let (path, mut control) = self.find_control(id)?;
 
         control.control_limits = Some(limits);
         control.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
@@ -527,8 +517,7 @@ impl<'a> ControlService<'a> {
         control.reaction_plan = Some(reaction_plan.to_string());
         control.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
@@ -541,8 +530,7 @@ impl<'a> ControlService<'a> {
         control.characteristic.critical = critical;
         control.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(control)
@@ -739,11 +727,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("manufacturing/controls")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();
@@ -970,7 +954,10 @@ mod tests {
             .unwrap();
 
         let updated = service
-            .set_reaction_plan(&created.id.to_string(), "Stop production and notify supervisor")
+            .set_reaction_plan(
+                &created.id.to_string(),
+                "Stop production and notify supervisor",
+            )
             .unwrap();
 
         assert_eq!(
@@ -997,7 +984,9 @@ mod tests {
         let updated = service.set_critical(&created.id.to_string(), true).unwrap();
         assert!(updated.characteristic.critical);
 
-        let reverted = service.set_critical(&created.id.to_string(), false).unwrap();
+        let reverted = service
+            .set_critical(&created.id.to_string(), false)
+            .unwrap();
         assert!(!reverted.characteristic.critical);
     }
 

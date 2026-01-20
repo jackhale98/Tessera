@@ -428,7 +428,9 @@ fn sort_cached_quotes(entities: &mut [CachedQuote], sort: ListColumn, reverse: b
             ListColumn::Price => {
                 let price_a = a.unit_price.unwrap_or(0.0);
                 let price_b = b.unit_price.unwrap_or(0.0);
-                price_a.partial_cmp(&price_b).unwrap_or(std::cmp::Ordering::Equal)
+                price_a
+                    .partial_cmp(&price_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             }
             ListColumn::QuoteStatus => a.quote_status.cmp(&b.quote_status),
             ListColumn::Status => a.status.cmp(&b.status),
@@ -554,13 +556,21 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         // Apply supplier filter
         if let Some(ref sup) = args.supplier {
             let resolved_sup = short_ids.resolve(sup).unwrap_or_else(|| sup.clone());
-            quotes.retain(|q| q.supplier_id.as_ref().is_some_and(|s| s.contains(&resolved_sup)));
+            quotes.retain(|q| {
+                q.supplier_id
+                    .as_ref()
+                    .is_some_and(|s| s.contains(&resolved_sup))
+            });
         }
 
         // Apply component filter
         if let Some(ref cmp) = args.component {
             let resolved_cmp = short_ids.resolve(cmp).unwrap_or_else(|| cmp.clone());
-            quotes.retain(|q| q.component_id.as_ref().is_some_and(|c| c.contains(&resolved_cmp)));
+            quotes.retain(|q| {
+                q.component_id
+                    .as_ref()
+                    .is_some_and(|c| c.contains(&resolved_cmp))
+            });
         }
 
         // Apply author filter
@@ -808,7 +818,11 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let asm_service = tdt_core::services::AssemblyService::new(&project, &cache);
 
     if let Some(ref cmp) = component {
-        if cmp_service.get(cmp).map_err(|e| miette::miette!("{}", e))?.is_none() {
+        if cmp_service
+            .get(cmp)
+            .map_err(|e| miette::miette!("{}", e))?
+            .is_none()
+        {
             println!(
                 "{} Warning: Component '{}' not found. Create it first with: tdt cmp new",
                 style("!").yellow(),
@@ -818,7 +832,11 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     if let Some(ref asm) = assembly {
-        if asm_service.get(asm).map_err(|e| miette::miette!("{}", e))?.is_none() {
+        if asm_service
+            .get(asm)
+            .map_err(|e| miette::miette!("{}", e))?
+            .is_none()
+        {
             println!(
                 "{} Warning: Assembly '{}' not found. Create it first with: tdt asm new",
                 style("!").yellow(),
@@ -844,7 +862,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         tags: Vec::new(),
     };
 
-    let quote = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let quote = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
     let id = quote.id.clone();
 
     // Add price breaks if provided

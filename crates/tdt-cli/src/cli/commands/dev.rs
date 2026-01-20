@@ -646,12 +646,8 @@ fn output_cached_deviations(
                     let value = match col {
                         ListColumn::Id => dev.id.clone(),
                         ListColumn::Title => truncate_str(&dev.title, widths[i]),
-                        ListColumn::DevNumber => {
-                            dev.deviation_number.clone().unwrap_or_default()
-                        }
-                        ListColumn::DevType => {
-                            dev.deviation_type.clone().unwrap_or_default()
-                        }
+                        ListColumn::DevNumber => dev.deviation_number.clone().unwrap_or_default(),
+                        ListColumn::DevType => dev.deviation_type.clone().unwrap_or_default(),
                         ListColumn::Category => dev.category.clone().unwrap_or_default(),
                         ListColumn::Risk => {
                             let level = dev.risk_level.as_deref().unwrap_or("");
@@ -716,12 +712,8 @@ fn output_cached_deviations(
                     .map(|c| match c {
                         ListColumn::Id => short_id.clone(),
                         ListColumn::Title => truncate_str(&dev.title, 40),
-                        ListColumn::DevNumber => {
-                            dev.deviation_number.clone().unwrap_or_default()
-                        }
-                        ListColumn::DevType => {
-                            dev.deviation_type.clone().unwrap_or_default()
-                        }
+                        ListColumn::DevNumber => dev.deviation_number.clone().unwrap_or_default(),
+                        ListColumn::DevType => dev.deviation_type.clone().unwrap_or_default(),
                         ListColumn::Category => dev.category.clone().unwrap_or_default(),
                         ListColumn::Risk => dev.risk_level.clone().unwrap_or_default(),
                         ListColumn::DevStatus => dev.dev_status.clone().unwrap_or_default(),
@@ -995,11 +987,19 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         // Sort and limit
         sort_cached_deviations(&mut cached_deviations, &args);
 
-        return output_cached_deviations(&cached_deviations, &mut short_ids, &args, format, &project);
+        return output_cached_deviations(
+            &cached_deviations,
+            &mut short_ids,
+            &args,
+            format,
+            &project,
+        );
     }
 
     // Full entity loading path (JSON/YAML output)
-    let mut deviations = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut deviations = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Apply limit
     if let Some(limit) = args.limit {
@@ -1067,7 +1067,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let dev = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let dev = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get file path for the created deviation
     let file_path = project
@@ -1346,7 +1348,12 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
     // Use service to approve
     let authorization_level = AuthorizationLevel::from(args.authorization);
     let dev = service
-        .approve(&resolved_id, approved_by.clone(), authorization_level, args.activate)
+        .approve(
+            &resolved_id,
+            approved_by.clone(),
+            authorization_level,
+            args.activate,
+        )
         .map_err(|e| miette::miette!("{}", e))?;
 
     if !global.quiet {

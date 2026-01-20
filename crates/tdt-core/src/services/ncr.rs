@@ -294,12 +294,7 @@ impl<'a> NcrService<'a> {
         }
 
         if filter.open_only {
-            cached.retain(|n| {
-                n.ncr_status
-                    .as_ref()
-                    .map(|s| s != "closed")
-                    .unwrap_or(true)
-            });
+            cached.retain(|n| n.ncr_status.as_ref().map(|s| s != "closed").unwrap_or(true));
         }
 
         // Apply limit
@@ -999,7 +994,10 @@ mod tests {
 
         let created = create_test_ncr(&service);
         let updated = service
-            .add_containment(&created.id.to_string(), "Quarantine affected parts".to_string())
+            .add_containment(
+                &created.id.to_string(),
+                "Quarantine affected parts".to_string(),
+            )
             .unwrap();
 
         assert_eq!(updated.containment.len(), 1);
@@ -1021,7 +1019,10 @@ mod tests {
             .complete_containment(&with_containment.id.to_string(), 0, "inspector".to_string())
             .unwrap();
 
-        assert_eq!(completed.containment[0].status, ContainmentStatus::Completed);
+        assert_eq!(
+            completed.containment[0].status,
+            ContainmentStatus::Completed
+        );
         assert_eq!(
             completed.containment[0].completed_by,
             Some("inspector".to_string())
@@ -1103,7 +1104,9 @@ mod tests {
 
         // Create some NCRs
         let ncr1 = create_test_ncr(&service);
-        service.set_cost(&ncr1.id.to_string(), Some(100.0), Some(200.0), None).unwrap();
+        service
+            .set_cost(&ncr1.id.to_string(), Some(100.0), Some(200.0), None)
+            .unwrap();
 
         service
             .create(CreateNcr {

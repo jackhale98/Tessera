@@ -272,10 +272,12 @@ impl<'a> WorkInstructionService<'a> {
         let id = EntityId::new(EntityPrefix::Work);
 
         let links = WorkInstructionLinks {
-            process: input.process.map(|p| p.parse().unwrap_or_else(|_| {
-                // If parsing fails, create a dummy ID - the link will be invalid but stored
-                EntityId::new(EntityPrefix::Proc)
-            })),
+            process: input.process.map(|p| {
+                p.parse().unwrap_or_else(|_| {
+                    // If parsing fails, create a dummy ID - the link will be invalid but stored
+                    EntityId::new(EntityPrefix::Proc)
+                })
+            }),
             controls: Vec::new(),
         };
 
@@ -508,15 +510,13 @@ impl<'a> WorkInstructionService<'a> {
     }
 
     /// Remove a quality check by step number
-    pub fn remove_quality_check(
-        &self,
-        id: &str,
-        at_step: u32,
-    ) -> ServiceResult<WorkInstruction> {
+    pub fn remove_quality_check(&self, id: &str, at_step: u32) -> ServiceResult<WorkInstruction> {
         let (path, mut instruction) = self.find_work_instruction(id)?;
 
         let initial_len = instruction.quality_checks.len();
-        instruction.quality_checks.retain(|qc| qc.at_step != at_step);
+        instruction
+            .quality_checks
+            .retain(|qc| qc.at_step != at_step);
 
         if instruction.quality_checks.len() == initial_len {
             return Err(ServiceError::NotFound(format!(
@@ -716,7 +716,9 @@ impl<'a> WorkInstructionService<'a> {
             let cmp = match sort_by {
                 WorkInstructionSortField::Id => a.id.to_string().cmp(&b.id.to_string()),
                 WorkInstructionSortField::Title => a.title.cmp(&b.title),
-                WorkInstructionSortField::DocumentNumber => a.document_number.cmp(&b.document_number),
+                WorkInstructionSortField::DocumentNumber => {
+                    a.document_number.cmp(&b.document_number)
+                }
                 WorkInstructionSortField::Status => {
                     format!("{:?}", a.status).cmp(&format!("{:?}", b.status))
                 }
@@ -747,11 +749,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("manufacturing/work_instructions")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();

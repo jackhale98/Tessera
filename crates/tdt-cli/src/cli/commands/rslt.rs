@@ -356,10 +356,7 @@ fn build_rslt_sort_field(col: &ListColumn) -> ResultSortField {
 }
 
 /// Sort cached results according to CLI args
-fn sort_cached_results(
-    results: &mut Vec<tdt_core::core::cache::CachedResult>,
-    args: &ListArgs,
-) {
+fn sort_cached_results(results: &mut Vec<tdt_core::core::cache::CachedResult>, args: &ListArgs) {
     match args.sort {
         ListColumn::Short | ListColumn::Id => results.sort_by(|a, b| a.id.cmp(&b.id)),
         ListColumn::Title => results.sort_by(|a, b| a.title.cmp(&b.title)),
@@ -528,7 +525,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     // Full entity loading path
-    let mut results = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut results = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Apply post-filters not handled by service:
     // Status: Active filter (all non-obsolete)
@@ -689,8 +688,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 let resolved = short_ids
                     .resolve(&test_id_str)
                     .unwrap_or_else(|| test_id_str.clone());
-                EntityId::parse(&resolved)
-                    .map_err(|e| miette::miette!("Invalid test ID: {}", e))?
+                EntityId::parse(&resolved).map_err(|e| miette::miette!("Invalid test ID: {}", e))?
             };
 
             let verdict = result
@@ -789,7 +787,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let rslt = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let rslt = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get file path for the created result (service determines correct directory)
     let file_path = service.get_file_path(&rslt);
@@ -814,7 +814,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&rslt.id))
+                short_id
+                    .clone()
+                    .unwrap_or_else(|| format_short_id(&rslt.id))
             );
         }
         OutputFormat::Path => {
@@ -824,7 +826,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created result {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&rslt.id))).cyan()
+                style(
+                    short_id
+                        .clone()
+                        .unwrap_or_else(|| format_short_id(&rslt.id))
+                )
+                .cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
@@ -843,7 +850,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                     "   {} --[{}]--> {}",
                     style("→").dim(),
                     style(link_type).cyan(),
-                    style(&short_ids.get_short_id(target).unwrap_or_else(|| target.clone())).yellow()
+                    style(
+                        &short_ids
+                            .get_short_id(target)
+                            .unwrap_or_else(|| target.clone())
+                    )
+                    .yellow()
                 );
             }
         }
@@ -1086,7 +1098,9 @@ fn run_edit(args: EditArgs) -> Result<()> {
     } else {
         // Fallback: compute path from test type
         let test_type = determine_test_type(&project, &result.test_id)?;
-        project.root().join(format!("{}/results/{}.tdt.yaml", test_type, result.id))
+        project
+            .root()
+            .join(format!("{}/results/{}.tdt.yaml", test_type, result.id))
     };
 
     if !file_path.exists() {

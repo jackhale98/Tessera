@@ -174,7 +174,11 @@ fn build_quote_filter(params: &ListQuotesParams) -> QuoteFilter {
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
@@ -183,7 +187,10 @@ fn build_quote_filter(params: &ListQuotesParams) -> QuoteFilter {
 
     QuoteFilter {
         common,
-        quote_status: params.quote_status.as_ref().and_then(|s| parse_quote_status(s)),
+        quote_status: params
+            .quote_status
+            .as_ref()
+            .and_then(|s| parse_quote_status(s)),
         supplier: params.supplier.clone(),
         component: params.component.clone(),
         assembly: params.assembly.clone(),
@@ -211,7 +218,11 @@ pub async fn list_quotes(
     let params = params.unwrap_or_default();
     let filter = build_quote_filter(&params);
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -238,7 +249,10 @@ pub async fn get_quote(id: String, state: State<'_, AppState>) -> CommandResult<
 }
 
 #[tauri::command]
-pub async fn create_quote(input: CreateQuoteInput, state: State<'_, AppState>) -> CommandResult<Quote> {
+pub async fn create_quote(
+    input: CreateQuoteInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Quote> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -255,7 +269,10 @@ pub async fn create_quote(input: CreateQuoteInput, state: State<'_, AppState>) -
             assembly: input.assembly,
             quote_ref: input.quote_ref,
             description: input.description,
-            currency: input.currency.and_then(|c| parse_currency(&c)).unwrap_or_default(),
+            currency: input
+                .currency
+                .and_then(|c| parse_currency(&c))
+                .unwrap_or_default(),
             moq: input.moq,
             lead_time_days: input.lead_time_days,
             tooling_cost: input.tooling_cost,
@@ -266,13 +283,19 @@ pub async fn create_quote(input: CreateQuoteInput, state: State<'_, AppState>) -
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(quote)
 }
 
 #[tauri::command]
-pub async fn update_quote(id: String, input: UpdateQuoteInput, state: State<'_, AppState>) -> CommandResult<Quote> {
+pub async fn update_quote(
+    id: String,
+    input: UpdateQuoteInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Quote> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -299,13 +322,19 @@ pub async fn update_quote(id: String, input: UpdateQuoteInput, state: State<'_, 
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(quote)
 }
 
 #[tauri::command]
-pub async fn delete_quote(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_quote(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -318,7 +347,9 @@ pub async fn delete_quote(id: String, force: Option<bool>, state: State<'_, AppS
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }

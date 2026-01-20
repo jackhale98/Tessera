@@ -777,7 +777,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&risk.id))
+                short_id
+                    .clone()
+                    .unwrap_or_else(|| format_short_id(&risk.id))
             );
         }
         OutputFormat::Path => {
@@ -787,7 +789,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created risk {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&risk.id))).cyan()
+                style(
+                    short_id
+                        .clone()
+                        .unwrap_or_else(|| format_short_id(&risk.id))
+                )
+                .cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!("   RPN: {} ({})", style(rpn).yellow(), risk_level);
@@ -1046,7 +1053,9 @@ fn run_edit(args: EditArgs) -> Result<()> {
             RiskType::Use => "use",
             RiskType::Software => "software",
         };
-        project.root().join(format!("risks/{}/{}.tdt.yaml", risk_type, risk.id))
+        project
+            .root()
+            .join(format!("risks/{}/{}.tdt.yaml", risk_type, risk.id))
     };
 
     if !file_path.exists() {

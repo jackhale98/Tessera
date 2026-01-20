@@ -327,11 +327,7 @@ impl<'a> DeviationService<'a> {
         deviations.retain(|d| self.matches_filter(d, filter));
 
         // Sort
-        crate::services::common::sort_entities(
-            &mut deviations,
-            filter.sort,
-            filter.sort_direction,
-        );
+        crate::services::common::sort_entities(&mut deviations, filter.sort, filter.sort_direction);
 
         // Apply limit from common filter
         if let Some(limit) = filter.common.limit {
@@ -971,7 +967,10 @@ mod tests {
 
         let created = create_test_deviation(&service);
         let closed = service
-            .close(&created.id.to_string(), Some("No longer needed".to_string()))
+            .close(
+                &created.id.to_string(),
+                Some("No longer needed".to_string()),
+            )
             .unwrap();
 
         assert_eq!(closed.dev_status, DevStatus::Closed);

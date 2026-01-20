@@ -328,8 +328,8 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let filter = build_feat_filter(&args, component_filter.as_deref());
 
     // Check if we can use the fast cache path
-    let can_use_cache = args.recent.is_none()
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    let can_use_cache =
+        args.recent.is_none() && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
 
     // Build component lookup map for displaying part numbers and titles
     let component_info: std::collections::HashMap<String, (String, String)> = cache
@@ -342,7 +342,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         .collect();
 
     if can_use_cache {
-        let mut features = service.list_cached(&filter).map_err(|e| miette::miette!("{}", e))?;
+        let mut features = service
+            .list_cached(&filter)
+            .map_err(|e| miette::miette!("{}", e))?;
         sort_cached_features(&mut features, &args);
 
         if args.reverse {
@@ -356,12 +358,16 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     // Full entity loading path
-    let mut features = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut features = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Post-sort for Description column (not in service sort)
     if matches!(args.sort, ListColumn::Description) {
         features.sort_by(|a, b| {
-            a.description.as_deref().unwrap_or("")
+            a.description
+                .as_deref()
+                .unwrap_or("")
                 .cmp(b.description.as_deref().unwrap_or(""))
         });
     }
@@ -379,7 +385,14 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    output_features(&features, &mut short_ids, &args, format, &project, &component_info)
+    output_features(
+        &features,
+        &mut short_ids,
+        &args,
+        format,
+        &project,
+        &component_info,
+    )
 }
 
 /// Build a FeatureFilter from CLI ListArgs
@@ -480,7 +493,8 @@ fn output_features(
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&features).map_err(|e| miette::miette!("{}", e))?;
+            let json =
+                serde_json::to_string_pretty(&features).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
@@ -507,7 +521,8 @@ fn output_features(
                 wrap_width: args.wrap,
                 show_summary: true,
             };
-            let formatter = TableFormatter::new(FEAT_COLUMNS, "feature", "FEAT").with_config(config);
+            let formatter =
+                TableFormatter::new(FEAT_COLUMNS, "feature", "FEAT").with_config(config);
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
@@ -673,7 +688,10 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
     // Validate component exists using service
     let cmp_service = tdt_core::services::ComponentService::new(&project, &cache);
-    let cmp_exists = cmp_service.get(&component_id).map_err(|e| miette::miette!("{}", e))?.is_some();
+    let cmp_exists = cmp_service
+        .get(&component_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .is_some();
     if !cmp_exists {
         return Err(miette::miette!(
             "Component '{}' not found. Create it first with: tdt cmp new",
@@ -738,7 +756,11 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         title = args.title.ok_or_else(|| {
             miette::miette!("Title is required (use --title or -i for interactive)")
         })?;
-        feature_type = args.feature_type.to_string().parse().unwrap_or(FeatureType::Internal);
+        feature_type = args
+            .feature_type
+            .to_string()
+            .parse()
+            .unwrap_or(FeatureType::Internal);
     }
 
     // Build dimensions - add primary dimension for interactive mode
@@ -781,7 +803,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let feat = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let feat = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get file path for the created feature
     let file_path = project
@@ -1008,7 +1032,8 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
 
     // Compute bounds
     // Note: Feature lookup not available in this context, use None
-    let result = compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, args.actual_size, None);
+    let result =
+        compute_torsor_bounds::<fn(&str) -> Option<Feature>>(&feat, args.actual_size, None);
 
     // Handle output
     let short_id = short_ids
@@ -1072,7 +1097,9 @@ fn run_compute_bounds(args: ComputeBoundsArgs, global: &GlobalOpts) -> Result<()
             torsor_bounds: Some(Some(result.bounds)),
             ..Default::default()
         };
-        service.update(&resolved_id, update).map_err(|e| miette::miette!("{}", e))?;
+        service
+            .update(&resolved_id, update)
+            .map_err(|e| miette::miette!("{}", e))?;
 
         if !args.quiet {
             println!();

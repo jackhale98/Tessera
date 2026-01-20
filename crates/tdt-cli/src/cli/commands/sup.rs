@@ -16,8 +16,7 @@ use tdt_core::core::Config;
 use tdt_core::entities::supplier::{Capability, Supplier};
 use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
-    CommonFilter, CreateSupplier, SortDirection, SupplierFilter, SupplierService,
-    SupplierSortField,
+    CommonFilter, CreateSupplier, SortDirection, SupplierFilter, SupplierService, SupplierSortField,
 };
 
 #[derive(Subcommand, Debug)]
@@ -388,7 +387,12 @@ fn output_suppliers(
 fn supplier_to_row(sup: &Supplier, short_ids: &ShortIdIndex) -> TableRow {
     // Format capabilities display
     let caps_display = if sup.capabilities.len() > 2 {
-        let first_two: Vec<_> = sup.capabilities.iter().take(2).map(|c| c.to_string()).collect();
+        let first_two: Vec<_> = sup
+            .capabilities
+            .iter()
+            .take(2)
+            .map(|c| c.to_string())
+            .collect();
         format!("{}+{}", first_two.join(","), sup.capabilities.len() - 2)
     } else {
         sup.capabilities
@@ -442,8 +446,8 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     // Check if we can use the fast cache path:
     // - No recent filter (requires date comparison)
     // - Not JSON/YAML output (need full entities)
-    let can_use_cache = args.recent.is_none()
-        && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
+    let can_use_cache =
+        args.recent.is_none() && !matches!(format, OutputFormat::Json | OutputFormat::Yaml);
 
     if can_use_cache {
         // Fast path: use cached entities via service

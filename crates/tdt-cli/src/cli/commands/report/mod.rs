@@ -259,7 +259,8 @@ pub(crate) fn load_all_ncrs(project: &Project) -> Vec<tdt_core::entities::ncr::N
             .filter(|e| e.file_type().is_file())
             .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
         {
-            if let Ok(ncr) = tdt_core::yaml::parse_yaml_file::<tdt_core::entities::ncr::Ncr>(entry.path())
+            if let Ok(ncr) =
+                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::ncr::Ncr>(entry.path())
             {
                 ncrs.push(ncr);
             }

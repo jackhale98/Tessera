@@ -265,7 +265,12 @@ impl<'a> StackupService<'a> {
             author: filter.common.author.clone(),
             search: filter.common.search.clone(),
             limit: None, // Apply limit after all filters
-            priority: filter.common.priority.as_ref().and_then(|p| p.first()).copied(),
+            priority: filter
+                .common
+                .priority
+                .as_ref()
+                .and_then(|p| p.first())
+                .copied(),
             entity_type: None,
             category: None,
         };
@@ -912,7 +917,9 @@ mod tests {
         assert_eq!(stackup.contributors.len(), 2);
 
         // Remove first contributor
-        let stackup = service.remove_contributor(&stackup.id.to_string(), 0).unwrap();
+        let stackup = service
+            .remove_contributor(&stackup.id.to_string(), 0)
+            .unwrap();
         assert_eq!(stackup.contributors.len(), 1);
         assert_eq!(stackup.contributors[0].name, "Part B");
     }

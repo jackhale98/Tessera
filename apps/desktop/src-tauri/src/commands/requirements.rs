@@ -2,8 +2,8 @@
 //!
 //! Provides commands for managing requirements with filtering and stats.
 
-use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use tauri::State;
 
 use tdt_core::core::entity::{Priority, Status};
@@ -145,9 +145,17 @@ fn build_requirement_filter(params: &ListRequirementsParams) -> RequirementFilte
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
-        priority: params.priority.as_ref().and_then(|p| parse_priority(p)).map(|p| vec![p]),
+        priority: params
+            .priority
+            .as_ref()
+            .and_then(|p| parse_priority(p))
+            .map(|p| vec![p]),
         search: params.search.clone(),
         limit: params.limit,
         ..Default::default()
@@ -182,7 +190,11 @@ pub async fn list_requirements(
     let params = params.unwrap_or_default();
     let filter = build_requirement_filter(&params);
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -193,12 +205,19 @@ pub async fn list_requirements(
 
     Ok(ListRequirementsResult {
         total_count: requirements.items.len(),
-        items: requirements.items.iter().map(RequirementSummary::from).collect(),
+        items: requirements
+            .items
+            .iter()
+            .map(RequirementSummary::from)
+            .collect(),
     })
 }
 
 #[tauri::command]
-pub async fn get_requirement(id: String, state: State<'_, AppState>) -> CommandResult<Option<Requirement>> {
+pub async fn get_requirement(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<Requirement>> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
     let project = project.as_ref().ok_or(CommandError::NoProject)?;
@@ -513,8 +532,12 @@ pub async fn get_verification_matrix(
                 None
             } else {
                 // Find the most recent result and check if any passed
-                let has_pass = results.iter().any(|r| r.verdict == "pass" || r.verdict == "approved");
-                let has_fail = results.iter().any(|r| r.verdict == "fail" || r.verdict == "rejected");
+                let has_pass = results
+                    .iter()
+                    .any(|r| r.verdict == "pass" || r.verdict == "approved");
+                let has_fail = results
+                    .iter()
+                    .any(|r| r.verdict == "fail" || r.verdict == "rejected");
                 if has_pass && !has_fail {
                     pass_count += 1;
                     Some("pass".to_string())
@@ -576,7 +599,8 @@ pub async fn get_verification_matrix(
 
     // Calculate coverage percentage
     if summary.total_requirements > 0 {
-        summary.verification_coverage = (summary.fully_verified as f64 / summary.total_requirements as f64) * 100.0;
+        summary.verification_coverage =
+            (summary.fully_verified as f64 / summary.total_requirements as f64) * 100.0;
     }
 
     Ok(VerificationMatrixResponse { rows, summary })

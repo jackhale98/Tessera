@@ -399,7 +399,11 @@ pub trait ListableService<Entity, CachedEntity, Filter, SortField> {
 }
 
 /// Helper to apply pagination to a vector
-pub fn apply_pagination<T>(items: Vec<T>, offset: Option<usize>, limit: Option<usize>) -> ListResult<T> {
+pub fn apply_pagination<T>(
+    items: Vec<T>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> ListResult<T> {
     let total_count = items.len();
     let offset = offset.unwrap_or(0);
 
@@ -542,9 +546,18 @@ mod tests {
     #[test]
     fn test_sort_entities_ascending() {
         let mut items = vec![
-            TestItem { name: "Charlie".into(), value: 3 },
-            TestItem { name: "Alice".into(), value: 1 },
-            TestItem { name: "Bob".into(), value: 2 },
+            TestItem {
+                name: "Charlie".into(),
+                value: 3,
+            },
+            TestItem {
+                name: "Alice".into(),
+                value: 1,
+            },
+            TestItem {
+                name: "Bob".into(),
+                value: 2,
+            },
         ];
 
         sort_entities(&mut items, TestSortField::Name, SortDirection::Ascending);
@@ -557,9 +570,18 @@ mod tests {
     #[test]
     fn test_sort_entities_descending() {
         let mut items = vec![
-            TestItem { name: "A".into(), value: 1 },
-            TestItem { name: "B".into(), value: 2 },
-            TestItem { name: "C".into(), value: 3 },
+            TestItem {
+                name: "A".into(),
+                value: 1,
+            },
+            TestItem {
+                name: "B".into(),
+                value: 2,
+            },
+            TestItem {
+                name: "C".into(),
+                value: 3,
+            },
         ];
 
         sort_entities(&mut items, TestSortField::Value, SortDirection::Descending);

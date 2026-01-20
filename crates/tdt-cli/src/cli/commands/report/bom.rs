@@ -280,7 +280,10 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
         output.push_str("\n");
 
         // Summary
-        output.push_str(&format!("\n**Total Components:** {} unique items\n", flat_items.len()));
+        output.push_str(&format!(
+            "\n**Total Components:** {} unique items\n",
+            flat_items.len()
+        ));
         if args.with_cost {
             output.push_str(&format!("**Total Cost:** ${:.2}\n", total_cost));
         }

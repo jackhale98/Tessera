@@ -378,8 +378,7 @@ impl<'a> ProcessService<'a> {
 
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -454,8 +453,7 @@ impl<'a> ProcessService<'a> {
         process.entity_revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -497,8 +495,7 @@ impl<'a> ProcessService<'a> {
         process.equipment.push(equipment);
         process.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -520,8 +517,7 @@ impl<'a> ProcessService<'a> {
 
         process.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -542,8 +538,7 @@ impl<'a> ProcessService<'a> {
         process.parameters.push(parameter);
         process.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -565,8 +560,7 @@ impl<'a> ProcessService<'a> {
 
         process.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -583,8 +577,7 @@ impl<'a> ProcessService<'a> {
         process.capability = Some(capability);
         process.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -597,8 +590,7 @@ impl<'a> ProcessService<'a> {
         process.safety = Some(safety);
         process.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(process)
@@ -804,11 +796,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("manufacturing/processes")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();
@@ -1085,9 +1073,7 @@ mod tests {
             hazards: vec!["Flying chips".into()],
         };
 
-        let updated = service
-            .set_safety(&created.id.to_string(), safety)
-            .unwrap();
+        let updated = service.set_safety(&created.id.to_string(), safety).unwrap();
 
         assert!(updated.safety.is_some());
         let safe = updated.safety.unwrap();

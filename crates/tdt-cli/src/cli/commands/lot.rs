@@ -7,6 +7,7 @@ use std::fs;
 
 use crate::cli::helpers::{escape_csv, format_short_id, truncate_str};
 use crate::cli::{GlobalOpts, OutputFormat};
+use std::collections::HashMap;
 use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::manufacturing::{
@@ -24,7 +25,6 @@ use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
     CommonFilter, CreateLot, LotFilter, LotService, LotSortField, SortDirection,
 };
-use std::collections::HashMap;
 
 /// CLI-friendly lot status enum
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -747,7 +747,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let filter = build_lot_filter(&args);
 
     // Load and filter lots using service
-    let mut lots = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut lots = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Apply limit
     if let Some(limit) = args.limit {
@@ -791,9 +793,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .unwrap_or_else(|| "New Production Lot".to_string());
         lot_number = args.lot_number;
         quantity = args.quantity;
-        product = args
-            .product
-            .map(|p| short_ids.resolve(&p).unwrap_or(p));
+        product = args.product.map(|p| short_ids.resolve(&p).unwrap_or(p));
         notes = None;
     }
 
@@ -811,9 +811,13 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let lot = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let lot = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
     let id = lot.id.clone();
-    let file_path = project.root().join(format!("manufacturing/lots/{}.tdt.yaml", id));
+    let file_path = project
+        .root()
+        .join(format!("manufacturing/lots/{}.tdt.yaml", id));
 
     // Handle --from-routing: populate execution steps from product routing
     let mut execution_steps_added = 0;
@@ -858,9 +862,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             if !routing.is_empty() {
                 // Load all processes using service
                 let proc_service = tdt_core::services::ProcessService::new(&project, &cache);
-                let all_procs = proc_service
-                    .load_all()
-                    .unwrap_or_default();
+                let all_procs = proc_service.load_all().unwrap_or_default();
                 let processes: HashMap<String, Process> = all_procs
                     .into_iter()
                     .map(|p| (p.id.to_string(), p))
@@ -1858,7 +1860,10 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
                     "execution": wi_exec,
                 });
                 if global.output == OutputFormat::Json {
-                    println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&result).unwrap_or_default()
+                    );
                 } else {
                     println!("{}", serde_yml::to_string(&result).unwrap_or_default());
                 }
@@ -1872,11 +1877,7 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
                     style(args.step).yellow()
                 );
                 println!("{}: {}", style("Lot").bold(), style(&display_id).cyan());
-                println!(
-                    "{}: {}",
-                    style("Process Step").bold(),
-                    proc_idx + 1
-                );
+                println!("{}: {}", style("Process Step").bold(), proc_idx + 1);
 
                 if let Some(exec) = wi_exec {
                     println!(
@@ -1961,7 +1962,9 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
 
     // Add equipment
     for (equipment, serial) in &args.equipment {
-        wi_exec.equipment_used.insert(equipment.clone(), serial.clone());
+        wi_exec
+            .equipment_used
+            .insert(equipment.clone(), serial.clone());
     }
 
     // Add notes
@@ -1988,12 +1991,18 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
     lot.entity_revision += 1;
 
     // Save lot
-    let lot_path = project.root().join(format!("manufacturing/lots/{}.tdt.yaml", lot.id));
+    let lot_path = project
+        .root()
+        .join(format!("manufacturing/lots/{}.tdt.yaml", lot.id));
     let yaml_content = serde_yml::to_string(&lot).into_diagnostic()?;
     fs::write(&lot_path, &yaml_content).into_diagnostic()?;
 
     // Output
-    let status = if args.complete { "completed" } else { "updated" };
+    let status = if args.complete {
+        "completed"
+    } else {
+        "updated"
+    };
     match global.output {
         OutputFormat::Json => {
             let result = serde_json::json!({
@@ -2005,7 +2014,10 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
                 "approval_status": wi_exec.approval_status.to_string(),
                 "completed": args.complete,
             });
-            println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            );
         }
         OutputFormat::Yaml => {
             let result = serde_json::json!({
@@ -2037,10 +2049,7 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
                 println!("   {} Signed", style("✓").green());
             }
             if args.require_approval {
-                println!(
-                    "   {} Approval Required",
-                    style("→").dim()
-                );
+                println!("   {} Approval Required", style("→").dim());
             }
             if !args.data.is_empty() {
                 println!("   Data: {} field(s) recorded", args.data.len());
@@ -2140,7 +2149,10 @@ fn run_router(args: RouterArgs, global: &GlobalOpts) -> Result<()> {
                 processes.push(proc_data);
             }
 
-            println!("{}", serde_json::to_string_pretty(&router_data).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&router_data).unwrap_or_default()
+            );
         }
         OutputFormat::Yaml => {
             let yaml = serde_yml::to_string(&lot.execution).into_diagnostic()?;
@@ -2207,7 +2219,9 @@ fn run_router(args: RouterArgs, global: &GlobalOpts) -> Result<()> {
                             continue;
                         }
 
-                        if args.approval_needed && wi_exec.approval_status != ApprovalStatus::Pending {
+                        if args.approval_needed
+                            && wi_exec.approval_status != ApprovalStatus::Pending
+                        {
                             continue;
                         }
 
@@ -2256,11 +2270,7 @@ fn run_router(args: RouterArgs, global: &GlobalOpts) -> Result<()> {
                                 style("Awaiting approval").yellow()
                             );
                         } else if wi_exec.approval_status == ApprovalStatus::Rejected {
-                            println!(
-                                "         {} {}",
-                                style("└─").dim(),
-                                style("REJECTED").red()
-                            );
+                            println!("         {} {}", style("└─").dim(), style("REJECTED").red());
                         }
 
                         // Show data if present
@@ -2291,7 +2301,11 @@ fn run_router(args: RouterArgs, global: &GlobalOpts) -> Result<()> {
             println!("{}", style("═".repeat(70)).dim());
 
             // Summary
-            let total_wi_steps: usize = lot.execution.iter().map(|e| e.wi_step_executions.len()).sum();
+            let total_wi_steps: usize = lot
+                .execution
+                .iter()
+                .map(|e| e.wi_step_executions.len())
+                .sum();
             let completed_wi_steps: usize = lot
                 .execution
                 .iter()
@@ -2311,10 +2325,7 @@ fn run_router(args: RouterArgs, global: &GlobalOpts) -> Result<()> {
                 total_wi_steps
             );
             if pending_approvals > 0 {
-                println!(
-                    "Pending Approvals: {}",
-                    style(pending_approvals).yellow()
-                );
+                println!("Pending Approvals: {}", style(pending_approvals).yellow());
             }
         }
     }
@@ -2376,7 +2387,10 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
                         })
                     })
                     .collect();
-                println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).unwrap_or_default()
+                );
             }
             _ => {
                 if pending.is_empty() {
@@ -2441,8 +2455,7 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
         .wi_step_executions
         .iter()
         .position(|w| {
-            (w.work_instruction == resolved_wi_id
-                || w.work_instruction.contains(&resolved_wi_id))
+            (w.work_instruction == resolved_wi_id || w.work_instruction.contains(&resolved_wi_id))
                 && w.step_number == args.step
         })
         .ok_or_else(|| {
@@ -2487,7 +2500,9 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
     lot.entity_revision += 1;
 
     // Save lot
-    let lot_path = project.root().join(format!("manufacturing/lots/{}.tdt.yaml", lot.id));
+    let lot_path = project
+        .root()
+        .join(format!("manufacturing/lots/{}.tdt.yaml", lot.id));
     let yaml_content = serde_yml::to_string(&lot).into_diagnostic()?;
     fs::write(&lot_path, &yaml_content).into_diagnostic()?;
 
@@ -2503,7 +2518,10 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
                 "approver": config.author(),
                 "signed": args.sign,
             });
-            println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            );
         }
         OutputFormat::Yaml => {
             let result = serde_json::json!({

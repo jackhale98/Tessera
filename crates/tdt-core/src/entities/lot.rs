@@ -610,7 +610,10 @@ entity_revision: 1
         let exec = WiStepExecution::new("WORK-01ABC".to_string(), 3)
             .with_operator("jsmith".to_string(), Some("jsmith@example.com".to_string()))
             .with_data("torque_nm".to_string(), serde_json::json!(25.5))
-            .with_equipment("Torque Wrench TW-001".to_string(), "CAL-2024-001".to_string())
+            .with_equipment(
+                "Torque Wrench TW-001".to_string(),
+                "CAL-2024-001".to_string(),
+            )
             .with_signature("GPG:jsmith-key".to_string())
             .complete();
 
@@ -747,10 +750,7 @@ entity_revision: 1
         let lot: Lot = serde_yml::from_str(yaml).unwrap();
         assert_eq!(lot.execution.len(), 1);
         assert_eq!(lot.execution[0].wi_step_executions.len(), 2);
-        assert_eq!(
-            lot.execution[0].wi_step_executions[0].step_number,
-            1
-        );
+        assert_eq!(lot.execution[0].wi_step_executions[0].step_number, 1);
         assert!(lot.execution[0].wi_step_executions[0].is_completed());
         assert_eq!(
             lot.execution[0].wi_step_executions[1].approval_status,

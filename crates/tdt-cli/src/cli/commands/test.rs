@@ -15,8 +15,8 @@ use tdt_core::core::entity::{Priority, Status};
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
-use tdt_core::core::{CachedResult, CachedTest};
 use tdt_core::core::Config;
+use tdt_core::core::{CachedResult, CachedTest};
 use tdt_core::entities::result::{Result as TestResult, StepResult, StepResultRecord, Verdict};
 use tdt_core::entities::test::{Test, TestLevel, TestMethod, TestType};
 use tdt_core::schema::wizard::SchemaWizard;
@@ -645,15 +645,16 @@ fn build_test_filter(args: &ListArgs) -> TestFilter {
     };
 
     // Convert priority filter
-    let priority = args.priority.as_ref().and_then(|p| {
-        match p.to_lowercase().as_str() {
+    let priority = args
+        .priority
+        .as_ref()
+        .and_then(|p| match p.to_lowercase().as_str() {
             "low" => Some(Priority::Low),
             "medium" => Some(Priority::Medium),
             "high" => Some(Priority::High),
             "critical" => Some(Priority::Critical),
             _ => None,
-        }
-    });
+        });
 
     // Convert type filter
     let test_type = match args.r#type {
@@ -734,27 +735,44 @@ fn sort_cached_tests(tests: &mut Vec<CachedTest>, args: &ListArgs) {
     match args.sort {
         ListColumn::Id => tests.sort_by(|a, b| a.id.cmp(&b.id)),
         ListColumn::Type => tests.sort_by(|a, b| {
-            a.test_type.as_deref().unwrap_or("").cmp(b.test_type.as_deref().unwrap_or(""))
+            a.test_type
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.test_type.as_deref().unwrap_or(""))
         }),
         ListColumn::Level => tests.sort_by(|a, b| {
             let level_order = |l: Option<&str>| match l {
-                Some("unit") => 0, Some("integration") => 1, Some("system") => 2, Some("acceptance") => 3, _ => 4,
+                Some("unit") => 0,
+                Some("integration") => 1,
+                Some("system") => 2,
+                Some("acceptance") => 3,
+                _ => 4,
             };
             level_order(a.level.as_deref()).cmp(&level_order(b.level.as_deref()))
         }),
         ListColumn::Method => tests.sort_by(|a, b| {
-            a.method.as_deref().unwrap_or("").cmp(b.method.as_deref().unwrap_or(""))
+            a.method
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.method.as_deref().unwrap_or(""))
         }),
         ListColumn::Title => tests.sort_by(|a, b| a.title.cmp(&b.title)),
         ListColumn::Status => tests.sort_by(|a, b| a.status.cmp(&b.status)),
         ListColumn::Priority => tests.sort_by(|a, b| {
             let priority_order = |p: Option<Priority>| match p {
-                Some(Priority::Critical) => 0, Some(Priority::High) => 1, Some(Priority::Medium) => 2, Some(Priority::Low) => 3, None => 4,
+                Some(Priority::Critical) => 0,
+                Some(Priority::High) => 1,
+                Some(Priority::Medium) => 2,
+                Some(Priority::Low) => 3,
+                None => 4,
             };
             priority_order(a.priority).cmp(&priority_order(b.priority))
         }),
         ListColumn::Category => tests.sort_by(|a, b| {
-            a.category.as_deref().unwrap_or("").cmp(b.category.as_deref().unwrap_or(""))
+            a.category
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.category.as_deref().unwrap_or(""))
         }),
         ListColumn::Author => tests.sort_by(|a, b| a.author.cmp(&b.author)),
         ListColumn::Created => tests.sort_by(|a, b| a.created.cmp(&b.created)),
@@ -796,14 +814,19 @@ fn output_tests(
                 columns.insert(0, "id");
             }
             let rows: Vec<TableRow> = tests.iter().map(|t| test_to_row(t, short_ids)).collect();
-            let config = TableConfig { wrap_width: args.wrap, show_summary: true };
+            let config = TableConfig {
+                wrap_width: args.wrap,
+                show_summary: true,
+            };
             let formatter = TableFormatter::new(TEST_COLUMNS, "test", "TEST").with_config(config);
             formatter.output(rows, format, &columns);
         }
         OutputFormat::Id | OutputFormat::ShortId => {
             for test in tests {
                 if format == OutputFormat::ShortId {
-                    let short_id = short_ids.get_short_id(&test.id.to_string()).unwrap_or_default();
+                    let short_id = short_ids
+                        .get_short_id(&test.id.to_string())
+                        .unwrap_or_default();
                     println!("{}", short_id);
                 } else {
                     println!("{}", test.id);
@@ -1129,7 +1152,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&test.id))
+                short_id
+                    .clone()
+                    .unwrap_or_else(|| format_short_id(&test.id))
             );
         }
         OutputFormat::Path => {
@@ -1139,7 +1164,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created test {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&test.id))).cyan()
+                style(
+                    short_id
+                        .clone()
+                        .unwrap_or_else(|| format_short_id(&test.id))
+                )
+                .cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
@@ -1309,7 +1339,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         test.links
                             .verifies
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1321,7 +1355,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         test.links
                             .validates
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1333,7 +1371,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         test.links
                             .mitigates
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1388,7 +1430,9 @@ fn run_edit(args: EditArgs) -> Result<()> {
             TestType::Verification => "verification",
             TestType::Validation => "validation",
         };
-        project.root().join(format!("{}/protocols/{}.tdt.yaml", test_type, test.id))
+        project
+            .root()
+            .join(format!("{}/protocols/{}.tdt.yaml", test_type, test.id))
     };
 
     if !file_path.exists() {
@@ -1405,7 +1449,6 @@ fn run_edit(args: EditArgs) -> Result<()> {
 
     Ok(())
 }
-
 
 fn run_run(args: RunArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;

@@ -683,7 +683,14 @@ impl<'a> AssemblyService<'a> {
             .filter_map(|q| q.component.as_ref().map(|c| (c.clone(), q)))
             .collect();
 
-        self.build_bom_tree(&assembly, 1, assembly_qty, &quotes, &quote_map, &mut HashSet::new())
+        self.build_bom_tree(
+            &assembly,
+            1,
+            assembly_qty,
+            &quotes,
+            &quote_map,
+            &mut HashSet::new(),
+        )
     }
 
     /// Calculate total cost for an assembly (recursive)
@@ -721,7 +728,9 @@ impl<'a> AssemblyService<'a> {
     pub fn set_routing(&self, id: &str, routing: Vec<String>) -> ServiceResult<Assembly> {
         let (path, mut assembly) = self.find_assembly(id)?;
 
-        let manufacturing = assembly.manufacturing.get_or_insert(ManufacturingConfig::default());
+        let manufacturing = assembly
+            .manufacturing
+            .get_or_insert(ManufacturingConfig::default());
         manufacturing.routing = routing;
         assembly.entity_revision += 1;
 
@@ -736,7 +745,9 @@ impl<'a> AssemblyService<'a> {
     pub fn add_routing_process(&self, id: &str, process_id: &str) -> ServiceResult<Assembly> {
         let (path, mut assembly) = self.find_assembly(id)?;
 
-        let manufacturing = assembly.manufacturing.get_or_insert(ManufacturingConfig::default());
+        let manufacturing = assembly
+            .manufacturing
+            .get_or_insert(ManufacturingConfig::default());
         if manufacturing.routing.contains(&process_id.to_string()) {
             return Err(ServiceError::AlreadyExists(format!(
                 "Process {} already in routing",
@@ -901,11 +912,7 @@ impl<'a> AssemblyService<'a> {
     fn matches_filter(&self, asm: &Assembly, filter: &AssemblyFilter) -> bool {
         // Part number filter
         if let Some(pn) = &filter.part_number {
-            if !asm
-                .part_number
-                .to_lowercase()
-                .contains(&pn.to_lowercase())
-            {
+            if !asm.part_number.to_lowercase().contains(&pn.to_lowercase()) {
                 return false;
             }
         }
@@ -940,7 +947,10 @@ impl<'a> AssemblyService<'a> {
         if !filter.common.matches_tags(&asm.tags) {
             return false;
         }
-        if !filter.common.matches_search(&[&asm.title, &asm.part_number]) {
+        if !filter
+            .common
+            .matches_search(&[&asm.title, &asm.part_number])
+        {
             return false;
         }
         if !filter.common.matches_recent(&asm.created) {
@@ -1015,7 +1025,8 @@ impl<'a> AssemblyService<'a> {
         // Add component children
         let cmp_dir = self.components_dir();
         for item in &assembly.bom {
-            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)? {
+            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
+            {
                 // Calculate effective quantity for price break lookup
                 let effective_qty = item.quantity * assembly_qty;
 
@@ -1055,7 +1066,8 @@ impl<'a> AssemblyService<'a> {
         for sub_id in &assembly.subassemblies {
             if let Some(sub) = self.get(sub_id)? {
                 // Subassemblies are quantity 1 unless specified otherwise
-                let sub_node = self.build_bom_tree(&sub, 1, assembly_qty, quotes, quote_map, visited)?;
+                let sub_node =
+                    self.build_bom_tree(&sub, 1, assembly_qty, quotes, quote_map, visited)?;
                 children.push(sub_node);
             }
         }
@@ -1124,10 +1136,12 @@ impl<'a> AssemblyService<'a> {
 
         // Process components
         for item in &assembly.bom {
-            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)? {
+            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
+            {
                 // Try quote price first, then unit_cost
                 let price = if let Some(quote_id) = &cmp.selected_quote {
-                    quotes.iter()
+                    quotes
+                        .iter()
                         .find(|q| q.id.to_string() == *quote_id)
                         .and_then(|q| q.price_for_qty(item.quantity * quantity))
                 } else if let Some(quote) = quote_map.get(&item.component_id) {
@@ -1174,7 +1188,8 @@ impl<'a> AssemblyService<'a> {
 
         // Process components
         for item in &assembly.bom {
-            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)? {
+            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
+            {
                 if let Some(mass) = cmp.mass_kg {
                     result.total_mass_kg += mass * (item.quantity * quantity) as f64;
                     result.components_with_mass += 1;
@@ -1210,11 +1225,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("bom/components")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();
@@ -1222,7 +1233,12 @@ mod tests {
         (tmp, project, cache)
     }
 
-    fn create_test_component(tmp: &TempDir, part_number: &str, cost: Option<f64>, mass: Option<f64>) -> Component {
+    fn create_test_component(
+        tmp: &TempDir,
+        part_number: &str,
+        cost: Option<f64>,
+        mass: Option<f64>,
+    ) -> Component {
         let id = EntityId::new(EntityPrefix::Cmp);
         let cmp = Component {
             id: id.clone(),
@@ -1599,10 +1615,7 @@ mod tests {
             .set_routing(&asm.id.to_string(), routing.clone())
             .unwrap();
 
-        assert_eq!(
-            updated.manufacturing.as_ref().unwrap().routing,
-            routing
-        );
+        assert_eq!(updated.manufacturing.as_ref().unwrap().routing, routing);
 
         let fetched_routing = service.get_routing(&asm.id.to_string()).unwrap();
         assert_eq!(fetched_routing, routing);

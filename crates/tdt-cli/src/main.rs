@@ -1,8 +1,8 @@
 mod cli;
 
 use clap::Parser;
-use miette::Result;
 use cli::{Cli, Commands};
+use miette::Result;
 
 fn main() -> Result<()> {
     // Reset SIGPIPE to default behavior (terminate silently) for proper Unix piping.

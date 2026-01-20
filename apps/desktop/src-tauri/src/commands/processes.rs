@@ -166,7 +166,11 @@ fn build_process_filter(params: &ListProcessesParams) -> ProcessFilter {
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
@@ -175,12 +179,18 @@ fn build_process_filter(params: &ListProcessesParams) -> ProcessFilter {
 
     ProcessFilter {
         common,
-        process_type: params.process_type.as_ref().and_then(|t| parse_process_type(t)),
+        process_type: params
+            .process_type
+            .as_ref()
+            .and_then(|t| parse_process_type(t)),
         operation_number: params.operation_number.clone(),
         has_equipment: params.has_equipment.unwrap_or(false),
         has_capability: params.has_capability.unwrap_or(false),
         requires_signature: params.requires_signature.unwrap_or(false),
-        skill_level: params.skill_level.as_ref().and_then(|s| parse_skill_level(s)),
+        skill_level: params
+            .skill_level
+            .as_ref()
+            .and_then(|s| parse_skill_level(s)),
     }
 }
 
@@ -202,7 +212,11 @@ pub async fn list_processes(
     let params = params.unwrap_or_default();
     let filter = build_process_filter(&params);
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -229,7 +243,10 @@ pub async fn get_process(id: String, state: State<'_, AppState>) -> CommandResul
 }
 
 #[tauri::command]
-pub async fn create_process(input: CreateProcessInput, state: State<'_, AppState>) -> CommandResult<Process> {
+pub async fn create_process(
+    input: CreateProcessInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Process> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -241,12 +258,18 @@ pub async fn create_process(input: CreateProcessInput, state: State<'_, AppState
         let create = CreateProcess {
             title: input.title,
             author: input.author,
-            process_type: input.process_type.and_then(|t| parse_process_type(&t)).unwrap_or_default(),
+            process_type: input
+                .process_type
+                .and_then(|t| parse_process_type(&t))
+                .unwrap_or_default(),
             operation_number: input.operation_number,
             description: input.description,
             cycle_time_minutes: input.cycle_time_minutes,
             setup_time_minutes: input.setup_time_minutes,
-            operator_skill: input.operator_skill.and_then(|s| parse_skill_level(&s)).unwrap_or_default(),
+            operator_skill: input
+                .operator_skill
+                .and_then(|s| parse_skill_level(&s))
+                .unwrap_or_default(),
             require_signature: input.require_signature.unwrap_or(false),
             tags: input.tags.unwrap_or_default(),
         };
@@ -255,13 +278,19 @@ pub async fn create_process(input: CreateProcessInput, state: State<'_, AppState
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(process)
 }
 
 #[tauri::command]
-pub async fn update_process(id: String, input: UpdateProcessInput, state: State<'_, AppState>) -> CommandResult<Process> {
+pub async fn update_process(
+    id: String,
+    input: UpdateProcessInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Process> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -292,13 +321,19 @@ pub async fn update_process(id: String, input: UpdateProcessInput, state: State<
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(process)
 }
 
 #[tauri::command]
-pub async fn delete_process(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_process(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -311,7 +346,9 @@ pub async fn delete_process(id: String, force: Option<bool>, state: State<'_, Ap
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }

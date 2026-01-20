@@ -478,9 +478,7 @@ fn build_ncr_sort_field(col: &ListColumn) -> NcrSortField {
 /// Uses report_date if available, otherwise created date
 fn calculate_days_open(ncr: &Ncr) -> i64 {
     let today = Utc::now().date_naive();
-    let start_date = ncr
-        .report_date
-        .unwrap_or_else(|| ncr.created.date_naive());
+    let start_date = ncr.report_date.unwrap_or_else(|| ncr.created.date_naive());
     (today - start_date).num_days()
 }
 
@@ -664,7 +662,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     // Full entity loading path
-    let mut ncrs = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut ncrs = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Apply stale filter (requires full entity with report_date)
     if let Some(threshold_days) = args.stale {
@@ -734,7 +734,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let ncr = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let ncr = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get file path for the created NCR
     let file_path = project
@@ -796,7 +798,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                     "   {} --[{}]--> {}",
                     style("→").dim(),
                     style(link_type).cyan(),
-                    style(&short_ids.get_short_id(target).unwrap_or_else(|| target.clone())).yellow()
+                    style(
+                        &short_ids
+                            .get_short_id(target)
+                            .unwrap_or_else(|| target.clone())
+                    )
+                    .yellow()
                 );
             }
         }
@@ -867,7 +874,9 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                 tdt_core::entities::ncr::NcrSeverity::Critical => {
                     style(ncr.severity.to_string()).red().bold()
                 }
-                tdt_core::entities::ncr::NcrSeverity::Major => style(ncr.severity.to_string()).red(),
+                tdt_core::entities::ncr::NcrSeverity::Major => {
+                    style(ncr.severity.to_string()).red()
+                }
                 tdt_core::entities::ncr::NcrSeverity::Minor => {
                     style(ncr.severity.to_string()).yellow()
                 }
@@ -1180,7 +1189,12 @@ fn run_close(args: CloseArgs, global: &GlobalOpts) -> Result<()> {
 
     // Use service to close NCR
     let mut ncr = service
-        .close(&resolved_id, disposition_decision, args.rationale.clone(), config.author())
+        .close(
+            &resolved_id,
+            disposition_decision,
+            args.rationale.clone(),
+            config.author(),
+        )
         .map_err(|e| miette::miette!("{}", e))?;
 
     // Add CAPA link if provided (separate operation)

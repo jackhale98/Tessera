@@ -461,7 +461,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
 
     if needs_test_result_filters {
         // Special case: test-result filters require loading full entities and post-filtering
-        run_list_with_test_filters(&args, &service, &filter, sort_field, sort_dir, global, &project, &cache)
+        run_list_with_test_filters(
+            &args, &service, &filter, sort_field, sort_dir, global, &project, &cache,
+        )
     } else {
         // Standard case: use generic list infrastructure
         let config = ListConfig {
@@ -544,20 +546,26 @@ fn run_list_with_test_filters(
 
         let untested_match = if args.untested {
             !test_ids.is_empty()
-                && !test_ids.iter().any(|tid| tested_test_ids.contains(tid.to_string().as_str()))
+                && !test_ids
+                    .iter()
+                    .any(|tid| tested_test_ids.contains(tid.to_string().as_str()))
         } else {
             true
         };
 
         let failed_match = if args.failed {
-            test_ids.iter().any(|tid| failed_test_ids.contains(tid.to_string().as_str()))
+            test_ids
+                .iter()
+                .any(|tid| failed_test_ids.contains(tid.to_string().as_str()))
         } else {
             true
         };
 
         let passing_match = if args.passing {
             !test_ids.is_empty()
-                && test_ids.iter().all(|tid| passing_test_ids.contains(tid.to_string().as_str()))
+                && test_ids
+                    .iter()
+                    .all(|tid| passing_test_ids.contains(tid.to_string().as_str()))
         } else {
             true
         };
@@ -609,13 +617,19 @@ fn run_list_with_test_filters(
 
     let common_args = CommonListArgs {
         columns: args.columns.iter().map(|c| c.to_string()).collect(),
-        limit: None, // Already applied
+        limit: None,    // Already applied
         reverse: false, // Already applied
-        count: false, // Already handled
+        count: false,   // Already handled
         wrap: args.wrap,
     };
 
-    crate::cli::entity_cmd::output_full_entities(&reqs, &config, &short_ids, &common_args, output_format)
+    crate::cli::entity_cmd::output_full_entities(
+        &reqs,
+        &config,
+        &short_ids,
+        &common_args,
+        output_format,
+    )
 }
 
 /// Build RequirementFilter from CLI args
@@ -1052,7 +1066,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .satisfied_by
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1064,7 +1082,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .verified_by
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1076,7 +1098,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .derives_from
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1088,7 +1114,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .derived_by
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1100,7 +1130,11 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                         req.links
                             .allocated_to
                             .iter()
-                            .map(|id| format_link_with_title(&id.to_string(), &short_ids, &cache_opt))
+                            .map(|id| format_link_with_title(
+                                &id.to_string(),
+                                &short_ids,
+                                &cache_opt
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
@@ -1129,7 +1163,6 @@ fn run_edit(args: EditArgs) -> Result<()> {
     let id = resolve_id_arg(&args.id).map_err(|e| miette::miette!("{}", e))?;
     crate::cli::entity_cmd::run_edit_generic(&id, &ENTITY_CONFIG)
 }
-
 
 fn run_delete(args: DeleteArgs) -> Result<()> {
     crate::cli::commands::utils::run_delete(&args.id, REQ_DIRS, args.force, false, args.quiet)
@@ -1169,7 +1202,11 @@ fn run_stats(args: StatsArgs, global: &GlobalOpts) -> Result<()> {
     println!();
 
     // Overview
-    println!("{:<20} {}", style("Total:").bold(), style(stats.total).cyan());
+    println!(
+        "{:<20} {}",
+        style("Total:").bold(),
+        style(stats.total).cyan()
+    );
     println!(
         "{:<20} {}",
         style("Inputs:").bold(),

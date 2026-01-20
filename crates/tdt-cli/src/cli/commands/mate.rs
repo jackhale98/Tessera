@@ -20,8 +20,7 @@ use tdt_core::entities::feature::Feature;
 use tdt_core::entities::mate::{FitAnalysis, Mate, MateType, StatisticalFit};
 use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
-    CommonFilter, CreateMate, FeatureService, MateFilter, MateService, MateSortField,
-    SortDirection,
+    CommonFilter, CreateMate, FeatureService, MateFilter, MateService, MateSortField, SortDirection,
 };
 
 #[derive(Subcommand, Debug)]
@@ -314,14 +313,22 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     };
 
     let filter = build_mate_filter(&args);
-    let mut mates = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut mates = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Post-sort for columns not in service (Match, FeatureA, FeatureB)
     if let Some(ref sort_col) = args.sort {
         match sort_col {
-            ListColumn::Match => mates.sort_by(|a, b| fit_matches_type(a).cmp(&fit_matches_type(b))),
-            ListColumn::FeatureA => mates.sort_by(|a, b| a.feature_a.id.to_string().cmp(&b.feature_a.id.to_string())),
-            ListColumn::FeatureB => mates.sort_by(|a, b| a.feature_b.id.to_string().cmp(&b.feature_b.id.to_string())),
+            ListColumn::Match => {
+                mates.sort_by(|a, b| fit_matches_type(a).cmp(&fit_matches_type(b)))
+            }
+            ListColumn::FeatureA => {
+                mates.sort_by(|a, b| a.feature_a.id.to_string().cmp(&b.feature_a.id.to_string()))
+            }
+            ListColumn::FeatureB => {
+                mates.sort_by(|a, b| a.feature_b.id.to_string().cmp(&b.feature_b.id.to_string()))
+            }
             _ => {} // Handled by service
         }
     }
@@ -384,17 +391,23 @@ fn build_mate_filter(args: &ListArgs) -> MateFilter {
 
 /// Build sort field and direction from CLI args
 fn build_mate_sort(args: &ListArgs) -> (MateSortField, SortDirection) {
-    let field = args.sort.as_ref().map(|col| match col {
-        ListColumn::Id => MateSortField::Id,
-        ListColumn::Title => MateSortField::Title,
-        ListColumn::MateType => MateSortField::MateType,
-        ListColumn::FitResult => MateSortField::FitResult,
-        ListColumn::Status => MateSortField::Status,
-        ListColumn::Author => MateSortField::Author,
-        ListColumn::Created => MateSortField::Created,
-        // Columns handled as post-sort
-        ListColumn::Match | ListColumn::FeatureA | ListColumn::FeatureB => MateSortField::Created,
-    }).unwrap_or(MateSortField::Created);
+    let field = args
+        .sort
+        .as_ref()
+        .map(|col| match col {
+            ListColumn::Id => MateSortField::Id,
+            ListColumn::Title => MateSortField::Title,
+            ListColumn::MateType => MateSortField::MateType,
+            ListColumn::FitResult => MateSortField::FitResult,
+            ListColumn::Status => MateSortField::Status,
+            ListColumn::Author => MateSortField::Author,
+            ListColumn::Created => MateSortField::Created,
+            // Columns handled as post-sort
+            ListColumn::Match | ListColumn::FeatureA | ListColumn::FeatureB => {
+                MateSortField::Created
+            }
+        })
+        .unwrap_or(MateSortField::Created);
 
     (field, SortDirection::Descending)
 }
@@ -418,7 +431,8 @@ fn output_mates(
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&mates).map_err(|e| miette::miette!("{}", e))?;
+            let json =
+                serde_json::to_string_pretty(&mates).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
@@ -562,7 +576,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let mate = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let mate = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Calculate fit analysis
     let _ = service.recalculate(&mate.id.to_string());
@@ -790,7 +806,9 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                 println!("{}", style("Fit Analysis:").bold());
                 let fit_color = match fit.fit_result {
                     tdt_core::entities::mate::FitResult::Clearance => style("CLEARANCE").green(),
-                    tdt_core::entities::mate::FitResult::Interference => style("INTERFERENCE").red(),
+                    tdt_core::entities::mate::FitResult::Interference => {
+                        style("INTERFERENCE").red()
+                    }
                     tdt_core::entities::mate::FitResult::Transition => style("TRANSITION").yellow(),
                 };
                 println!("  {}: {}", style("Fit Type").dim(), fit_color);

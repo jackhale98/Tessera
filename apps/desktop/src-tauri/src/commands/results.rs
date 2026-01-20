@@ -59,7 +59,10 @@ impl From<&TestResult> for ResultSummary {
     fn from(result: &TestResult) -> Self {
         Self {
             id: result.id.to_string(),
-            title: result.title.clone().unwrap_or_else(|| "Untitled Result".to_string()),
+            title: result
+                .title
+                .clone()
+                .unwrap_or_else(|| "Untitled Result".to_string()),
             test_id: Some(result.test_id.to_string()),
             verdict: Some(result.verdict.to_string()),
             status: format!("{:?}", result.status).to_lowercase(),
@@ -480,13 +483,13 @@ pub async fn create_result(
         .as_mut()
         .ok_or_else(|| CommandError::NoProject)?;
 
-    let test_id: EntityId = input.test_id.parse().map_err(|_| {
-        CommandError::InvalidInput(format!("Invalid test ID: {}", input.test_id))
-    })?;
+    let test_id: EntityId = input
+        .test_id
+        .parse()
+        .map_err(|_| CommandError::InvalidInput(format!("Invalid test ID: {}", input.test_id)))?;
 
-    let verdict = parse_verdict(&input.verdict).ok_or_else(|| {
-        CommandError::InvalidInput(format!("Invalid verdict: {}", input.verdict))
-    })?;
+    let verdict = parse_verdict(&input.verdict)
+        .ok_or_else(|| CommandError::InvalidInput(format!("Invalid verdict: {}", input.verdict)))?;
 
     let create_input = CreateResult {
         test_id,
@@ -606,8 +609,14 @@ pub async fn add_result_step(
     let measurement = input.measurement.map(measurement_from_input);
 
     let service = ResultService::new(project, cache);
-    let result =
-        service.add_step_result(&id, input.step, step_result, input.observed, measurement, input.notes)?;
+    let result = service.add_step_result(
+        &id,
+        input.step,
+        step_result,
+        input.observed,
+        measurement,
+        input.notes,
+    )?;
 
     // Sync cache
     let _ = cache.sync();
@@ -757,12 +766,8 @@ pub async fn record_result_deviation(
         .ok_or_else(|| CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
-    let result = service.record_deviation(
-        &id,
-        input.description,
-        input.impact,
-        input.justification,
-    )?;
+    let result =
+        service.record_deviation(&id, input.description, input.impact, input.justification)?;
 
     // Sync cache
     let _ = cache.sync();

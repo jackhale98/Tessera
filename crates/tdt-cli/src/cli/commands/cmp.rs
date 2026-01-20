@@ -932,11 +932,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         title = args
             .title
             .ok_or_else(|| miette::miette!("Title is required (use --title or -t)"))?;
-        make_buy = args
-            .make_buy
-            .to_string()
-            .parse()
-            .unwrap_or(MakeBuy::Buy);
+        make_buy = args.make_buy.to_string().parse().unwrap_or(MakeBuy::Buy);
         category = args
             .category
             .to_string()
@@ -1288,7 +1284,6 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
     crate::cli::commands::utils::run_delete(&args.id, COMPONENT_DIRS, args.force, true, args.quiet)
 }
 
-
 fn run_set_quote(args: SetQuoteArgs) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
@@ -1443,7 +1438,6 @@ fn run_clear_quote(args: ClearQuoteArgs) -> Result<()> {
 
     Ok(())
 }
-
 
 // ============================================================================
 // Routing subcommands

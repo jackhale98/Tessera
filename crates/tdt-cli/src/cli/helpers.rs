@@ -5,9 +5,9 @@
 
 #![allow(dead_code)]
 
-use tdt_core::core::identity::EntityId;
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use std::io::{self, BufRead, IsTerminal};
+use tdt_core::core::identity::EntityId;
 
 /// Format an EntityId for display, truncating if too long
 ///

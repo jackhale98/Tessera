@@ -9,7 +9,7 @@ use tdt_core::core::entity::Status;
 use tdt_core::entities::control::{Control, ControlCategory, ControlType};
 use tdt_core::services::common::SortDirection;
 use tdt_core::services::control::{
-    CreateControl, ControlFilter, ControlService, ControlSortField, ControlStats, UpdateControl,
+    ControlFilter, ControlService, ControlSortField, ControlStats, CreateControl, UpdateControl,
 };
 
 use crate::error::{CommandError, CommandResult};
@@ -153,7 +153,11 @@ fn build_control_filter(params: &ListControlsParams) -> ControlFilter {
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
@@ -162,8 +166,14 @@ fn build_control_filter(params: &ListControlsParams) -> ControlFilter {
 
     ControlFilter {
         common,
-        control_type: params.control_type.as_ref().and_then(|t| parse_control_type(t)),
-        control_category: params.control_category.as_ref().and_then(|c| parse_control_category(c)),
+        control_type: params
+            .control_type
+            .as_ref()
+            .and_then(|t| parse_control_type(t)),
+        control_category: params
+            .control_category
+            .as_ref()
+            .and_then(|c| parse_control_category(c)),
         process: params.process.clone(),
         critical_only: params.critical_only.unwrap_or(false),
         has_limits: params.has_limits.unwrap_or(false),
@@ -190,7 +200,11 @@ pub async fn list_controls(
     let params = params.unwrap_or_default();
     let filter = build_control_filter(&params);
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -217,7 +231,10 @@ pub async fn get_control(id: String, state: State<'_, AppState>) -> CommandResul
 }
 
 #[tauri::command]
-pub async fn create_control(input: CreateControlInput, state: State<'_, AppState>) -> CommandResult<Control> {
+pub async fn create_control(
+    input: CreateControlInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Control> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -229,8 +246,14 @@ pub async fn create_control(input: CreateControlInput, state: State<'_, AppState
         let create = CreateControl {
             title: input.title,
             author: input.author,
-            control_type: input.control_type.and_then(|t| parse_control_type(&t)).unwrap_or_default(),
-            control_category: input.control_category.and_then(|c| parse_control_category(&c)).unwrap_or_default(),
+            control_type: input
+                .control_type
+                .and_then(|t| parse_control_type(&t))
+                .unwrap_or_default(),
+            control_category: input
+                .control_category
+                .and_then(|c| parse_control_category(&c))
+                .unwrap_or_default(),
             description: input.description,
             characteristic: None,
             process: input.process,
@@ -242,13 +265,19 @@ pub async fn create_control(input: CreateControlInput, state: State<'_, AppState
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(control)
 }
 
 #[tauri::command]
-pub async fn update_control(id: String, input: UpdateControlInput, state: State<'_, AppState>) -> CommandResult<Control> {
+pub async fn update_control(
+    id: String,
+    input: UpdateControlInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Control> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -260,7 +289,9 @@ pub async fn update_control(id: String, input: UpdateControlInput, state: State<
         let update = UpdateControl {
             title: input.title,
             control_type: input.control_type.and_then(|t| parse_control_type(&t)),
-            control_category: input.control_category.and_then(|c| parse_control_category(&c)),
+            control_category: input
+                .control_category
+                .and_then(|c| parse_control_category(&c)),
             description: input.description,
             characteristic: None,
             measurement: None,
@@ -277,13 +308,19 @@ pub async fn update_control(id: String, input: UpdateControlInput, state: State<
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(control)
 }
 
 #[tauri::command]
-pub async fn delete_control(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_control(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -296,7 +333,9 @@ pub async fn delete_control(id: String, force: Option<bool>, state: State<'_, Ap
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }

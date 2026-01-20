@@ -285,7 +285,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     };
 
     let filter = build_haz_filter(&args);
-    let mut hazards = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut hazards = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Post-filter: no_risks (not supported by service filter)
     if args.no_risks {
@@ -340,9 +342,10 @@ fn build_haz_filter(args: &ListArgs) -> HazardFilter {
 
     HazardFilter {
         common: CommonFilter {
-            status: args.status.as_ref().map(|s| {
-                vec![s.parse().unwrap_or(tdt_core::core::entity::Status::Draft)]
-            }),
+            status: args
+                .status
+                .as_ref()
+                .map(|s| vec![s.parse().unwrap_or(tdt_core::core::entity::Status::Draft)]),
             tags: args.tag.as_ref().map(|t| vec![t.clone()]),
             limit: args.limit,
             ..Default::default()
@@ -370,7 +373,8 @@ fn output_hazards(
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&hazards).map_err(|e| miette::miette!("{}", e))?;
+            let json =
+                serde_json::to_string_pretty(&hazards).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::ShortId => {
@@ -484,10 +488,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
 
         energy_level = args.energy;
 
-        severity = args
-            .severity
-            .map(|s| s.into())
-            .unwrap_or_default();
+        severity = args.severity.map(|s| s.into()).unwrap_or_default();
 
         tags = args
             .tags
@@ -509,7 +510,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let hazard = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let hazard = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get file path for the created hazard
     let file_path = project

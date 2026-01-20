@@ -493,7 +493,10 @@ fn output_cached_work_instructions(
 }
 
 /// Convert a CachedEntity to a TableRow for work instructions
-fn cached_entity_to_row(entity: &tdt_core::core::CachedEntity, short_ids: &ShortIdIndex) -> TableRow {
+fn cached_entity_to_row(
+    entity: &tdt_core::core::CachedEntity,
+    short_ids: &ShortIdIndex,
+) -> TableRow {
     TableRow::new(entity.id.clone(), short_ids)
         .cell("id", CellValue::Id(entity.id.clone()))
         .cell("doc-number", CellValue::Text("-".to_string())) // Not in cache

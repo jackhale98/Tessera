@@ -24,7 +24,7 @@ use tdt_core::entities::stackup::{
 };
 use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
-    CommonFilter, CreateStackup, StackupFilter, StackupService, StackupSortField, SortDirection,
+    CommonFilter, CreateStackup, SortDirection, StackupFilter, StackupService, StackupSortField,
 };
 
 /// Visualization mode for 3D stackup analysis
@@ -419,13 +419,19 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     };
 
     let filter = build_tol_filter(&args);
-    let mut stackups = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut stackups = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Post-sort for Critical column (not in service sort fields)
     if let Some(ListColumn::Critical) = args.sort {
         stackups.sort_by(|a, b| {
             let cmp = b.target.critical.cmp(&a.target.critical);
-            if args.reverse { cmp.reverse() } else { cmp }
+            if args.reverse {
+                cmp.reverse()
+            } else {
+                cmp
+            }
         });
     }
 
@@ -497,18 +503,22 @@ fn build_tol_filter(args: &ListArgs) -> StackupFilter {
 
 /// Build sort field and direction from CLI args
 fn build_tol_sort(args: &ListArgs) -> (StackupSortField, SortDirection) {
-    let field = args.sort.as_ref().map(|col| match col {
-        ListColumn::Id => StackupSortField::Id,
-        ListColumn::Title => StackupSortField::Title,
-        ListColumn::Result => StackupSortField::Result,
-        ListColumn::Cpk => StackupSortField::Cpk,
-        ListColumn::Yield => StackupSortField::Yield,
-        ListColumn::Disposition => StackupSortField::Disposition,
-        ListColumn::Status => StackupSortField::Status,
-        ListColumn::Author => StackupSortField::Author,
-        ListColumn::Created => StackupSortField::Created,
-        ListColumn::Critical => StackupSortField::Created, // Fallback, handled as post-sort
-    }).unwrap_or(StackupSortField::Created);
+    let field = args
+        .sort
+        .as_ref()
+        .map(|col| match col {
+            ListColumn::Id => StackupSortField::Id,
+            ListColumn::Title => StackupSortField::Title,
+            ListColumn::Result => StackupSortField::Result,
+            ListColumn::Cpk => StackupSortField::Cpk,
+            ListColumn::Yield => StackupSortField::Yield,
+            ListColumn::Disposition => StackupSortField::Disposition,
+            ListColumn::Status => StackupSortField::Status,
+            ListColumn::Author => StackupSortField::Author,
+            ListColumn::Created => StackupSortField::Created,
+            ListColumn::Critical => StackupSortField::Created, // Fallback, handled as post-sort
+        })
+        .unwrap_or(StackupSortField::Created);
 
     let direction = if args.reverse {
         SortDirection::Ascending
@@ -538,7 +548,8 @@ fn output_stackups(
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&stackups).map_err(|e| miette::miette!("{}", e))?;
+            let json =
+                serde_json::to_string_pretty(&stackups).map_err(|e| miette::miette!("{}", e))?;
             println!("{}", json);
         }
         OutputFormat::Yaml => {
@@ -669,7 +680,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let stackup = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let stackup = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
     let id = &stackup.id;
     let file_path = project
         .root()
@@ -1185,7 +1198,9 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
             tdt_core::entities::stackup::AnalysisResult::Marginal => {
                 style(format!("{}", wc.result)).yellow()
             }
-            tdt_core::entities::stackup::AnalysisResult::Fail => style(format!("{}", wc.result)).red(),
+            tdt_core::entities::stackup::AnalysisResult::Fail => {
+                style(format!("{}", wc.result)).red()
+            }
         };
 
         println!();
@@ -1450,11 +1465,7 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
                         // Write to file or print
                         if let Some(ref path) = args.svg_output {
                             fs::write(path, &svg).into_diagnostic()?;
-                            eprintln!(
-                                "{} SVG saved to {}",
-                                style("✓").green(),
-                                style(path).cyan()
-                            );
+                            eprintln!("{} SVG saved to {}", style("✓").green(), style(path).cyan());
                         } else {
                             // Output to stdout
                             println!("{}", svg);
@@ -2329,10 +2340,7 @@ fn run_3d_analysis(
         // Check if contributor has a feature link
         if contrib.feature.is_some() && feat_opt.is_none() {
             // Feature reference exists but feature file not found
-            no_feature_link.push(format!(
-                "{} (feature not found)",
-                contrib.name
-            ));
+            no_feature_link.push(format!("{} (feature not found)", contrib.name));
         } else if contrib.feature.is_none() {
             no_feature_link.push(contrib.name.clone());
         }

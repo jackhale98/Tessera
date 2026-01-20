@@ -179,14 +179,22 @@ fn build_feature_filter(params: &ListFeaturesParams) -> FeatureFilter {
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
         ..Default::default()
     };
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -196,8 +204,14 @@ fn build_feature_filter(params: &ListFeaturesParams) -> FeatureFilter {
     FeatureFilter {
         common,
         component: params.component_id.clone(),
-        feature_type: params.feature_type.as_ref().and_then(|t| parse_feature_type(t)),
-        geometry_class: params.geometry_class.as_ref().and_then(|g| parse_geometry_class(g)),
+        feature_type: params
+            .feature_type
+            .as_ref()
+            .and_then(|t| parse_feature_type(t)),
+        geometry_class: params
+            .geometry_class
+            .as_ref()
+            .and_then(|g| parse_geometry_class(g)),
         is_datum: params.is_datum,
         has_gdt: None,
         sort,
@@ -256,7 +270,10 @@ pub async fn get_features_by_component(
 }
 
 #[tauri::command]
-pub async fn create_feature(input: CreateFeatureInput, state: State<'_, AppState>) -> CommandResult<Feature> {
+pub async fn create_feature(
+    input: CreateFeatureInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Feature> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -269,7 +286,10 @@ pub async fn create_feature(input: CreateFeatureInput, state: State<'_, AppState
             title: input.title,
             author: input.author,
             component: input.component,
-            feature_type: input.feature_type.and_then(|t| parse_feature_type(&t)).unwrap_or(FeatureType::External),
+            feature_type: input
+                .feature_type
+                .and_then(|t| parse_feature_type(&t))
+                .unwrap_or(FeatureType::External),
             description: input.description,
             dimensions: Vec::new(),
             gdt: Vec::new(),
@@ -283,13 +303,19 @@ pub async fn create_feature(input: CreateFeatureInput, state: State<'_, AppState
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(feature)
 }
 
 #[tauri::command]
-pub async fn update_feature(id: String, input: UpdateFeatureInput, state: State<'_, AppState>) -> CommandResult<Feature> {
+pub async fn update_feature(
+    id: String,
+    input: UpdateFeatureInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Feature> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -314,13 +340,19 @@ pub async fn update_feature(id: String, input: UpdateFeatureInput, state: State<
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(feature)
 }
 
 #[tauri::command]
-pub async fn delete_feature(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_feature(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -333,13 +365,19 @@ pub async fn delete_feature(id: String, force: Option<bool>, state: State<'_, Ap
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }
 
 #[tauri::command]
-pub async fn add_feature_dimension(id: String, input: AddDimensionInput, state: State<'_, AppState>) -> CommandResult<Feature> {
+pub async fn add_feature_dimension(
+    id: String,
+    input: AddDimensionInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Feature> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -361,13 +399,19 @@ pub async fn add_feature_dimension(id: String, input: AddDimensionInput, state: 
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(feature)
 }
 
 #[tauri::command]
-pub async fn remove_feature_dimension(id: String, name: String, state: State<'_, AppState>) -> CommandResult<Feature> {
+pub async fn remove_feature_dimension(
+    id: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Feature> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -380,13 +424,19 @@ pub async fn remove_feature_dimension(id: String, name: String, state: State<'_,
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(feature)
 }
 
 #[tauri::command]
-pub async fn set_feature_datum_label(id: String, label: String, state: State<'_, AppState>) -> CommandResult<Feature> {
+pub async fn set_feature_datum_label(
+    id: String,
+    label: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Feature> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -399,13 +449,18 @@ pub async fn set_feature_datum_label(id: String, label: String, state: State<'_,
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(feature)
 }
 
 #[tauri::command]
-pub async fn clear_feature_datum_label(id: String, state: State<'_, AppState>) -> CommandResult<Feature> {
+pub async fn clear_feature_datum_label(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Feature> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -418,7 +473,9 @@ pub async fn clear_feature_datum_label(id: String, state: State<'_, AppState>) -
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(feature)
 }

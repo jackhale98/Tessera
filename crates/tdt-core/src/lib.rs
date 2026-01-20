@@ -21,40 +21,78 @@ pub mod yaml;
 
 // Re-export core types for convenience
 pub use crate::core::{
+    bounds_approx_equal,
+    check_stale_bounds,
+    clear_link_suspect,
+    compute_torsor_bounds,
+    create_execution_steps_from_routing,
+    get_suspect_links,
+    has_suspect_links,
+    mark_link_suspect,
+    step_min_approvals,
+    step_required_roles,
+    step_requires_approval,
+    step_requires_signature,
     // Cache
-    CachedComponent, CachedEntity, CachedFeature, CachedLink, CachedQuote, CachedRequirement,
-    CachedRisk, CachedSupplier, CachedTest, EntityCache, EntityFilter, LinkType, SyncStats,
+    CachedComponent,
+    CachedEntity,
+    CachedFeature,
+    CachedLink,
+    CachedQuote,
+    CachedRequirement,
+    CachedRisk,
+    CachedSupplier,
+    CachedTest,
     // Config
     Config,
     // Entity trait
     Entity,
-    // GDT
-    GdtTorsorResult, bounds_approx_equal, check_stale_bounds, compute_torsor_bounds,
-    // Git
-    Git, GitError,
+    EntityCache,
+    EntityFilter,
     // Identity
-    EntityId, EntityPrefix, IdParseError,
+    EntityId,
+    EntityPrefix,
+    // Suspect
+    ExtendedLinkRef,
+    // GDT
+    GdtTorsorResult,
+    // Git
+    Git,
+    GitError,
+    IdParseError,
+    LinkRef,
+    LinkType,
     // Manufacturing
-    LotWorkflow, LotWorkflowConfig, create_execution_steps_from_routing, step_min_approvals,
-    step_required_roles, step_requires_approval, step_requires_signature,
-    // Project
-    Project, ProjectError,
+    LotWorkflow,
+    LotWorkflowConfig,
     // Provider
-    PrInfo, PrState, Provider, ProviderClient, ProviderError,
+    PrInfo,
+    PrState,
+    // Project
+    Project,
+    ProjectError,
+    Provider,
+    ProviderClient,
+    ProviderError,
+    // Team
+    Role,
     // ShortId
     ShortIdIndex,
-    // Suspect
-    ExtendedLinkRef, LinkRef, SuspectError, SuspectReason, SuspectSummary, clear_link_suspect,
-    get_suspect_links, has_suspect_links, mark_link_suspect,
-    // Team
-    Role, TeamMember, TeamRoster,
+    SuspectError,
+    SuspectReason,
+    SuspectSummary,
+    SyncStats,
+    TeamMember,
+    TeamRoster,
     // Workflow
-    WorkflowConfig, WorkflowEngine, WorkflowError,
+    WorkflowConfig,
+    WorkflowEngine,
+    WorkflowError,
 };
 
 // Re-export all entity types
 pub use entities::{
-    Assembly, Asil, Capa, Component, ComponentSupplier, Control, Dal, Dev, DimensionRef, Feature,
+    Asil, Assembly, Capa, Component, ComponentSupplier, Control, Dal, Dev, DimensionRef, Feature,
     Hazard, Lot, Mate, Ncr, Process, Quote, Requirement, Result, Risk, Stackup, Supplier, SwClass,
     Test, WorkInstruction,
 };

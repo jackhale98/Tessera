@@ -161,14 +161,22 @@ fn build_hazard_filter(params: &ListHazardsParams) -> HazardFilter {
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
         ..Default::default()
     };
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -177,8 +185,14 @@ fn build_hazard_filter(params: &ListHazardsParams) -> HazardFilter {
 
     HazardFilter {
         common,
-        category: params.category.as_ref().and_then(|c| parse_hazard_category(c)),
-        severity: params.severity.as_ref().and_then(|s| parse_hazard_severity(s)),
+        category: params
+            .category
+            .as_ref()
+            .and_then(|c| parse_hazard_category(c)),
+        severity: params
+            .severity
+            .as_ref()
+            .and_then(|s| parse_hazard_severity(s)),
         uncontrolled_only: params.uncontrolled_only.unwrap_or(false),
         recent_days: None,
         sort,
@@ -223,7 +237,10 @@ pub async fn get_hazard(id: String, state: State<'_, AppState>) -> CommandResult
 }
 
 #[tauri::command]
-pub async fn create_hazard(input: CreateHazardInput, state: State<'_, AppState>) -> CommandResult<Hazard> {
+pub async fn create_hazard(
+    input: CreateHazardInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Hazard> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -249,13 +266,19 @@ pub async fn create_hazard(input: CreateHazardInput, state: State<'_, AppState>)
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(hazard)
 }
 
 #[tauri::command]
-pub async fn update_hazard(id: String, input: UpdateHazardInput, state: State<'_, AppState>) -> CommandResult<Hazard> {
+pub async fn update_hazard(
+    id: String,
+    input: UpdateHazardInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Hazard> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -278,13 +301,19 @@ pub async fn update_hazard(id: String, input: UpdateHazardInput, state: State<'_
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(hazard)
 }
 
 #[tauri::command]
-pub async fn delete_hazard(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_hazard(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -297,7 +326,9 @@ pub async fn delete_hazard(id: String, force: Option<bool>, state: State<'_, App
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }

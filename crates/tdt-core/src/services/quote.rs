@@ -791,7 +791,11 @@ impl<'a> QuoteService<'a> {
 
         // Assembly filter
         if let Some(assembly) = &filter.assembly {
-            if !quote.assembly.as_ref().is_some_and(|a| a.contains(assembly)) {
+            if !quote
+                .assembly
+                .as_ref()
+                .is_some_and(|a| a.contains(assembly))
+            {
                 return false;
             }
         }
@@ -834,12 +838,7 @@ impl<'a> QuoteService<'a> {
     }
 
     /// Sort quotes by the given field
-    fn sort_quotes(
-        &self,
-        quotes: &mut [Quote],
-        sort_by: QuoteSortField,
-        sort_dir: SortDirection,
-    ) {
+    fn sort_quotes(&self, quotes: &mut [Quote], sort_by: QuoteSortField, sort_dir: SortDirection) {
         quotes.sort_by(|a, b| {
             let cmp = match sort_by {
                 QuoteSortField::Id => a.id.to_string().cmp(&b.id.to_string()),
@@ -856,9 +855,7 @@ impl<'a> QuoteService<'a> {
                 QuoteSortField::QuoteStatus => {
                     format!("{:?}", a.quote_status).cmp(&format!("{:?}", b.quote_status))
                 }
-                QuoteSortField::Status => {
-                    format!("{:?}", a.status).cmp(&format!("{:?}", b.status))
-                }
+                QuoteSortField::Status => format!("{:?}", a.status).cmp(&format!("{:?}", b.status)),
                 QuoteSortField::Author => a.author.cmp(&b.author),
                 QuoteSortField::Created => a.created.cmp(&b.created),
             };
@@ -884,11 +881,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("bom/quotes")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();

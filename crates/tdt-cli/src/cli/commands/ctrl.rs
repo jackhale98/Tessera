@@ -261,8 +261,7 @@ fn build_ctrl_filter(args: &ListArgs, short_ids: &ShortIdIndex) -> ControlFilter
 
     ControlFilter {
         common: CommonFilter {
-            status: crate::cli::entity_cmd::status_filter_to_status(args.status)
-                .map(|s| vec![s]),
+            status: crate::cli::entity_cmd::status_filter_to_status(args.status).map(|s| vec![s]),
             author: args.author.clone(),
             search: args.search.clone(),
             recent_days: if args.recent { Some(30) } else { None },
@@ -526,7 +525,10 @@ fn output_cached_controls(
 }
 
 /// Convert a CachedEntity to a TableRow for controls
-fn cached_entity_to_row(entity: &tdt_core::core::CachedEntity, short_ids: &ShortIdIndex) -> TableRow {
+fn cached_entity_to_row(
+    entity: &tdt_core::core::CachedEntity,
+    short_ids: &ShortIdIndex,
+) -> TableRow {
     TableRow::new(entity.id.clone(), short_ids)
         .cell("id", CellValue::Id(entity.id.clone()))
         .cell("title", CellValue::Text(entity.title.clone()))

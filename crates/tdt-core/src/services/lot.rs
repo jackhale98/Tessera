@@ -60,9 +60,7 @@ impl Sortable for Lot {
         match field {
             LotSortField::Id => SortKey::String(self.id.to_string()),
             LotSortField::Title => SortKey::String(self.title.clone()),
-            LotSortField::LotNumber => {
-                SortKey::OptionalString(NoneLast(self.lot_number.clone()))
-            }
+            LotSortField::LotNumber => SortKey::OptionalString(NoneLast(self.lot_number.clone())),
             LotSortField::Quantity => {
                 SortKey::OptionalNumber(NoneLast(self.quantity.map(|q| q as i64)))
             }
@@ -218,7 +216,12 @@ impl<'a> LotService<'a> {
             author: filter.common.author.clone(),
             search: filter.common.search.clone(),
             limit: None, // Apply limit after all filters
-            priority: filter.common.priority.as_ref().and_then(|p| p.first()).copied(),
+            priority: filter
+                .common
+                .priority
+                .as_ref()
+                .and_then(|p| p.first())
+                .copied(),
             entity_type: None,
             category: None,
         };
@@ -310,9 +313,7 @@ impl<'a> LotService<'a> {
 
             // Active only filter
             if filter.active_only {
-                if lot.lot_status != LotStatus::InProgress
-                    && lot.lot_status != LotStatus::OnHold
-                {
+                if lot.lot_status != LotStatus::InProgress && lot.lot_status != LotStatus::OnHold {
                     return false;
                 }
             }
@@ -464,7 +465,10 @@ impl<'a> LotService<'a> {
         let (_, mut lot) = self.find_lot(id)?;
 
         lot.materials_used.retain(|m| {
-            m.component.as_ref().map(|c| c != component_id).unwrap_or(true)
+            m.component
+                .as_ref()
+                .map(|c| c != component_id)
+                .unwrap_or(true)
         });
         lot.entity_revision += 1;
 
@@ -1058,7 +1062,9 @@ mod tests {
         let lot_b = service.create(input).unwrap();
         service.put_on_hold(&lot_b.id.to_string()).unwrap();
 
-        service.set_git_branch(&lot_a.id.to_string(), "lot/lot-a").unwrap();
+        service
+            .set_git_branch(&lot_a.id.to_string(), "lot/lot-a")
+            .unwrap();
 
         let stats = service.stats().unwrap();
         assert_eq!(stats.total, 2);

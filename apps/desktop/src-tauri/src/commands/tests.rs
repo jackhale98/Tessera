@@ -11,7 +11,9 @@ use tdt_core::entities::result::{Result as TestResult, Verdict};
 use tdt_core::entities::test::{
     Environment, Equipment, ProcedureStep, SampleSize, Test, TestLevel, TestMethod, TestType,
 };
-use tdt_core::services::{CreateTest, RunTestInput, TestFilter, TestService, TestStats, UpdateTest};
+use tdt_core::services::{
+    CreateTest, RunTestInput, TestFilter, TestService, TestStats, UpdateTest,
+};
 
 /// List parameters for Tests
 #[derive(Debug, Clone, Default, Deserialize)]

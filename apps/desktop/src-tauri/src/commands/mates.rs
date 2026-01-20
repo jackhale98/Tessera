@@ -160,14 +160,22 @@ fn build_mate_filter(params: &ListMatesParams) -> MateFilter {
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
         ..Default::default()
     };
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -221,7 +229,10 @@ pub async fn get_mate(id: String, state: State<'_, AppState>) -> CommandResult<O
 }
 
 #[tauri::command]
-pub async fn create_mate(input: CreateMateInput, state: State<'_, AppState>) -> CommandResult<Mate> {
+pub async fn create_mate(
+    input: CreateMateInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Mate> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -247,13 +258,19 @@ pub async fn create_mate(input: CreateMateInput, state: State<'_, AppState>) -> 
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(mate)
 }
 
 #[tauri::command]
-pub async fn update_mate(id: String, input: UpdateMateInput, state: State<'_, AppState>) -> CommandResult<Mate> {
+pub async fn update_mate(
+    id: String,
+    input: UpdateMateInput,
+    state: State<'_, AppState>,
+) -> CommandResult<Mate> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -274,13 +291,19 @@ pub async fn update_mate(id: String, input: UpdateMateInput, state: State<'_, Ap
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(mate)
 }
 
 #[tauri::command]
-pub async fn delete_mate(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_mate(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -293,13 +316,18 @@ pub async fn delete_mate(id: String, force: Option<bool>, state: State<'_, AppSt
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }
 
 #[tauri::command]
-pub async fn recalc_mate(id: String, state: State<'_, AppState>) -> CommandResult<RecalcMateResult> {
+pub async fn recalc_mate(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<RecalcMateResult> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -312,7 +340,9 @@ pub async fn recalc_mate(id: String, state: State<'_, AppState>) -> CommandResul
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(RecalcMateResult {
         mate: result.mate,
@@ -335,7 +365,9 @@ pub async fn recalc_all_mates(state: State<'_, AppState>) -> CommandResult<Recal
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     let changed = results.iter().filter(|r| r.changed).count();
     let errors = 0; // Errors would be returned as Err from the service

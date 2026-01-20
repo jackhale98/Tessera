@@ -1006,9 +1006,9 @@ mod tests {
         // Test cross-term calculation:
         // Cross-term = (t/L²)² × σ²(L)
         let info = LengthToleranceInfo {
-            nominal_length: 100.0,        // 100mm
-            linear_tolerance: 0.1,         // 0.1mm GD&T tolerance
-            length_variance: 0.01,         // σ²(L) = 0.01 (σ = 0.1mm)
+            nominal_length: 100.0, // 100mm
+            linear_tolerance: 0.1, // 0.1mm GD&T tolerance
+            length_variance: 0.01, // σ²(L) = 0.01 (σ = 0.1mm)
         };
 
         let cross = info.cross_term_variance();

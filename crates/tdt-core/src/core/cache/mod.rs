@@ -524,9 +524,10 @@ impl EntityCache {
         }
 
         // Count by status
-        if let Ok(mut stmt) = self.conn.prepare(
-            "SELECT status, COUNT(*) FROM entities WHERE prefix = 'REQ' GROUP BY status",
-        ) {
+        if let Ok(mut stmt) = self
+            .conn
+            .prepare("SELECT status, COUNT(*) FROM entities WHERE prefix = 'REQ' GROUP BY status")
+        {
             if let Ok(rows) = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             }) {

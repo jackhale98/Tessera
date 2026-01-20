@@ -382,8 +382,7 @@ impl<'a> RiskService<'a> {
 
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml =
-            serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(risk)
@@ -423,12 +422,10 @@ impl<'a> RiskService<'a> {
         }
 
         // Track initial risk if updating S/O/D for the first time with mitigations
-        let had_sod = risk.severity.is_some()
-            && risk.occurrence.is_some()
-            && risk.detection.is_some();
-        let updating_sod = input.severity.is_some()
-            || input.occurrence.is_some()
-            || input.detection.is_some();
+        let had_sod =
+            risk.severity.is_some() && risk.occurrence.is_some() && risk.detection.is_some();
+        let updating_sod =
+            input.severity.is_some() || input.occurrence.is_some() || input.detection.is_some();
 
         if had_sod && updating_sod && !risk.mitigations.is_empty() && risk.initial_risk.is_none() {
             // Store initial risk before mitigation
@@ -482,8 +479,7 @@ impl<'a> RiskService<'a> {
         risk.revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(risk)
@@ -526,8 +522,7 @@ impl<'a> RiskService<'a> {
         risk.mitigations.push(mitigation);
         risk.revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(risk)
@@ -554,8 +549,7 @@ impl<'a> RiskService<'a> {
         risk.mitigations[mitigation_index].status = Some(status);
         risk.revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(risk)
@@ -614,9 +608,7 @@ impl<'a> RiskService<'a> {
 
         // Category filter
         if let Some(category) = &filter.category {
-            if risk.category.as_ref().map(|c| c.to_lowercase())
-                != Some(category.to_lowercase())
-            {
+            if risk.category.as_ref().map(|c| c.to_lowercase()) != Some(category.to_lowercase()) {
                 return false;
             }
         }
@@ -690,7 +682,10 @@ impl<'a> RiskService<'a> {
         if !filter.common.matches_tags(&risk.tags) {
             return false;
         }
-        if !filter.common.matches_search(&[&risk.title, &risk.description]) {
+        if !filter
+            .common
+            .matches_search(&[&risk.title, &risk.description])
+        {
             return false;
         }
         if !filter.common.matches_recent(&risk.created) {
@@ -950,11 +945,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("risks")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();
@@ -1152,20 +1143,32 @@ mod tests {
 
         // List all
         let all = service
-            .list(&RiskFilter::default(), RiskSortField::Created, SortDirection::Ascending)
+            .list(
+                &RiskFilter::default(),
+                RiskSortField::Created,
+                SortDirection::Ascending,
+            )
             .unwrap();
         assert_eq!(all.items.len(), 2);
 
         // List only design
         let design_only = service
-            .list(&RiskFilter::design(), RiskSortField::Created, SortDirection::Ascending)
+            .list(
+                &RiskFilter::design(),
+                RiskSortField::Created,
+                SortDirection::Ascending,
+            )
             .unwrap();
         assert_eq!(design_only.items.len(), 1);
         assert_eq!(design_only.items[0].title, "Design Risk");
 
         // List high priority
         let high_priority = service
-            .list(&RiskFilter::high_priority(), RiskSortField::Rpn, SortDirection::Descending)
+            .list(
+                &RiskFilter::high_priority(),
+                RiskSortField::Rpn,
+                SortDirection::Descending,
+            )
             .unwrap();
         assert_eq!(high_priority.items.len(), 1);
         assert_eq!(high_priority.items[0].title, "Design Risk");

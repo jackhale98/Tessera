@@ -420,7 +420,11 @@ fn is_array_link_type(link_type: &str) -> bool {
 ///
 /// This function parses the YAML, removes the link from the appropriate field in the links section,
 /// and returns the updated YAML string.
-fn remove_link_from_yaml(content: &str, link_type: &str, target_id: &str) -> Result<String, String> {
+fn remove_link_from_yaml(
+    content: &str,
+    link_type: &str,
+    target_id: &str,
+) -> Result<String, String> {
     // Parse YAML
     let mut value: serde_yml::Value =
         serde_yml::from_str(content).map_err(|e| format!("Failed to parse YAML: {}", e))?;

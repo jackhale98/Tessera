@@ -80,7 +80,10 @@ impl From<&CachedDeviation> for DeviationSummary {
             deviation_number: cached.deviation_number.clone(),
             deviation_type: cached.deviation_type.clone().unwrap_or_default(),
             category: cached.category.clone().unwrap_or_default(),
-            risk_level: cached.risk_level.clone().unwrap_or_else(|| "low".to_string()),
+            risk_level: cached
+                .risk_level
+                .clone()
+                .unwrap_or_else(|| "low".to_string()),
             dev_status: cached.dev_status.clone().unwrap_or_default(),
             status: format!("{:?}", cached.status).to_lowercase(),
             effective_date: cached.effective_date.clone(),
@@ -229,7 +232,9 @@ pub async fn list_deviations(
 
     let filter = DeviationFilter {
         common: tdt_core::services::CommonFilter {
-            status: params.status.map(|v| v.iter().filter_map(|s| parse_status(s)).collect()),
+            status: params
+                .status
+                .map(|v| v.iter().filter_map(|s| parse_status(s)).collect()),
             search: params.search,
             tags: params.tags,
             limit: params.limit,
@@ -268,7 +273,10 @@ pub async fn list_deviations(
     let total_count = cached_deviations.len();
 
     Ok(ListDeviationsResult {
-        items: cached_deviations.iter().map(DeviationSummary::from).collect(),
+        items: cached_deviations
+            .iter()
+            .map(DeviationSummary::from)
+            .collect(),
         total_count,
         has_more: false, // Limit already applied in filter
     })

@@ -225,17 +225,18 @@ impl<'a> RequirementService<'a> {
             .and_then(|s| s.first())
             .map(|s| s.to_string());
 
-        let priority_str = filter
-            .common
-            .priority
-            .as_ref()
-            .and_then(|p| p.first())
-            .map(|p| match p {
-                Priority::Low => "low",
-                Priority::Medium => "medium",
-                Priority::High => "high",
-                Priority::Critical => "critical",
-            });
+        let priority_str =
+            filter
+                .common
+                .priority
+                .as_ref()
+                .and_then(|p| p.first())
+                .map(|p| match p {
+                    Priority::Low => "low",
+                    Priority::Medium => "medium",
+                    Priority::High => "high",
+                    Priority::Critical => "critical",
+                });
 
         let req_type_str = filter.req_type.as_ref().map(|t| match t {
             RequirementType::Input => "input",
@@ -323,7 +324,10 @@ impl<'a> RequirementService<'a> {
                 Ok(req) => requirements.push(req),
                 Err(e) => {
                     // Log error but continue - don't fail entire list for one bad file
-                    eprintln!("Warning: Failed to load requirement from {:?}: {}", full_path, e);
+                    eprintln!(
+                        "Warning: Failed to load requirement from {:?}: {}",
+                        full_path, e
+                    );
                 }
             }
         }
@@ -331,12 +335,18 @@ impl<'a> RequirementService<'a> {
         // Sort
         self.sort_requirements(&mut requirements, sort_by, sort_dir);
 
-        Ok(ListResult::new(requirements, cached.total_count, cached.has_more))
+        Ok(ListResult::new(
+            requirements,
+            cached.total_count,
+            cached.has_more,
+        ))
     }
 
     /// Get IDs of orphaned requirements (no incoming links)
     fn get_orphan_ids(&self) -> HashSet<String> {
-        let all_reqs = self.cache.list_requirements(None, None, None, None, None, None, None);
+        let all_reqs = self
+            .cache
+            .list_requirements(None, None, None, None, None, None, None);
         let mut orphans = HashSet::new();
 
         for req in all_reqs {
@@ -351,7 +361,9 @@ impl<'a> RequirementService<'a> {
 
     /// Get IDs of unverified requirements (no verified_by links)
     fn get_unverified_ids(&self) -> HashSet<String> {
-        let all_reqs = self.cache.list_requirements(None, None, None, None, None, None, None);
+        let all_reqs = self
+            .cache
+            .list_requirements(None, None, None, None, None, None, None);
         let mut unverified = HashSet::new();
 
         for req in all_reqs {
@@ -453,8 +465,8 @@ impl<'a> RequirementService<'a> {
 
         // Write to file
         let path = self.get_file_path(&id, input.req_type);
-        let yaml = serde_yml::to_string(&requirement)
-            .map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml =
+            serde_yml::to_string(&requirement).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(requirement)
@@ -501,8 +513,8 @@ impl<'a> RequirementService<'a> {
         requirement.revision += 1;
 
         // Write back
-        let yaml = serde_yml::to_string(&requirement)
-            .map_err(|e| ServiceError::Yaml(e.to_string()))?;
+        let yaml =
+            serde_yml::to_string(&requirement).map_err(|e| ServiceError::Yaml(e.to_string()))?;
         fs::write(&path, yaml)?;
 
         Ok(requirement)
@@ -568,9 +580,7 @@ impl<'a> RequirementService<'a> {
 
         // Category filter
         if let Some(category) = &filter.category {
-            if req.category.as_ref().map(|c| c.to_lowercase())
-                != Some(category.to_lowercase())
-            {
+            if req.category.as_ref().map(|c| c.to_lowercase()) != Some(category.to_lowercase()) {
                 return false;
             }
         }
@@ -726,12 +736,14 @@ impl<'a> RequirementService<'a> {
 }
 
 // Implement ListableService trait for generic CLI list operations
-impl<'a> super::common::ListableService<
-    Requirement,
-    CachedRequirement,
-    RequirementFilter,
-    RequirementSortField,
-> for RequirementService<'a> {
+impl<'a>
+    super::common::ListableService<
+        Requirement,
+        CachedRequirement,
+        RequirementFilter,
+        RequirementSortField,
+    > for RequirementService<'a>
+{
     fn list(
         &self,
         filter: &RequirementFilter,
@@ -741,7 +753,10 @@ impl<'a> super::common::ListableService<
         RequirementService::list(self, filter, sort_by, sort_dir)
     }
 
-    fn list_cached(&self, filter: &RequirementFilter) -> ServiceResult<ListResult<CachedRequirement>> {
+    fn list_cached(
+        &self,
+        filter: &RequirementFilter,
+    ) -> ServiceResult<ListResult<CachedRequirement>> {
         RequirementService::list_cached(self, filter)
     }
 }
@@ -781,11 +796,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("requirements/outputs")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();
@@ -926,15 +937,28 @@ mod tests {
         // Verify files exist
         let input_path = service.get_file_path(&req1.id, RequirementType::Input);
         let output_path = service.get_file_path(&req2.id, RequirementType::Output);
-        assert!(input_path.exists(), "Input file should exist at {:?}", input_path);
-        assert!(output_path.exists(), "Output file should exist at {:?}", output_path);
+        assert!(
+            input_path.exists(),
+            "Input file should exist at {:?}",
+            input_path
+        );
+        assert!(
+            output_path.exists(),
+            "Output file should exist at {:?}",
+            output_path
+        );
 
         // Sync cache to pick up newly created files
         let cache = EntityCache::open(&project).unwrap();
 
         // Debug: check cache directly
         let cached_reqs = cache.list_requirements(None, None, None, None, None, None, None);
-        assert_eq!(cached_reqs.len(), 2, "Cache should have 2 requirements, found {}", cached_reqs.len());
+        assert_eq!(
+            cached_reqs.len(),
+            2,
+            "Cache should have 2 requirements, found {}",
+            cached_reqs.len()
+        );
 
         let service = RequirementService::new(&project, &cache);
 

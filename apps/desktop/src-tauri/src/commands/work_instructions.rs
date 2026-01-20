@@ -9,8 +9,8 @@ use tdt_core::core::entity::Status;
 use tdt_core::entities::work_instruction::WorkInstruction;
 use tdt_core::services::common::SortDirection;
 use tdt_core::services::work_instruction::{
-    CreateWorkInstruction, WorkInstructionFilter, WorkInstructionService,
-    WorkInstructionSortField, WorkInstructionStats, UpdateWorkInstruction,
+    CreateWorkInstruction, UpdateWorkInstruction, WorkInstructionFilter, WorkInstructionService,
+    WorkInstructionSortField, WorkInstructionStats,
 };
 
 use crate::error::{CommandError, CommandResult};
@@ -133,7 +133,11 @@ fn build_work_instruction_filter(params: &ListWorkInstructionsParams) -> WorkIns
     let common = CommonFilter {
         status: params.status.as_ref().and_then(|v| {
             let statuses: Vec<Status> = v.iter().filter_map(|s| parse_status(s)).collect();
-            if statuses.is_empty() { None } else { Some(statuses) }
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
         }),
         search: params.search.clone(),
         limit: params.limit,
@@ -167,7 +171,11 @@ pub async fn list_work_instructions(
     let params = params.unwrap_or_default();
     let filter = build_work_instruction_filter(&params);
 
-    let sort = params.sort_by.as_ref().map(|s| parse_sort_field(s)).unwrap_or_default();
+    let sort = params
+        .sort_by
+        .as_ref()
+        .map(|s| parse_sort_field(s))
+        .unwrap_or_default();
     let sort_direction = if params.sort_desc.unwrap_or(false) {
         SortDirection::Descending
     } else {
@@ -178,12 +186,19 @@ pub async fn list_work_instructions(
 
     Ok(ListWorkInstructionsResult {
         total_count: work_instructions.items.len(),
-        items: work_instructions.items.iter().map(WorkInstructionSummary::from).collect(),
+        items: work_instructions
+            .items
+            .iter()
+            .map(WorkInstructionSummary::from)
+            .collect(),
     })
 }
 
 #[tauri::command]
-pub async fn get_work_instruction(id: String, state: State<'_, AppState>) -> CommandResult<Option<WorkInstruction>> {
+pub async fn get_work_instruction(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<WorkInstruction>> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
     let project = project.as_ref().ok_or(CommandError::NoProject)?;
@@ -194,7 +209,10 @@ pub async fn get_work_instruction(id: String, state: State<'_, AppState>) -> Com
 }
 
 #[tauri::command]
-pub async fn create_work_instruction(input: CreateWorkInstructionInput, state: State<'_, AppState>) -> CommandResult<WorkInstruction> {
+pub async fn create_work_instruction(
+    input: CreateWorkInstructionInput,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -218,13 +236,19 @@ pub async fn create_work_instruction(input: CreateWorkInstructionInput, state: S
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(work_instruction)
 }
 
 #[tauri::command]
-pub async fn update_work_instruction(id: String, input: UpdateWorkInstructionInput, state: State<'_, AppState>) -> CommandResult<WorkInstruction> {
+pub async fn update_work_instruction(
+    id: String,
+    input: UpdateWorkInstructionInput,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -247,13 +271,19 @@ pub async fn update_work_instruction(id: String, input: UpdateWorkInstructionInp
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(work_instruction)
 }
 
 #[tauri::command]
-pub async fn delete_work_instruction(id: String, force: Option<bool>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn delete_work_instruction(
+    id: String,
+    force: Option<bool>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
@@ -266,13 +296,17 @@ pub async fn delete_work_instruction(id: String, force: Option<bool>, state: Sta
 
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
-    if let Some(cache) = cache_guard.as_mut() { let _ = cache.sync(); }
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
 
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_work_instruction_stats(state: State<'_, AppState>) -> CommandResult<WorkInstructionStats> {
+pub async fn get_work_instruction_stats(
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstructionStats> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
     let project = project.as_ref().ok_or(CommandError::NoProject)?;

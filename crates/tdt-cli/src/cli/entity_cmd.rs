@@ -513,8 +513,9 @@ where
                 wrap_width: args.wrap,
                 show_summary: true,
             };
-            let formatter = TableFormatter::new(config.columns, config.entity_name, config.prefix_str)
-                .with_config(table_config);
+            let formatter =
+                TableFormatter::new(config.columns, config.entity_name, config.prefix_str)
+                    .with_config(table_config);
             formatter.output(rows, format, &columns);
         }
     }
@@ -556,8 +557,9 @@ where
                 wrap_width: args.wrap,
                 show_summary: true,
             };
-            let formatter = TableFormatter::new(config.columns, config.entity_name, config.prefix_str)
-                .with_config(table_config);
+            let formatter =
+                TableFormatter::new(config.columns, config.entity_name, config.prefix_str)
+                    .with_config(table_config);
             formatter.output(rows, format, &columns);
         }
     }

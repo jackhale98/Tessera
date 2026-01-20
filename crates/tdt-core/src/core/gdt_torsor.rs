@@ -313,7 +313,8 @@ fn compute_bounds_for_control(
             // Perpendicularity affects angular DOFs
             if let Some(length) = resolved_length {
                 // Angular bound computed with length tolerance consideration
-                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                let angular_bound =
+                    compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else if geometry_3d.is_some() {
@@ -333,7 +334,8 @@ fn compute_bounds_for_control(
         GdtSymbol::Parallelism => {
             // Parallelism affects angular DOFs (same as perpendicularity calculation)
             if let Some(length) = resolved_length {
-                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                let angular_bound =
+                    compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else if geometry_3d.is_some() {
@@ -352,7 +354,8 @@ fn compute_bounds_for_control(
         GdtSymbol::Angularity => {
             // Angularity affects angular DOFs
             if let Some(length) = resolved_length {
-                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                let angular_bound =
+                    compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else if geometry_3d.is_some() {
@@ -388,7 +391,8 @@ fn compute_bounds_for_control(
             bounds.v = Some([-bound, bound]);
             // Also affects angular DOFs for axial features
             if let Some(length) = resolved_length {
-                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                let angular_bound =
+                    compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else if let Some(geo) = geometry_3d {
@@ -406,7 +410,8 @@ fn compute_bounds_for_control(
             bounds.v = Some([-bound, bound]);
             bounds.w = Some([-bound, bound]);
             if let Some(length) = resolved_length {
-                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                let angular_bound =
+                    compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else if let Some(geo) = geometry_3d {
@@ -457,7 +462,8 @@ fn compute_bounds_for_control(
             bounds.v = Some([-bound, bound]);
             // Also affects angular for axial straightness
             if let Some(length) = resolved_length {
-                let angular_bound = compute_angular_bound_with_length_tolerance(effective_tol, length);
+                let angular_bound =
+                    compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
             } else if let Some(geo) = geometry_3d {

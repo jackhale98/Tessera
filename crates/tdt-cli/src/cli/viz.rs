@@ -326,9 +326,24 @@ pub fn render_stackup_svg(
 <line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" class="axis-line" />
 <text x="{:.1}" y="{:.1}" class="label">Z</text>
 "#,
-        ox, oy, ax, ay, ax + 5.0, ay,      // X axis
-        ox, oy, bx, by, bx + 5.0, by,      // Y axis
-        ox, oy, cx, cy, cx + 5.0, cy - 5.0 // Z axis
+        ox,
+        oy,
+        ax,
+        ay,
+        ax + 5.0,
+        ay, // X axis
+        ox,
+        oy,
+        bx,
+        by,
+        bx + 5.0,
+        by, // Y axis
+        ox,
+        oy,
+        cx,
+        cy,
+        cx + 5.0,
+        cy - 5.0 // Z axis
     ));
 
     // Draw each contributor
@@ -411,7 +426,12 @@ pub fn render_stackup_svg(
                     r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" class="func-arrow" />
 <text x="{:.1}" y="{:.1}" class="label" fill="#38a169">Func Dir</text>
 "##,
-                    cx, cy, end_x, end_y, end_x + 10.0, end_y
+                    cx,
+                    cy,
+                    end_x,
+                    end_y,
+                    end_x + 10.0,
+                    end_y
                 ));
             }
         }
@@ -455,10 +475,7 @@ fn escape_xml(s: &str) -> String {
 /// Render a 3D stackup as ASCII isometric visualization
 ///
 /// Uses braille characters for pseudo-3D rendering
-pub fn render_isometric_ascii(
-    stackup: &Stackup,
-    contributors_3d: &[ChainContributor3D],
-) -> String {
+pub fn render_isometric_ascii(stackup: &Stackup, contributors_3d: &[ChainContributor3D]) -> String {
     const CANVAS_WIDTH: u32 = 120;
     const CANVAS_HEIGHT: u32 = 50;
 
@@ -565,7 +582,9 @@ pub fn render_isometric_ascii(
     }
 
     output.push_str(&canvas.frame());
-    output.push_str("  X→  Y↗  Z↑   Legend: ▭=Plane  ○=Cylinder  ●=Sphere  △=Cone  +=Point  ◇=Complex\n");
+    output.push_str(
+        "  X→  Y↗  Z↑   Legend: ▭=Plane  ○=Cylinder  ●=Sphere  △=Cone  +=Point  ◇=Complex\n",
+    );
 
     // ===== Informative Text Section =====
     output.push_str("\n┌─ Contributors ────────────────────────────────────────────────────┐\n");
@@ -614,7 +633,9 @@ pub fn render_isometric_ascii(
         ));
 
         if i < contributors_3d.len() - 1 {
-            output.push_str("│     ↓                                                             │\n");
+            output.push_str(
+                "│     ↓                                                             │\n",
+            );
         }
     }
 
@@ -813,7 +834,13 @@ fn draw_line_segment(canvas: &mut Canvas, cx: u32, cy: u32, size: u32, axis: [f6
 
 /// Draw a diamond shape (for complex geometry)
 fn draw_diamond(canvas: &mut Canvas, cx: u32, cy: u32, size: u32) {
-    draw_line(canvas, cx.saturating_sub(size), cy, cx, cy.saturating_sub(size));
+    draw_line(
+        canvas,
+        cx.saturating_sub(size),
+        cy,
+        cx,
+        cy.saturating_sub(size),
+    );
     draw_line(canvas, cx, cy.saturating_sub(size), cx + size, cy);
     draw_line(canvas, cx + size, cy, cx, cy + size);
     draw_line(canvas, cx, cy + size, cx.saturating_sub(size), cy);
@@ -998,5 +1025,4 @@ mod tests {
         assert_eq!(truncate_str("ab", 2), "ab");
         assert_eq!(truncate_str("abc", 2), "ab");
     }
-
 }

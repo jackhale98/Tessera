@@ -324,8 +324,7 @@ impl<'a> ComponentService<'a> {
         if let Some(existing) = self.get_by_part_number(&input.part_number)? {
             return Err(ServiceError::AlreadyExists(format!(
                 "Component with part number '{}' already exists ({})",
-                input.part_number,
-                existing.id
+                input.part_number, existing.id
             ))
             .into());
         }
@@ -652,11 +651,7 @@ impl<'a> ComponentService<'a> {
 
         // Part number filter
         if let Some(pn) = &filter.part_number {
-            if !cmp
-                .part_number
-                .to_lowercase()
-                .contains(&pn.to_lowercase())
-            {
+            if !cmp.part_number.to_lowercase().contains(&pn.to_lowercase()) {
                 return false;
             }
         }
@@ -708,7 +703,10 @@ impl<'a> ComponentService<'a> {
         if !filter.common.matches_tags(&cmp.tags) {
             return false;
         }
-        if !filter.common.matches_search(&[&cmp.title, &cmp.part_number]) {
+        if !filter
+            .common
+            .matches_search(&[&cmp.title, &cmp.part_number])
+        {
             return false;
         }
         if !filter.common.matches_recent(&cmp.created) {
@@ -737,13 +735,17 @@ impl<'a> ComponentService<'a> {
                     format!("{}", a.make_buy).cmp(&format!("{}", b.make_buy))
                 }
                 ComponentSortField::Material => a.material.cmp(&b.material),
-                ComponentSortField::UnitCost => {
-                    a.unit_cost.partial_cmp(&b.unit_cost).unwrap_or(std::cmp::Ordering::Equal)
+                ComponentSortField::UnitCost => a
+                    .unit_cost
+                    .partial_cmp(&b.unit_cost)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                ComponentSortField::Mass => a
+                    .mass_kg
+                    .partial_cmp(&b.mass_kg)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                ComponentSortField::Status => {
+                    format!("{:?}", a.status).cmp(&format!("{:?}", b.status))
                 }
-                ComponentSortField::Mass => {
-                    a.mass_kg.partial_cmp(&b.mass_kg).unwrap_or(std::cmp::Ordering::Equal)
-                }
-                ComponentSortField::Status => format!("{:?}", a.status).cmp(&format!("{:?}", b.status)),
                 ComponentSortField::Author => a.author.cmp(&b.author),
                 ComponentSortField::Created => a.created.cmp(&b.created),
             };
@@ -961,11 +963,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join("bom/components")).unwrap();
 
         // Create config file
-        fs::write(
-            tmp.path().join(".tdt/config.yaml"),
-            "author: Test Author\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".tdt/config.yaml"), "author: Test Author\n").unwrap();
 
         let project = Project::discover_from(tmp.path()).unwrap();
         let cache = EntityCache::open(&project).unwrap();
@@ -1131,7 +1129,9 @@ mod tests {
             ..Default::default()
         };
 
-        let updated = service.add_supplier(&created.id.to_string(), supplier).unwrap();
+        let updated = service
+            .add_supplier(&created.id.to_string(), supplier)
+            .unwrap();
 
         assert_eq!(updated.suppliers.len(), 1);
         assert_eq!(updated.suppliers[0].name, "Acme Corp");

@@ -15,7 +15,9 @@ use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
-use tdt_core::entities::capa::{ActionStatus, Capa, CapaStatus, CapaType, EffectivenessResult, SourceType};
+use tdt_core::entities::capa::{
+    ActionStatus, Capa, CapaStatus, CapaType, EffectivenessResult, SourceType,
+};
 use tdt_core::schema::wizard::SchemaWizard;
 use tdt_core::services::{
     CapaFilter, CapaService, CapaSortField, CommonFilter, CreateCapa, SortDirection,
@@ -525,7 +527,9 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     }
 
     // Full entity loading path
-    let mut capas = service.list(&filter).map_err(|e| miette::miette!("{}", e))?;
+    let mut capas = service
+        .list(&filter)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Apply overdue actions filter (requires full entity data)
     if args.overdue_actions {
@@ -621,7 +625,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         author: config.author(),
     };
 
-    let capa = service.create(input).map_err(|e| miette::miette!("{}", e))?;
+    let capa = service
+        .create(input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
     // Get file path for the created CAPA
     let file_path = project
@@ -649,7 +655,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         OutputFormat::ShortId => {
             println!(
                 "{}",
-                short_id.clone().unwrap_or_else(|| format_short_id(&capa.id))
+                short_id
+                    .clone()
+                    .unwrap_or_else(|| format_short_id(&capa.id))
             );
         }
         OutputFormat::Path => {
@@ -659,7 +667,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             println!(
                 "{} Created CAPA {}",
                 style("✓").green(),
-                style(short_id.clone().unwrap_or_else(|| format_short_id(&capa.id))).cyan()
+                style(
+                    short_id
+                        .clone()
+                        .unwrap_or_else(|| format_short_id(&capa.id))
+                )
+                .cyan()
             );
             println!("   {}", style(file_path.display()).dim());
             println!(
@@ -677,7 +690,12 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                     "   {} --[{}]--> {}",
                     style("→").dim(),
                     style(link_type).cyan(),
-                    style(&short_ids.get_short_id(target).unwrap_or_else(|| target.clone())).yellow()
+                    style(
+                        &short_ids
+                            .get_short_id(target)
+                            .unwrap_or_else(|| target.clone())
+                    )
+                    .yellow()
                 );
             }
         }

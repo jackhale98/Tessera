@@ -5,7 +5,9 @@ use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::State;
-use tdt_core::core::{cache::EntityCache, config::Config, identity::EntityPrefix, project::Project};
+use tdt_core::core::{
+    cache::EntityCache, config::Config, identity::EntityPrefix, project::Project,
+};
 
 /// Information about the currently open project
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,10 +109,12 @@ pub async fn open_project(path: String, state: State<'_, AppState>) -> CommandRe
     let path = PathBuf::from(&path);
 
     // Discover the project
-    let project = Project::discover_from(&path).map_err(|e| CommandError::ProjectOpen(e.to_string()))?;
+    let project =
+        Project::discover_from(&path).map_err(|e| CommandError::ProjectOpen(e.to_string()))?;
 
     // Open the cache
-    let cache = EntityCache::open(&project).map_err(|e| CommandError::ProjectOpen(e.to_string()))?;
+    let cache =
+        EntityCache::open(&project).map_err(|e| CommandError::ProjectOpen(e.to_string()))?;
 
     // Load config to get author
     let config = Config::load();
@@ -143,7 +147,8 @@ pub async fn init_project(path: String, state: State<'_, AppState>) -> CommandRe
     let project = Project::init(&path).map_err(|e| CommandError::ProjectInit(e.to_string()))?;
 
     // Open the cache
-    let cache = EntityCache::open(&project).map_err(|e| CommandError::ProjectInit(e.to_string()))?;
+    let cache =
+        EntityCache::open(&project).map_err(|e| CommandError::ProjectInit(e.to_string()))?;
 
     // Load config to get author
     let config = Config::load();
@@ -206,8 +211,7 @@ pub async fn refresh_project(state: State<'_, AppState>) -> CommandResult<Projec
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     // Rebuild the cache
-    let new_cache =
-        EntityCache::open(project).map_err(|e| CommandError::Service(e.to_string()))?;
+    let new_cache = EntityCache::open(project).map_err(|e| CommandError::Service(e.to_string()))?;
 
     // Load config to get author
     let config = Config::load();

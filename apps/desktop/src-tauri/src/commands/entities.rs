@@ -108,14 +108,16 @@ pub async fn list_entities(
     let project = project.as_ref().ok_or(CommandError::NoProject)?;
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
-    let prefix = prefix_from_string(&params.entity_type)
-        .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", params.entity_type)))?;
+    let prefix = prefix_from_string(&params.entity_type).ok_or_else(|| {
+        CommandError::InvalidInput(format!("Unknown entity type: {}", params.entity_type))
+    })?;
 
     let filter = EntityFilter {
         prefix: Some(prefix),
-        status: params.status.as_ref().and_then(|v| {
-            v.first().and_then(|s| s.parse().ok())
-        }),
+        status: params
+            .status
+            .as_ref()
+            .and_then(|v| v.first().and_then(|s| s.parse().ok())),
         search: params.search.clone(),
         ..Default::default()
     };
@@ -182,7 +184,8 @@ pub async fn get_entity(
 
     if let Some(cached) = cached {
         // Parse the ID to get prefix
-        let entity_id: EntityId = id.parse()
+        let entity_id: EntityId = id
+            .parse()
             .map_err(|_| CommandError::InvalidInput(format!("Invalid entity ID: {}", id)))?;
 
         let prefix = entity_id.prefix();
@@ -220,15 +223,13 @@ fn load_entity_json(dir: &PathBuf, id: &str) -> CommandResult<Value> {
 
 /// Delete an entity by ID
 #[tauri::command]
-pub async fn delete_entity(
-    id: String,
-    state: State<'_, AppState>,
-) -> CommandResult<()> {
+pub async fn delete_entity(id: String, state: State<'_, AppState>) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     // Parse the ID to get prefix
-    let entity_id: EntityId = id.parse()
+    let entity_id: EntityId = id
+        .parse()
         .map_err(|_| CommandError::InvalidInput(format!("Invalid entity ID: {}", id)))?;
 
     let prefix = entity_id.prefix();
@@ -253,16 +254,16 @@ pub async fn delete_entity(
 /// Create or update an entity from JSON data
 #[tauri::command]
 pub async fn save_entity(
-    #[allow(non_snake_case)]
-    entityType: String,
+    #[allow(non_snake_case)] entityType: String,
     data: Value,
     state: State<'_, AppState>,
 ) -> CommandResult<String> {
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let prefix = prefix_from_string(&entityType)
-        .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", entityType)))?;
+    let prefix = prefix_from_string(&entityType).ok_or_else(|| {
+        CommandError::InvalidInput(format!("Unknown entity type: {}", entityType))
+    })?;
 
     let dir = project.root().join(entity_dir_name(prefix));
 
@@ -271,7 +272,8 @@ pub async fn save_entity(
 
     // Get or generate ID
     let id = if let Some(id_val) = data.get("id") {
-        id_val.as_str()
+        id_val
+            .as_str()
             .ok_or_else(|| CommandError::InvalidInput("Invalid ID field".to_string()))?
             .to_string()
     } else {
@@ -304,15 +306,15 @@ pub async fn save_entity(
 /// Get entity count by type
 #[tauri::command]
 pub async fn get_entity_count(
-    #[allow(non_snake_case)]
-    entityType: String,
+    #[allow(non_snake_case)] entityType: String,
     state: State<'_, AppState>,
 ) -> CommandResult<usize> {
     let cache = state.cache.lock().unwrap();
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
-    let prefix = prefix_from_string(&entityType)
-        .ok_or_else(|| CommandError::InvalidInput(format!("Unknown entity type: {}", entityType)))?;
+    let prefix = prefix_from_string(&entityType).ok_or_else(|| {
+        CommandError::InvalidInput(format!("Unknown entity type: {}", entityType))
+    })?;
 
     let filter = EntityFilter {
         prefix: Some(prefix),
