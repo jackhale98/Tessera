@@ -136,12 +136,23 @@ tdt asm new
 # Create with title and part number
 tdt asm new --title "Main Assembly" --part-number "ASM-001"
 
+# Create with BOM items (components with quantities)
+tdt asm new --title "Sensor Unit" --bom CMP@1:2 --bom CMP@2:4
+
+# Create with subassemblies (ASM IDs are automatically separated)
+tdt asm new --title "Main Assembly" --bom CMP@1:4 --bom ASM@1 --bom ASM@2
+
+# Mixed BOM with components and subassemblies
+tdt asm new --title "Power Module" --part-number "PM-001" --bom CMP@1:1 --bom CMP@2:2 --bom ASM@3
+
 # Create with interactive wizard
 tdt asm new -i
 
 # Create and immediately edit
 tdt asm new --title "New Assembly" --edit
 ```
+
+**Note:** When using `--bom`, component IDs (CMP-...) are added to the BOM with the specified quantity (e.g., `CMP@1:2` means 2 of component CMP@1). Assembly IDs (ASM-...) are automatically placed in the `subassemblies` list instead of the BOM.
 
 ### List assemblies
 

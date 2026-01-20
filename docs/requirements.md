@@ -109,6 +109,12 @@ tdt req new
 # Create with title and type
 tdt req new --title "Operating Temperature Range" --type input
 
+# Create with title, type, and full requirement text
+tdt req new --title "Operating Temperature" --type input --text "The device shall operate from -20C to +50C"
+
+# Short form for text
+tdt req new --title "Power Input" -t input -x "The device shall accept 12V DC power"
+
 # Create with interactive wizard
 tdt req new -i
 

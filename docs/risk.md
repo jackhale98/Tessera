@@ -157,6 +157,12 @@ tdt risk new
 # Create with title and type
 tdt risk new --title "Battery Overheating" --type design
 
+# Create with title, type, and description
+tdt risk new --title "Battery Overheating" --type design --description "Risk of thermal runaway in battery pack"
+
+# Short form for description
+tdt risk new --title "Motor Failure" -t design -d "Motor may fail under high load conditions"
+
 # Create with FMEA ratings
 tdt risk new --title "Motor Failure" --severity 7 --occurrence 4 --detection 5
 

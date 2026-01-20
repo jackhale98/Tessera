@@ -244,6 +244,12 @@ tdt test new
 # Create verification test with title
 tdt test new --title "Temperature Test" -t verification
 
+# Create with title and objective
+tdt test new --title "Temperature Test" --objective "Verify device operates at temperature extremes"
+
+# Short form for objective
+tdt test new --title "Voltage Test" -O "Verify operation across voltage range"
+
 # Create validation test at acceptance level
 tdt test new -t validation -l acceptance
 
