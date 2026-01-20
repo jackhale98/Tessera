@@ -3,7 +3,6 @@
 use console::style;
 use miette::{IntoDiagnostic, Result};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 
 use crate::cli::helpers::{escape_csv, format_short_id_str, truncate_str};
 use crate::cli::{GlobalOpts, OutputFormat};
@@ -891,155 +890,38 @@ fn run_orphans(args: OrphansArgs, global: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
-/// Load all entities from the project (generic version)
+/// Load all entities from the project using cache (fast path)
 fn load_all_entities(project: &Project) -> Result<Vec<GenericEntity>> {
-    let mut entities = Vec::new();
+    // Use cache for fast entity and link loading
+    let cache = EntityCache::open(project)?;
 
-    // Iterate over all entity types
-    for prefix in EntityPrefix::all() {
-        for path in project.iter_entity_files(*prefix) {
-            if let Ok(entity) = load_generic_entity(&path, *prefix) {
-                entities.push(entity);
-            }
-        }
-    }
+    // Get all entities from cache
+    let cached_entities = cache.list_entities(&Default::default());
 
-    // Build HashSet of existing IDs for O(1) duplicate checking
-    use std::collections::HashSet;
-    let mut seen_ids: HashSet<String> = entities.iter().map(|e| e.id.clone()).collect();
+    let mut entities = Vec::with_capacity(cached_entities.len());
 
-    // Also check additional directories that may not be covered by iter_entity_files
-    let additional_dirs = [
-        ("requirements/outputs", EntityPrefix::Req),
-        ("verification/results", EntityPrefix::Rslt),
-        ("validation/results", EntityPrefix::Rslt),
-        ("validation/protocols", EntityPrefix::Test),
-    ];
+    for cached in cached_entities {
+        // Parse prefix from the cached prefix string
+        let prefix = cached
+            .prefix
+            .parse::<EntityPrefix>()
+            .unwrap_or(EntityPrefix::Req);
 
-    for (dir, prefix) in additional_dirs {
-        let full_path = project.root().join(dir);
-        if full_path.exists() {
-            for entry in walkdir::WalkDir::new(&full_path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-                .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-            {
-                if let Ok(entity) = load_generic_entity(&entry.path().to_path_buf(), prefix) {
-                    // Avoid duplicates - O(1) lookup instead of O(n)
-                    if seen_ids.insert(entity.id.clone()) {
-                        entities.push(entity);
-                    }
-                }
-            }
-        }
+        // Get links from cache (much faster than parsing YAML)
+        let links = cache.get_links_from(&cached.id);
+        let outgoing_links: Vec<(String, String)> = links
+            .into_iter()
+            .map(|link| (link.link_type, link.target_id))
+            .collect();
+
+        entities.push(GenericEntity {
+            id: cached.id,
+            title: cached.title,
+            prefix,
+            outgoing_links,
+        });
     }
 
     Ok(entities)
 }
 
-/// Load a single entity generically by parsing YAML
-fn load_generic_entity(path: &PathBuf, prefix: EntityPrefix) -> Result<GenericEntity> {
-    let content = std::fs::read_to_string(path).into_diagnostic()?;
-    let value: serde_yml::Value = serde_yml::from_str(&content).into_diagnostic()?;
-
-    let id = value
-        .get("id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| miette::miette!("Missing id in {:?}", path))?
-        .to_string();
-
-    let title = value
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let mut outgoing_links = Vec::new();
-
-    // Extract links from the 'links' field
-    if let Some(links) = value.get("links") {
-        if let Some(links_map) = links.as_mapping() {
-            for (key, value) in links_map {
-                if let Some(link_type) = key.as_str() {
-                    // Handle array of links
-                    if let Some(arr) = value.as_sequence() {
-                        for item in arr {
-                            if let Some(target) = item.as_str() {
-                                outgoing_links.push((link_type.to_string(), target.to_string()));
-                            }
-                        }
-                    }
-                    // Handle single link
-                    else if let Some(target) = value.as_str() {
-                        outgoing_links.push((link_type.to_string(), target.to_string()));
-                    }
-                }
-            }
-        }
-    }
-
-    // Also extract top-level reference fields that act as links
-    // These are fields that contain entity IDs but aren't in the links section
-    let reference_fields = [
-        "supplier",  // Quote -> Supplier
-        "component", // Quote -> Component, NCR -> Component
-        "assembly",  // Quote -> Assembly
-        "process",   // Control -> Process, WorkInstruction -> Process, NCR -> Process
-        "feature",   // Control -> Feature
-        "control",   // NCR -> Control
-        "capa",      // NCR -> CAPA
-    ];
-
-    for field in reference_fields {
-        if let Some(val) = value.get(field) {
-            if let Some(target) = val.as_str() {
-                // Only add if it looks like an entity ID (contains a prefix pattern)
-                if target.contains('-') && target.len() > 4 {
-                    outgoing_links.push((field.to_string(), target.to_string()));
-                }
-            }
-        }
-    }
-
-    // Handle TOL entity contributors -> feature references
-    if prefix == EntityPrefix::Tol {
-        if let Some(contributors) = value.get("contributors").and_then(|v| v.as_sequence()) {
-            for contrib in contributors {
-                // Each contributor may have a feature reference with id
-                if let Some(feature_ref) = contrib.get("feature") {
-                    if let Some(feat_id) = feature_ref.get("id").and_then(|v| v.as_str()) {
-                        outgoing_links.push(("uses_feature".to_string(), feat_id.to_string()));
-                    }
-                }
-            }
-        }
-    }
-
-    // Handle MATE entity feature references (feature_a, feature_b)
-    if prefix == EntityPrefix::Mate {
-        for field in ["feature_a", "feature_b"] {
-            if let Some(feat_ref) = value.get(field) {
-                if let Some(feat_id) = feat_ref.get("id").and_then(|v| v.as_str()) {
-                    outgoing_links.push(("mates".to_string(), feat_id.to_string()));
-                }
-            }
-        }
-    }
-
-    // Handle FEAT entity component reference
-    if prefix == EntityPrefix::Feat {
-        if let Some(component) = value.get("component").and_then(|v| v.as_str()) {
-            if component.contains('-') && component.len() > 4 {
-                outgoing_links.push(("belongs_to".to_string(), component.to_string()));
-            }
-        }
-    }
-
-    Ok(GenericEntity {
-        id,
-        title,
-        prefix,
-        outgoing_links,
-    })
-}

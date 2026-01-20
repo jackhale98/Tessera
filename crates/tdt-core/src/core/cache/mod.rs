@@ -213,12 +213,11 @@ impl EntityCache {
         &[
             "requirements/inputs",
             "requirements/outputs",
-            "risks/hazards",
+            // Scan root risks/ directory for risk files placed directly there
+            // WalkDir will recursively find files in subdirs (design, process, use, software, hazards)
+            "risks",
+            // Also check safety/hazards for projects that use that structure
             "safety/hazards",
-            "risks/design",
-            "risks/process",
-            "risks/use",
-            "risks/software",
             "bom/assemblies",
             "bom/components",
             "bom/quotes",
