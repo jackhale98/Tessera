@@ -349,11 +349,11 @@ pub fn run(args: DsmArgs, global: &GlobalOpts) -> Result<()> {
 
     // Find relationships
     if include_mate {
-        add_mate_relationships(&project, &mut dsm)?;
+        add_mate_relationships(&cache, &mut dsm)?;
     }
 
     if include_tolerance {
-        add_tolerance_relationships(&project, &mut dsm)?;
+        add_tolerance_relationships(&cache, &mut dsm)?;
     }
 
     if include_process {
@@ -482,54 +482,39 @@ fn get_component_info(cache: &EntityCache, id: &str) -> Option<DsmComponent> {
     None
 }
 
-fn add_mate_relationships(project: &Project, dsm: &mut Dsm) -> Result<()> {
-    // Build feature-to-component lookup from feature files
-    let feature_dir = project.root().join("tolerances/features");
-    let mut feature_to_component: HashMap<String, String> = HashMap::new();
+fn add_mate_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()> {
+    // Build feature-to-component lookup from cache (no directory walk)
+    let features = cache.list_features(None, None, None, None, None, None);
+    let feature_to_component: HashMap<String, String> = features
+        .into_iter()
+        .map(|f| (f.id, f.component_id))
+        .collect();
 
-    if feature_dir.exists() {
-        for entry in fs::read_dir(&feature_dir).into_diagnostic()?.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(feat) = serde_yml::from_str::<serde_json::Value>(&content) {
-                        let feat_id = feat.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let comp_id = feat.get("component").and_then(|v| v.as_str()).unwrap_or("");
+    // Load mates from cache and extract feature relationships
+    let mates = cache.list_entities(&tdt_core::core::cache::EntityFilter {
+        prefix: Some(tdt_core::core::identity::EntityPrefix::Mate),
+        ..Default::default()
+    });
 
-                        if !feat_id.is_empty() && !comp_id.is_empty() {
-                            feature_to_component.insert(feat_id.to_string(), comp_id.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
+    for mate_entity in mates {
+        // Parse the mate file to get feature_a and feature_b
+        if let Ok(content) = fs::read_to_string(&mate_entity.file_path) {
+            if let Ok(mate) = serde_yml::from_str::<serde_json::Value>(&content) {
+                // Get component IDs from mate via feature_a and feature_b
+                let comp_a = get_component_from_feature_field(
+                    &mate,
+                    "feature_a",
+                    &feature_to_component,
+                );
+                let comp_b = get_component_from_feature_field(
+                    &mate,
+                    "feature_b",
+                    &feature_to_component,
+                );
 
-    // Load mates and extract feature relationships
-    let mate_dir = project.root().join("tolerances/mates");
-    if mate_dir.exists() {
-        for entry in fs::read_dir(&mate_dir).into_diagnostic()?.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(mate) = serde_yml::from_str::<serde_json::Value>(&content) {
-                        // Get component IDs from mate via feature_a and feature_b
-                        let comp_a = get_component_from_feature_field(
-                            &mate,
-                            "feature_a",
-                            &feature_to_component,
-                        );
-                        let comp_b = get_component_from_feature_field(
-                            &mate,
-                            "feature_b",
-                            &feature_to_component,
-                        );
-
-                        if let (Some(cmp1), Some(cmp2)) = (comp_a, comp_b) {
-                            if cmp1 != cmp2 {
-                                dsm.add_relationship(&cmp1, &cmp2, RelationType::Mate);
-                            }
-                        }
+                if let (Some(cmp1), Some(cmp2)) = (comp_a, comp_b) {
+                    if cmp1 != cmp2 {
+                        dsm.add_relationship(&cmp1, &cmp2, RelationType::Mate);
                     }
                 }
             }
@@ -565,86 +550,71 @@ fn get_component_from_feature_field(
     None
 }
 
-fn add_tolerance_relationships(project: &Project, dsm: &mut Dsm) -> Result<()> {
-    // Build feature-to-component lookup from feature files
-    let feature_dir = project.root().join("tolerances/features");
-    let mut feature_to_component: HashMap<String, String> = HashMap::new();
+fn add_tolerance_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()> {
+    // Build feature-to-component lookup from cache (no directory walk)
+    let features = cache.list_features(None, None, None, None, None, None);
+    let feature_to_component: HashMap<String, String> = features
+        .into_iter()
+        .map(|f| (f.id, f.component_id))
+        .collect();
 
-    if feature_dir.exists() {
-        for entry in fs::read_dir(&feature_dir).into_diagnostic()?.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(feat) = serde_yml::from_str::<serde_json::Value>(&content) {
-                        let feat_id = feat.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let comp_id = feat.get("component").and_then(|v| v.as_str()).unwrap_or("");
+    // Load tolerance stackups from cache and extract component relationships
+    let stackups = cache.list_entities(&tdt_core::core::cache::EntityFilter {
+        prefix: Some(tdt_core::core::identity::EntityPrefix::Tol),
+        ..Default::default()
+    });
 
-                        if !feat_id.is_empty() && !comp_id.is_empty() {
-                            feature_to_component.insert(feat_id.to_string(), comp_id.to_string());
+    for stackup_entity in stackups {
+        // Parse the stackup file to get contributors
+        if let Ok(content) = fs::read_to_string(&stackup_entity.file_path) {
+            if let Ok(stackup) = serde_yml::from_str::<serde_json::Value>(&content) {
+                // Collect all unique components in the stackup
+                let mut stackup_components: Vec<String> = Vec::new();
+
+                if let Some(contributors) =
+                    stackup.get("contributors").and_then(|c| c.as_array())
+                {
+                    for contrib in contributors {
+                        let comp_id = if let Some(feat_id) =
+                            contrib.get("feature_id").and_then(|v| v.as_str())
+                        {
+                            // Simple feature_id format - look up from cache
+                            feature_to_component.get(feat_id).cloned()
+                        } else if let Some(feature) = contrib.get("feature") {
+                            // Nested feature object
+                            if let Some(cid) =
+                                feature.get("component_id").and_then(|v| v.as_str())
+                            {
+                                // Has component_id directly
+                                Some(cid.to_string())
+                            } else if let Some(feat_id) =
+                                feature.get("id").and_then(|v| v.as_str())
+                            {
+                                // Only has feature id - look up component
+                                feature_to_component.get(feat_id).cloned()
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some(cid) = comp_id {
+                            if !stackup_components.contains(&cid) {
+                                stackup_components.push(cid);
+                            }
                         }
                     }
                 }
-            }
-        }
-    }
 
-    // Load tolerance stackups and extract component relationships
-    let stackup_dir = project.root().join("tolerances/stackups");
-    if stackup_dir.exists() {
-        for entry in fs::read_dir(&stackup_dir).into_diagnostic()?.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(stackup) = serde_yml::from_str::<serde_json::Value>(&content) {
-                        // Collect all unique components in the stackup
-                        let mut stackup_components: Vec<String> = Vec::new();
-
-                        if let Some(contributors) =
-                            stackup.get("contributors").and_then(|c| c.as_array())
-                        {
-                            for contrib in contributors {
-                                let comp_id = if let Some(feat_id) =
-                                    contrib.get("feature_id").and_then(|v| v.as_str())
-                                {
-                                    // Simple feature_id format - look up from feature file
-                                    feature_to_component.get(feat_id).cloned()
-                                } else if let Some(feature) = contrib.get("feature") {
-                                    // Nested feature object
-                                    if let Some(cid) =
-                                        feature.get("component_id").and_then(|v| v.as_str())
-                                    {
-                                        // Has component_id directly
-                                        Some(cid.to_string())
-                                    } else if let Some(feat_id) =
-                                        feature.get("id").and_then(|v| v.as_str())
-                                    {
-                                        // Only has feature id - look up component
-                                        feature_to_component.get(feat_id).cloned()
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                };
-
-                                if let Some(cid) = comp_id {
-                                    if !stackup_components.contains(&cid) {
-                                        stackup_components.push(cid);
-                                    }
-                                }
-                            }
-                        }
-
-                        // Create relationships for all pairs in the stackup
-                        for i in 0..stackup_components.len() {
-                            for j in (i + 1)..stackup_components.len() {
-                                dsm.add_relationship(
-                                    &stackup_components[i],
-                                    &stackup_components[j],
-                                    RelationType::Tolerance,
-                                );
-                            }
-                        }
+                // Create relationships for all pairs in the stackup
+                for i in 0..stackup_components.len() {
+                    for j in (i + 1)..stackup_components.len() {
+                        dsm.add_relationship(
+                            &stackup_components[i],
+                            &stackup_components[j],
+                            RelationType::Tolerance,
+                        );
                     }
                 }
             }

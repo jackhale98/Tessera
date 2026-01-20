@@ -1,4 +1,7 @@
 //! `tdt report` command - Generate engineering reports
+//!
+//! All helper functions use the EntityCache for fast lookups,
+//! avoiding directory walks wherever possible.
 
 mod bom;
 mod fmea;
@@ -14,6 +17,7 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 use crate::cli::GlobalOpts;
+use tdt_core::core::cache::EntityCache;
 use tdt_core::core::project::Project;
 use tdt_core::entities::assembly::Assembly;
 use tdt_core::entities::component::Component;
@@ -83,7 +87,22 @@ pub(crate) fn write_output(content: &str, output_path: Option<PathBuf>) -> Resul
     Ok(())
 }
 
+/// Load all requirements using cache (no directory walk)
+pub(crate) fn load_all_requirements_cached(cache: &EntityCache) -> Vec<Requirement> {
+    let cached = cache.list_requirements(None, None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Requirement>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all requirements (legacy - uses directory walk, prefer load_all_requirements_cached)
 pub(crate) fn load_all_requirements(project: &Project) -> Vec<Requirement> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_requirements_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut requirements = Vec::new();
     let dir = project.root().join("requirements");
 
@@ -103,7 +122,22 @@ pub(crate) fn load_all_requirements(project: &Project) -> Vec<Requirement> {
     requirements
 }
 
+/// Load all tests using cache (no directory walk)
+pub(crate) fn load_all_tests_cached(cache: &EntityCache) -> Vec<Test> {
+    let cached = cache.list_tests(None, None, None, None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Test>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all tests (legacy - uses directory walk, prefer load_all_tests_cached)
 pub(crate) fn load_all_tests(project: &Project) -> Vec<Test> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_tests_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut tests = Vec::new();
 
     for subdir in ["verification/protocols", "validation/protocols"] {
@@ -125,7 +159,22 @@ pub(crate) fn load_all_tests(project: &Project) -> Vec<Test> {
     tests
 }
 
+/// Load all results using cache (no directory walk)
+pub(crate) fn load_all_results_cached(cache: &EntityCache) -> Vec<TestResult> {
+    let cached = cache.list_results(None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<TestResult>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all results (legacy - uses directory walk, prefer load_all_results_cached)
 pub(crate) fn load_all_results(project: &Project) -> Vec<TestResult> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_results_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut results = Vec::new();
 
     for subdir in ["verification/results", "validation/results"] {
@@ -147,7 +196,22 @@ pub(crate) fn load_all_results(project: &Project) -> Vec<TestResult> {
     results
 }
 
+/// Load all risks using cache (no directory walk)
+pub(crate) fn load_all_risks_cached(cache: &EntityCache) -> Vec<Risk> {
+    let cached = cache.list_risks(None, None, None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Risk>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all risks (legacy - uses directory walk, prefer load_all_risks_cached)
 pub(crate) fn load_all_risks(project: &Project) -> Vec<Risk> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_risks_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut risks = Vec::new();
     let dir = project.root().join("risks");
 
@@ -167,7 +231,22 @@ pub(crate) fn load_all_risks(project: &Project) -> Vec<Risk> {
     risks
 }
 
+/// Load all components using cache (no directory walk)
+pub(crate) fn load_all_components_cached(cache: &EntityCache) -> Vec<Component> {
+    let cached = cache.list_components(None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Component>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all components (legacy - uses directory walk, prefer load_all_components_cached)
 pub(crate) fn load_all_components(project: &Project) -> Vec<Component> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_components_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut components = Vec::new();
     let dir = project.root().join("bom/components");
 
@@ -187,7 +266,26 @@ pub(crate) fn load_all_components(project: &Project) -> Vec<Component> {
     components
 }
 
+/// Load all assemblies using cache (no directory walk)
+pub(crate) fn load_all_assemblies_cached(cache: &EntityCache) -> Vec<Assembly> {
+    // Use list_entities with prefix filter since there's no specialized list_assemblies
+    let cached = cache.list_entities(&tdt_core::core::cache::EntityFilter {
+        prefix: Some(tdt_core::core::identity::EntityPrefix::Asm),
+        ..Default::default()
+    });
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Assembly>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all assemblies (legacy - uses directory walk, prefer load_all_assemblies_cached)
 pub(crate) fn load_all_assemblies(project: &Project) -> Vec<Assembly> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_assemblies_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut assemblies = Vec::new();
     let dir = project.root().join("bom/assemblies");
 
@@ -207,7 +305,22 @@ pub(crate) fn load_all_assemblies(project: &Project) -> Vec<Assembly> {
     assemblies
 }
 
+/// Load all quotes using cache (no directory walk)
+pub(crate) fn load_all_quotes_cached(cache: &EntityCache) -> Vec<Quote> {
+    let cached = cache.list_quotes(None, None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Quote>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all quotes (legacy - uses directory walk, prefer load_all_quotes_cached)
 pub(crate) fn load_all_quotes(project: &Project) -> Vec<Quote> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_quotes_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut quotes = Vec::new();
     let dir = project.root().join("bom/quotes");
 
@@ -227,7 +340,26 @@ pub(crate) fn load_all_quotes(project: &Project) -> Vec<Quote> {
     quotes
 }
 
+/// Load a specific assembly using cache (no directory walk)
+pub(crate) fn load_assembly_cached(cache: &EntityCache, id: &str) -> Result<Assembly> {
+    // Use cache to find the assembly
+    if let Some(entity) = cache.get_entity(id) {
+        if entity.prefix == "ASM" {
+            if let Ok(asm) = tdt_core::yaml::parse_yaml_file::<Assembly>(&entity.file_path) {
+                return Ok(asm);
+            }
+        }
+    }
+    Err(miette::miette!("Assembly not found: {}", id))
+}
+
+/// Load a specific assembly (legacy - uses directory walk, prefer load_assembly_cached)
 pub(crate) fn load_assembly(project: &Project, id: &str) -> Result<Assembly> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_assembly_cached(&cache, id);
+    }
+    // Fallback to directory walk
     let dir = project.root().join("bom/assemblies");
 
     if dir.exists() {
@@ -248,7 +380,24 @@ pub(crate) fn load_assembly(project: &Project, id: &str) -> Result<Assembly> {
     Err(miette::miette!("Assembly not found: {}", id))
 }
 
+/// Load all NCRs using cache (no directory walk)
+pub(crate) fn load_all_ncrs_cached(cache: &EntityCache) -> Vec<tdt_core::entities::ncr::Ncr> {
+    let cached = cache.list_ncrs(None, None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| {
+            tdt_core::yaml::parse_yaml_file::<tdt_core::entities::ncr::Ncr>(&c.file_path).ok()
+        })
+        .collect()
+}
+
+/// Load all NCRs (legacy - uses directory walk, prefer load_all_ncrs_cached)
 pub(crate) fn load_all_ncrs(project: &Project) -> Vec<tdt_core::entities::ncr::Ncr> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_ncrs_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut ncrs = Vec::new();
     let dir = project.root().join("manufacturing/ncrs");
 
@@ -270,7 +419,24 @@ pub(crate) fn load_all_ncrs(project: &Project) -> Vec<tdt_core::entities::ncr::N
     ncrs
 }
 
+/// Load all CAPAs using cache (no directory walk)
+pub(crate) fn load_all_capas_cached(cache: &EntityCache) -> Vec<tdt_core::entities::capa::Capa> {
+    let cached = cache.list_capas(None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| {
+            tdt_core::yaml::parse_yaml_file::<tdt_core::entities::capa::Capa>(&c.file_path).ok()
+        })
+        .collect()
+}
+
+/// Load all CAPAs (legacy - uses directory walk, prefer load_all_capas_cached)
 pub(crate) fn load_all_capas(project: &Project) -> Vec<tdt_core::entities::capa::Capa> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_capas_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut capas = Vec::new();
 
     // CAPAs can be in quality/capas or manufacturing/capas
@@ -296,7 +462,22 @@ pub(crate) fn load_all_capas(project: &Project) -> Vec<tdt_core::entities::capa:
     capas
 }
 
+/// Load all features using cache (no directory walk)
+pub(crate) fn load_all_features_cached(cache: &EntityCache) -> Vec<Feature> {
+    let cached = cache.list_features(None, None, None, None, None, None);
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Feature>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all features (legacy - uses directory walk, prefer load_all_features_cached)
 pub(crate) fn load_all_features(project: &Project) -> Vec<Feature> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_features_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut features = Vec::new();
     let dir = project.root().join("tolerances/features");
 
@@ -316,7 +497,26 @@ pub(crate) fn load_all_features(project: &Project) -> Vec<Feature> {
     features
 }
 
+/// Load all mates using cache (no directory walk)
+pub(crate) fn load_all_mates_cached(cache: &EntityCache) -> Vec<Mate> {
+    // Use list_entities with prefix filter since there's no specialized list_mates
+    let cached = cache.list_entities(&tdt_core::core::cache::EntityFilter {
+        prefix: Some(tdt_core::core::identity::EntityPrefix::Mate),
+        ..Default::default()
+    });
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Mate>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all mates (legacy - uses directory walk, prefer load_all_mates_cached)
 pub(crate) fn load_all_mates(project: &Project) -> Vec<Mate> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_mates_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut mates = Vec::new();
     let dir = project.root().join("tolerances/mates");
 
@@ -336,7 +536,26 @@ pub(crate) fn load_all_mates(project: &Project) -> Vec<Mate> {
     mates
 }
 
+/// Load all stackups using cache (no directory walk)
+pub(crate) fn load_all_stackups_cached(cache: &EntityCache) -> Vec<Stackup> {
+    // Use list_entities with prefix filter since there's no specialized list_stackups
+    let cached = cache.list_entities(&tdt_core::core::cache::EntityFilter {
+        prefix: Some(tdt_core::core::identity::EntityPrefix::Tol),
+        ..Default::default()
+    });
+    cached
+        .into_iter()
+        .filter_map(|c| tdt_core::yaml::parse_yaml_file::<Stackup>(&c.file_path).ok())
+        .collect()
+}
+
+/// Load all stackups (legacy - uses directory walk, prefer load_all_stackups_cached)
 pub(crate) fn load_all_stackups(project: &Project) -> Vec<Stackup> {
+    // Use cache if available
+    if let Ok(cache) = EntityCache::open(project) {
+        return load_all_stackups_cached(&cache);
+    }
+    // Fallback to directory walk
     let mut stackups = Vec::new();
     let dir = project.root().join("tolerances/stackups");
 

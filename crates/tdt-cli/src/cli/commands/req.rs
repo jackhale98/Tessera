@@ -542,30 +542,45 @@ fn run_list_with_test_filters(
         .collect();
 
     reqs.retain(|req| {
-        let test_ids = &req.links.verified_by;
+        // Merge test IDs from both directions:
+        // 1. req.links.verified_by (tests listed in requirement)
+        // 2. cache.get_links_to (tests that have verifies -> this requirement)
+        let mut all_test_ids: HashSet<String> = req
+            .links
+            .verified_by
+            .iter()
+            .map(|id| id.to_string())
+            .collect();
+
+        // Add tests from reverse lookup (test.verifies -> this req)
+        let req_id_str = req.id.to_string();
+        let reverse_test_ids = cache.get_links_to_of_type(&req_id_str, "verifies");
+        for test_id in reverse_test_ids {
+            all_test_ids.insert(test_id);
+        }
 
         let untested_match = if args.untested {
-            !test_ids.is_empty()
-                && !test_ids
+            !all_test_ids.is_empty()
+                && !all_test_ids
                     .iter()
-                    .any(|tid| tested_test_ids.contains(tid.to_string().as_str()))
+                    .any(|tid| tested_test_ids.contains(tid.as_str()))
         } else {
             true
         };
 
         let failed_match = if args.failed {
-            test_ids
+            all_test_ids
                 .iter()
-                .any(|tid| failed_test_ids.contains(tid.to_string().as_str()))
+                .any(|tid| failed_test_ids.contains(tid.as_str()))
         } else {
             true
         };
 
         let passing_match = if args.passing {
-            !test_ids.is_empty()
-                && test_ids
+            !all_test_ids.is_empty()
+                && all_test_ids
                     .iter()
-                    .all(|tid| passing_test_ids.contains(tid.to_string().as_str()))
+                    .all(|tid| passing_test_ids.contains(tid.as_str()))
         } else {
             true
         };
