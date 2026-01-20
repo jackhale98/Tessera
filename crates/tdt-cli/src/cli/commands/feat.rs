@@ -151,13 +151,16 @@ pub struct ListArgs {
 
     /// Columns to display (can specify multiple)
     #[arg(long, value_delimiter = ',', default_values_t = vec![
-        ListColumn::Id,
         ListColumn::Title,
         ListColumn::FeatureType,
         ListColumn::Component,
         ListColumn::Status
     ])]
     pub columns: Vec<ListColumn>,
+
+    /// Show full ID column (hidden by default since SHORT is always shown)
+    #[arg(long)]
+    pub show_id: bool,
 
     /// Sort by field
     #[arg(long, default_value = "created")]
@@ -507,11 +510,14 @@ fn output_features(
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            let columns: Vec<&str> = args
-                .columns
-                .iter()
-                .map(|c| c.to_string().leak() as &str)
-                .collect();
+            // Build columns list, adding ID column if --show-id is set
+            let mut columns: Vec<&str> = if args.show_id {
+                vec!["id"]
+            } else {
+                vec![]
+            };
+            columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
+
             let rows: Vec<TableRow> = features
                 .iter()
                 .map(|f| feat_to_row(f, short_ids, component_info))
@@ -568,11 +574,14 @@ fn output_cached_features(
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            let columns: Vec<&str> = args
-                .columns
-                .iter()
-                .map(|c| c.to_string().leak() as &str)
-                .collect();
+            // Build columns list, adding ID column if --show-id is set
+            let mut columns: Vec<&str> = if args.show_id {
+                vec!["id"]
+            } else {
+                vec![]
+            };
+            columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
+
             let rows: Vec<TableRow> = features
                 .iter()
                 .map(|f| cached_feat_to_row(f, short_ids, component_info))

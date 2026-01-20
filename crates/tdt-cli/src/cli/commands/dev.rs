@@ -218,7 +218,7 @@ pub enum DevStatusFilter {
 }
 
 /// List column for display and sorting
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq)]
 pub enum ListColumn {
     #[value(name = "id")]
     Id,
@@ -292,7 +292,6 @@ pub struct ListArgs {
 
     /// Columns to display
     #[arg(long, value_delimiter = ',', default_values_t = vec![
-        ListColumn::Id,
         ListColumn::Title,
         ListColumn::DevType,
         ListColumn::Category,
@@ -300,6 +299,10 @@ pub struct ListArgs {
         ListColumn::DevStatus
     ])]
     pub columns: Vec<ListColumn>,
+
+    /// Show full ID column (hidden by default since SHORT is always shown)
+    #[arg(long)]
+    pub show_id: bool,
 
     /// Sort by column
     #[arg(long, default_value = "created")]
@@ -609,11 +612,20 @@ fn output_cached_deviations(
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
+            // Build columns list, adding ID column if --show-id is set
+            let columns: Vec<ListColumn> = if args.show_id && !args.columns.contains(&ListColumn::Id) {
+                let mut cols = vec![ListColumn::Id];
+                cols.extend(args.columns.iter().copied());
+                cols
+            } else {
+                args.columns.clone()
+            };
+
             // Build header
             let mut headers = vec![];
             let mut widths = vec![];
 
-            for col in &args.columns {
+            for col in &columns {
                 let (header, width) = match col {
                     ListColumn::Id => ("ID", 17),
                     ListColumn::Title => ("TITLE", 30),
@@ -814,11 +826,20 @@ fn output_deviations(
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
+            // Build columns list, adding ID column if --show-id is set
+            let columns: Vec<ListColumn> = if args.show_id && !args.columns.contains(&ListColumn::Id) {
+                let mut cols = vec![ListColumn::Id];
+                cols.extend(args.columns.iter().copied());
+                cols
+            } else {
+                args.columns.clone()
+            };
+
             // Build header
             let mut headers = vec![];
             let mut widths = vec![];
 
-            for col in &args.columns {
+            for col in &columns {
                 let (header, width) = match col {
                     ListColumn::Id => ("ID", 17),
                     ListColumn::Title => ("TITLE", 30),

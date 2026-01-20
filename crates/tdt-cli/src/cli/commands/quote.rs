@@ -95,7 +95,6 @@ pub struct ListArgs {
 
     /// Columns to display (can specify multiple)
     #[arg(long, value_delimiter = ',', default_values_t = vec![
-        ListColumn::Id,
         ListColumn::Title,
         ListColumn::Supplier,
         ListColumn::Component,
@@ -103,6 +102,10 @@ pub struct ListArgs {
         ListColumn::QuoteStatus
     ])]
     pub columns: Vec<ListColumn>,
+
+    /// Show full ID column (hidden by default since SHORT is always shown)
+    #[arg(long)]
+    pub show_id: bool,
 
     /// Sort by field
     #[arg(long, default_value = "created")]
@@ -472,11 +475,14 @@ fn output_quotes(
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            let columns: Vec<&str> = args
-                .columns
-                .iter()
-                .map(|c| c.to_string().leak() as &str)
-                .collect();
+            // Build columns list, adding ID column if --show-id is set
+            let mut columns: Vec<&str> = if args.show_id {
+                vec!["id"]
+            } else {
+                vec![]
+            };
+            columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
+
             let rows: Vec<TableRow> = quotes.iter().map(|q| quote_to_row(q, short_ids)).collect();
 
             let config = TableConfig {
@@ -644,11 +650,14 @@ fn output_cached_quotes(
         | OutputFormat::Table
         | OutputFormat::Dot
         | OutputFormat::Tree => {
-            let columns: Vec<&str> = args
-                .columns
-                .iter()
-                .map(|c| c.to_string().leak() as &str)
-                .collect();
+            // Build columns list, adding ID column if --show-id is set
+            let mut columns: Vec<&str> = if args.show_id {
+                vec!["id"]
+            } else {
+                vec![]
+            };
+            columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
+
             let rows: Vec<TableRow> = quotes
                 .iter()
                 .map(|q| cached_quote_to_row(q, short_ids))
