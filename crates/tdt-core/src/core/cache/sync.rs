@@ -698,13 +698,18 @@ impl EntityCache {
     }
 
     pub(super) fn cache_result_data(&self, id: &str, value: &serde_yml::Value) -> Result<()> {
+        // Try test_id first, fall back to test for backwards compatibility
+        let test_id = value["test_id"]
+            .as_str()
+            .or_else(|| value["test"].as_str());
+
         self.conn
             .execute(
                 r#"INSERT OR REPLACE INTO results (id, test_id, verdict, executed_by, executed_date)
                    VALUES (?1, ?2, ?3, ?4, ?5)"#,
                 params![
                     id,
-                    value["test"].as_str(),
+                    test_id,
                     value["verdict"].as_str(),
                     value["executed_by"].as_str(),
                     value["executed_date"].as_str()

@@ -1248,8 +1248,13 @@ mod tests {
             .unwrap();
 
         let matrix = service.get_risk_matrix().unwrap();
-        // Severity 8 (index 7), Occurrence 5 (index 4)
-        assert_eq!(matrix.cells[7][4].count, 2);
-        assert_eq!(matrix.cells[7][4].risk_ids.len(), 2);
+        // Find cell with severity=8, occurrence=5
+        let cell = matrix
+            .cells
+            .iter()
+            .find(|c| c.severity == 8 && c.occurrence == 5)
+            .expect("Should have cell at severity=8, occurrence=5");
+        assert_eq!(cell.count, 2);
+        assert_eq!(cell.risk_ids.len(), 2);
     }
 }
