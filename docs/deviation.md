@@ -1,6 +1,6 @@
-# TDT DEV Entity (Process Deviation)
+# Tessera DEV Entity (Process Deviation)
 
-This document describes the DEV entity type in TDT (Tessera Design Toolkit).
+This document describes the DEV entity type in Tessera.
 
 ## Overview
 

@@ -1,10 +1,10 @@
-# TDT Entity Relationships
+# Tessera Entity Relationships
 
-This document explains how entities are connected in TDT (Tessera Design Toolkit).
+This document explains how entities are connected in Tessera.
 
 ## Overview
 
-TDT uses two types of relationships between entities:
+Tessera uses two types of relationships between entities:
 
 | Type | Purpose | Managed By |
 |------|---------|------------|
@@ -265,7 +265,7 @@ tdt link add --help
 
 ## Suspect Links
 
-When an entity is modified (revision increment, status regression, or content changes), its incoming links may need to be reviewed to ensure they're still valid. TDT tracks these as "suspect" links.
+When an entity is modified (revision increment, status regression, or content changes), its incoming links may need to be reviewed to ensure they're still valid. Tessera tracks these as "suspect" links.
 
 ### Why Links Become Suspect
 

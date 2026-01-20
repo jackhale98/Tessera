@@ -1,6 +1,6 @@
-# TDT Feature Entity (Tolerances)
+# Tessera Feature Entity (Tolerances)
 
-This document describes the Feature entity type in TDT (Tessera Design Toolkit).
+This document describes the Feature entity type in Tessera.
 
 ## Overview
 
@@ -62,7 +62,7 @@ The `internal` field determines how MMC (Maximum Material Condition) and LMC (Le
 | **Internal** (holes, slots, pockets) | `true` | Smallest size (`nominal - minus_tol`) | Largest size (`nominal + plus_tol`) |
 | **External** (shafts, bosses) | `false` | Largest size (`nominal + plus_tol`) | Smallest size (`nominal - minus_tol`) |
 
-This is critical for mate calculations - when validating mates, TDT uses the `internal` flag to auto-detect which feature is the hole and which is the shaft.
+This is critical for mate calculations - when validating mates, Tessera uses the `internal` flag to auto-detect which feature is the hole and which is the shaft.
 
 ### GdtControl Object
 
@@ -134,7 +134,7 @@ The `tdt validate` command checks if `length` matches the referenced dimension a
 
 ## GD&T Integration with 3D Analysis
 
-TDT's 3D tolerance analysis is designed to work seamlessly with ASME Y14.5 GD&T controls. The system automatically converts GD&T callouts to torsor bounds for chain analysis:
+Tessera's 3D tolerance analysis is designed to work seamlessly with ASME Y14.5 GD&T controls. The system automatically converts GD&T callouts to torsor bounds for chain analysis:
 
 ### How GD&T Controls Map to Torsors
 
@@ -210,7 +210,7 @@ dimensions:
 
 ## Tolerance Format
 
-TDT uses `plus_tol` and `minus_tol` fields instead of the `±` symbol:
+Tessera uses `plus_tol` and `minus_tol` fields instead of the `±` symbol:
 
 ```yaml
 # Represents: 10.0 +0.1/-0.05 for a hole (internal feature)
@@ -232,7 +232,7 @@ The `distribution` field specifies the statistical distribution used when this f
 
 ```yaml
 # Feature: Mounting Hole A
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: FEAT-01HC2JB7SMQX7RS1Y0GFKBHPTE
 component: CMP-01HC2JB7SMQX7RS1Y0GFKBHPTD

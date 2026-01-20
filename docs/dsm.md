@@ -1,6 +1,6 @@
-# TDT Design Structure Matrix (DSM)
+# Tessera Design Structure Matrix (DSM)
 
-This document describes the Design Structure Matrix command in TDT (Tessera Design Toolkit).
+This document describes the Design Structure Matrix command in Tessera.
 
 ## Overview
 

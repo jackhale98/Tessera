@@ -320,7 +320,7 @@
 			<Settings class="h-6 w-6" />
 			Settings
 		</h1>
-		<p class="text-muted-foreground">Configure TDT project and user settings</p>
+		<p class="text-muted-foreground">Configure Tessera project and user settings</p>
 	</div>
 
 	{#if !$isProjectOpen}
@@ -403,7 +403,7 @@
 			<Card>
 				<CardHeader>
 					<CardTitle>General Settings</CardTitle>
-					<CardDescription>Basic configuration for the TDT toolkit</CardDescription>
+					<CardDescription>Basic configuration for Tessera</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
 					<div class="grid gap-4 sm:grid-cols-2">

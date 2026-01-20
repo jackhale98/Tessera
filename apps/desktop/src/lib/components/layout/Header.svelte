@@ -34,7 +34,7 @@
 		const selected = await open({
 			directory: true,
 			multiple: false,
-			title: 'Open TDT Project'
+			title: 'Open Tessera Project'
 		});
 
 		if (selected && typeof selected === 'string') {

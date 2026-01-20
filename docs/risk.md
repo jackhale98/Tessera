@@ -1,6 +1,6 @@
-# TDT Risk Entity (FMEA)
+# Tessera Risk Entity (FMEA)
 
-This document describes the Risk entity type in TDT (Tessera Design Toolkit).
+This document describes the Risk entity type in Tessera.
 
 ## Overview
 
@@ -75,7 +75,7 @@ Risks capture potential failure modes and their analysis using FMEA (Failure Mod
 
 ```yaml
 # Risk: Battery Thermal Runaway
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: RISK-01HC2JB7SMQX7RS1Y0GFKBHPTD
 type: design
@@ -450,7 +450,7 @@ tdt validate --fix
 
 ### Calculated Value Validation
 
-TDT validates that calculated values (RPN and risk_level) are consistent:
+Tessera validates that calculated values (RPN and risk_level) are consistent:
 
 - **RPN**: Must equal `severity × occurrence × detection`
 - **risk_level**: Must match the expected level based on RPN:
@@ -459,7 +459,7 @@ TDT validates that calculated values (RPN and risk_level) are consistent:
   - 151-400: high
   - 401+: critical
 
-If these values are incorrect, TDT shows warnings:
+If these values are incorrect, Tessera shows warnings:
 
 ```
 ! risks/design/RISK-01HC2.tdt.yaml - 2 calculation warning(s)
@@ -523,7 +523,7 @@ Priority: Focus on high-severity risks first, then high-RPN risks.
 
 ## JSON Schema
 
-The full JSON Schema for risks is embedded in TDT and available at:
+The full JSON Schema for risks is embedded in Tessera and available at:
 
 ```
 tdt/schemas/risk.schema.json

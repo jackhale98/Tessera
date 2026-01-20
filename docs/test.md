@@ -1,10 +1,10 @@
-# TDT Test Entity
+# Tessera Test Entity
 
-This document describes the Test entity type in TDT (Tessera Design Toolkit).
+This document describes the Test entity type in Tessera.
 
 ## Overview
 
-Tests are verification and validation protocols that ensure your product meets its requirements. TDT supports both verification tests (did we build it right?) and validation tests (did we build the right thing?).
+Tests are verification and validation protocols that ensure your product meets its requirements. Tessera supports both verification tests (did we build it right?) and validation tests (did we build the right thing?).
 
 ## Entity Type
 
@@ -120,7 +120,7 @@ Choose the appropriate verification method:
 
 ```yaml
 # Test: Temperature Cycling Test
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: TEST-01HC2JB7SMQX7RS1Y0GFKBHPTF
 type: verification
@@ -464,7 +464,7 @@ tdt trace to REQ-01HC2
 
 ## JSON Schema
 
-The full JSON Schema for tests is embedded in TDT and available at:
+The full JSON Schema for tests is embedded in Tessera and available at:
 
 ```
 tdt/schemas/test.schema.json

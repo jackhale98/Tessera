@@ -1,8 +1,68 @@
-# TDT - Tessera Design Toolkit
+# Tessera
 
-A CLI tool for managing engineering artifacts as plain-text YAML files. TDT provides structured tracking of requirements, risks, tests, and other entities with full traceability and validation.
+**Plain-text engineering artifact management with full traceability**
 
-![TDT Quick Start Demo](demos/quickstart.gif)
+A CLI and desktop application for managing requirements, risks, tests, BOMs, tolerance analysis, manufacturing, and quality data as human-readable YAML files under git version control.
+
+🌐 **Website:** [tessera-engineering.com](https://tessera-engineering.com)
+
+![Tessera Quick Start Demo](demos/quickstart.gif)
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [CLI Tool](#cli-tool)
+  - [Desktop App (Beta)](#desktop-app-beta)
+- [Quick Start](#quick-start)
+- [Short IDs](#short-ids)
+- [Quick Start Workflows](#quick-start-workflows)
+- [Project Structure](#project-structure)
+- [Entity Types](#entity-types)
+- [Output Formats](#output-formats)
+- [Commands](#commands)
+  - [Project Management](#project-management)
+  - [Configuration](#configuration)
+  - [Global Search](#global-search)
+  - [Requirements](#requirements)
+  - [Risks (FMEA)](#risks-fmea)
+  - [Tests](#tests-verificationvalidation)
+  - [Test Results](#test-results)
+  - [Components (BOM)](#components-bom)
+  - [Assemblies (BOM)](#assemblies-bom)
+  - [Suppliers](#suppliers-approved-vendors)
+  - [Quotes](#quotes-supplier-quotations)
+  - [Features (Tolerances)](#features-tolerances)
+  - [Mates (Tolerances)](#mates-tolerances)
+  - [Stackups (Tolerance Analysis)](#stackups-tolerance-analysis)
+  - [Manufacturing Processes](#manufacturing-processes)
+  - [Control Plan Items](#control-plan-items-spc-inspection)
+  - [Work Instructions](#work-instructions)
+  - [Non-Conformance Reports](#non-conformance-reports-ncrs)
+  - [Corrective/Preventive Actions](#correctivepreventive-actions-capas)
+  - [Link Management](#link-management)
+  - [Traceability](#traceability)
+  - [Where-Used Queries](#where-used-queries)
+  - [Reports](#reports)
+  - [Version Control](#version-control-git-wrappers)
+  - [Baselines](#baselines-git-tags)
+  - [Bulk Operations](#bulk-operations)
+- [Example Workflows](#example-workflows)
+- [Manufacturing Quality Loop](#manufacturing-quality-loop)
+- [Tolerance Format](#tolerance-format)
+- [Validation](#validation)
+- [Status Workflow](#status-workflow)
+- [Priority Levels](#priority-levels)
+- [Risk Assessment (FMEA)](#risk-assessment-fmea)
+- [Test Engineering](#test-engineering)
+- [Tolerance Analysis](#tolerance-analysis)
+- [Best Practices](#best-practices)
+- [License](#license)
+- [Disclaimer](#disclaimer)
+
+---
 
 ## Features
 
@@ -16,10 +76,17 @@ A CLI tool for managing engineering artifacts as plain-text YAML files. TDT prov
 - **FMEA Risk Management** - Built-in support for Failure Mode and Effects Analysis
 - **BOM Management** - Components and assemblies with supplier tracking
 - **Tolerance Analysis** - Features, mates, and stackups with worst-case, RSS, Monte Carlo, and 3D SDT analysis
+- **Desktop App (Beta)** - Full-featured GUI for visual entity management
+
+---
 
 ## Installation
 
-### Pre-built Binaries (Recommended)
+### CLI Tool
+
+The command-line tool is called `tdt` (Tessera Design Toolkit).
+
+#### Pre-built Binaries (Recommended)
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/jackhale98/tdt/releases):
 
@@ -39,7 +106,7 @@ sudo mv tdt /usr/local/bin/
 # Windows - download tdt-windows-x64.zip and extract to your PATH
 ```
 
-### From crates.io
+#### From crates.io
 
 ```bash
 cargo install tessera-design-toolkit
@@ -47,7 +114,7 @@ cargo install tessera-design-toolkit
 
 This installs the `tdt` binary. Note: compilation takes a few minutes due to dependencies.
 
-### From Source
+#### From Source
 
 ```bash
 git clone https://github.com/jackhale98/tdt.git
@@ -55,6 +122,30 @@ cd tdt
 cargo build --release
 # Binary will be at target/release/tdt
 ```
+
+### Desktop App (Beta)
+
+Tessera Desktop provides a full-featured graphical interface for managing your engineering artifacts. The desktop app is currently in **beta**.
+
+Download the latest desktop release for your platform from [GitHub Releases](https://github.com/jackhale98/tdt/releases):
+
+| Platform | Download |
+|----------|----------|
+| Windows (x64) | `tessera-desktop-windows-x64.msi` or `.exe` |
+| macOS (Apple Silicon) | `tessera-desktop-macos-arm64.dmg` |
+| macOS (Intel) | `tessera-desktop-macos-x64.dmg` |
+| Linux (x64) | `tessera-desktop-linux-x64.AppImage` or `.deb` |
+
+**Features:**
+- Visual entity management with forms and tables
+- Risk analytics dashboard with FMEA worksheet
+- Traceability matrix visualization
+- BOM cost and mass rollup
+- Git integration for version control
+
+> **Note:** The desktop app works with the same project structure as the CLI. You can use both interchangeably.
+
+---
 
 ## Quick Start
 
@@ -79,9 +170,11 @@ tdt risk new --title "Battery Overheating" -t design
 tdt validate
 ```
 
+---
+
 ## Short IDs
 
-After running `list` commands, TDT assigns entity-prefixed short IDs (`REQ@1`, `RISK@1`, etc.) to entities:
+After running `list` commands, Tessera assigns entity-prefixed short IDs (`REQ@1`, `RISK@1`, etc.) to entities:
 
 ```bash
 $ tdt req list
@@ -104,6 +197,8 @@ tdt trace from REQ@1
 
 Short IDs are persistent per entity type - the same entity keeps its short ID across list commands.
 This enables cross-entity linking (e.g., linking `REQ@1` to `TEST@1`).
+
+---
 
 ## Quick Start Workflows
 
@@ -146,6 +241,8 @@ tdt risk list --by-rpn --top 5         # Top 5 risks by RPN
 tdt proc flow --controls               # Process flow with control points
 tdt ctrl list --critical               # Review CTQ controls
 ```
+
+---
 
 ## Project Structure
 
@@ -191,6 +288,8 @@ manufacturing/
 └── capas/                   # Corrective/preventive actions
 ```
 
+---
+
 ## Entity Types
 
 | Prefix | Entity | Description |
@@ -212,6 +311,8 @@ manufacturing/
 | QUOT | Quote | Quote / cost record |
 | SUP | Supplier | Approved supplier |
 
+---
+
 ## Output Formats
 
 Use `-o/--output` to control output format:
@@ -227,6 +328,8 @@ tdt req list -f id          # Just IDs, one per line
 tdt req show REQ-01 -f json # Full entity as JSON
 tdt req show REQ-01 -f yaml # Full entity as YAML
 ```
+
+---
 
 ## Commands
 
@@ -662,7 +765,7 @@ tdt diff REQ@1 v1.0..v2.0         # Diff between tags
 ```bash
 tdt baseline create v1.0          # Validate, then create git tag
 tdt baseline create v1.0 -m "Release 1.0"  # With message
-tdt baseline list                 # List all TDT baselines
+tdt baseline list                 # List all Tessera baselines
 tdt baseline compare v1.0 v2.0    # Show what changed between versions
 tdt baseline changed --since v1.0 # List entities changed since baseline
 ```
@@ -705,9 +808,11 @@ tdt req list --status draft --output id | tdt bulk set-status review
 
 This works with all entity types and all bulk commands (`set-status`, `add-tag`, `remove-tag`, `set-author`).
 
+---
+
 ## Example Workflows
 
-TDT is more than requirements tracking. Here are some powerful workflows:
+Tessera is more than requirements tracking. Here are some powerful workflows:
 
 ### Tolerance Stackup Analysis
 
@@ -867,9 +972,11 @@ QUOT@3   SUP@3      10.00      500   45d      pending
 
 > **Note:** For complete YAML schema documentation and field references, see the individual entity docs in the [docs/](docs/) directory.
 
+---
+
 ## Manufacturing Quality Loop
 
-TDT supports the complete manufacturing quality loop:
+Tessera supports the complete manufacturing quality loop:
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
@@ -896,9 +1003,11 @@ TDT supports the complete manufacturing quality loop:
 4. **NCR** captures quality issues found during manufacturing
 5. **CAPA** drives systematic improvement back to processes
 
+---
+
 ## Tolerance Format
 
-TDT uses `plus_tol` and `minus_tol` fields instead of the `±` symbol (which is hard to type):
+Tessera uses `plus_tol` and `minus_tol` fields instead of the `±` symbol (which is hard to type):
 
 ```yaml
 # Correct: 10.0 +0.1/-0.05
@@ -913,12 +1022,14 @@ Both values are stored as **positive numbers**. The actual tolerance range is:
 - Maximum: `nominal + plus_tol` = 10.1
 - Minimum: `nominal - minus_tol` = 9.95
 
+---
+
 ## Validation
 
-TDT validates files against JSON Schema with detailed error messages:
+Tessera validates files against JSON Schema with detailed error messages:
 
 ```
-error[tdt::schema::validation]: Schema validation failed
+error[tessera::schema::validation]: Schema validation failed
   --> requirements/inputs/REQ-01HC2.tdt.yaml:8:1
    |
  8 | status: pending
@@ -926,6 +1037,8 @@ error[tdt::schema::validation]: Schema validation failed
    |
   help: Valid values: draft, review, approved, released, obsolete
 ```
+
+---
 
 ## Status Workflow
 
@@ -943,6 +1056,8 @@ draft → review → approved → released
 | released | Released to production/manufacturing |
 | obsolete | No longer applicable |
 
+---
+
 ## Priority Levels
 
 | Priority | Use For |
@@ -952,9 +1067,11 @@ draft → review → approved → released
 | medium | Standard features, quality of life |
 | low | Nice to have, future considerations |
 
+---
+
 ## Risk Assessment (FMEA)
 
-TDT uses FMEA (Failure Mode and Effects Analysis) methodology:
+Tessera uses FMEA (Failure Mode and Effects Analysis) methodology:
 
 ### FMEA Ratings (1-10 scale)
 
@@ -981,6 +1098,8 @@ RPN = Severity x Occurrence x Detection (range: 1-1000)
 |------|---------|
 | **prevention** | Reduces occurrence probability |
 | **detection** | Improves ability to detect before failure |
+
+---
 
 ## Test Engineering
 
@@ -1011,9 +1130,11 @@ Tests can use different verification methods (Inspection, Analysis, Demonstratio
 | **Demonstration** | Show functionality | User interface, simple operations |
 | **Test** | Measured execution | Performance, environmental, stress |
 
+---
+
 ## Tolerance Analysis
 
-TDT supports four analysis methods for tolerance stackups:
+Tessera supports four analysis methods for tolerance stackups:
 
 ### Worst-Case Analysis
 
@@ -1084,6 +1205,8 @@ tdt tol analyze TOL@1 --3d --method-3d monte-carlo
 | **incomplete** | Could not complete test | Reschedule |
 | **not_applicable** | Test not applicable | Document rationale |
 
+---
+
 ## Best Practices
 
 ### Writing Requirements
@@ -1101,11 +1224,13 @@ tdt tol analyze TOL@1 --3d --method-3d monte-carlo
 - Separate **inputs** from **outputs** in different directories
 - Link related requirements with `satisfied_by` relationships
 
+---
+
 ## License
 
 MIT License
 
-Copyright (c) 2024 TDT Contributors
+Copyright (c) 2024 Tessera Contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1125,9 +1250,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+---
+
 ## Disclaimer
 
-This software is provided for informational and educational purposes. While TDT
+This software is provided for informational and educational purposes. While Tessera
 can help organize engineering documentation, **it is not a substitute for
 professional engineering judgment, certified quality management systems, or
 regulatory compliance tools**.
@@ -1138,6 +1265,6 @@ Users are responsible for:
 - Maintaining appropriate backup and version control practices
 - Performing independent verification of safety-critical calculations
 
-**TDT is not certified for use in regulated industries** (medical devices,
+**Tessera is not certified for use in regulated industries** (medical devices,
 aerospace, automotive safety systems, etc.) without independent validation
 by qualified professionals.

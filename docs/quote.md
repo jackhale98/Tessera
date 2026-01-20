@@ -1,6 +1,6 @@
-# TDT Quote Entity (Supplier Quotations)
+# Tessera Quote Entity (Supplier Quotations)
 
-This document describes the Quote entity type in TDT (Tessera Design Toolkit).
+This document describes the Quote entity type in Tessera.
 
 ## Overview
 
@@ -82,7 +82,7 @@ Quotes must reference either a component OR an assembly (not both):
 
 ```yaml
 # Quote: Acme Corp Quote for Widget Bracket
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: QUOT-01HC2JB7SMQX7RS1Y0GFKBHPTD
 title: "Acme Corp Quote"
@@ -140,7 +140,7 @@ entity_revision: 1
 
 ```yaml
 # Quote: Contract Manufacturing Quote for Main Assembly
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: QUOT-01HC2JB7SMQX7RS1Y0GFKBHPTE
 title: "Contract Mfg Quote - Main Assembly"

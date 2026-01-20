@@ -1,8 +1,8 @@
 [package]
 name = "tdt-desktop"
 version = "0.6.0"
-description = "TDT Desktop - Tessera Design Toolkit GUI"
-authors = ["TDT Contributors"]
+description = "Tessera Desktop - Engineering Artifact Management GUI"
+authors = ["Tessera Contributors"]
 license = "MIT"
 repository = "https://github.com/your-org/pdt"
 edition = "2021"

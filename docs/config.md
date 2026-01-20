@@ -1,10 +1,10 @@
-# TDT Configuration
+# Tessera Configuration
 
-This document describes the configuration system in TDT (Tessera Design Toolkit).
+This document describes the configuration system in Tessera.
 
 ## Overview
 
-TDT uses a layered configuration system that allows settings at multiple levels. Configuration values are merged with higher-priority sources overriding lower ones.
+Tessera uses a layered configuration system that allows settings at multiple levels. Configuration values are merged with higher-priority sources overriding lower ones.
 
 ## Configuration Hierarchy
 
@@ -202,7 +202,7 @@ tdt config set editor "vim"
 tdt config set editor "nano"
 ```
 
-If not configured, TDT falls back to:
+If not configured, Tessera falls back to:
 1. `$EDITOR` environment variable
 2. `$VISUAL` environment variable
 3. `vi` (default)

@@ -13,8 +13,8 @@
 </script>
 
 <svelte:head>
-	<title>TDT Desktop</title>
-	<meta name="description" content="Tessera Design Toolkit - Engineering Artifact Management" />
+	<title>Tessera</title>
+	<meta name="description" content="Tessera - Engineering Artifact Management" />
 </svelte:head>
 
 <MainLayout>

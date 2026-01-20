@@ -1,6 +1,6 @@
-# TDT Component Entity (BOM)
+# Tessera Component Entity (BOM)
 
-This document describes the Component entity type in TDT (Tessera Design Toolkit).
+This document describes the Component entity type in Tessera.
 
 ## Overview
 
@@ -123,7 +123,7 @@ datum_frame:
 
 ```yaml
 # Component: Widget Bracket
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: CMP-01HC2JB7SMQX7RS1Y0GFKBHPTD
 part_number: "PN-001"

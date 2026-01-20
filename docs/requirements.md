@@ -1,10 +1,10 @@
-# TDT Requirements Entity
+# Tessera Requirements Entity
 
-This document describes the Requirements entity type in TDT (Tessera Design Toolkit).
+This document describes the Requirements entity type in Tessera.
 
 ## Overview
 
-Requirements are the foundation of product development in TDT. They capture design inputs (customer needs, regulations, standards) and design outputs (specifications, derived requirements).
+Requirements are the foundation of product development in Tessera. They capture design inputs (customer needs, regulations, standards) and design outputs (specifications, derived requirements).
 
 ## Entity Type
 
@@ -55,7 +55,7 @@ Requirements are the foundation of product development in TDT. They capture desi
 
 ```yaml
 # Requirement: Operating Temperature Range
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: REQ-01HC2JB7SMQX7RS1Y0GFKBHPTD
 type: input
@@ -314,7 +314,7 @@ draft → review → approved → released
 
 ## JSON Schema
 
-The full JSON Schema for requirements is embedded in TDT and available at:
+The full JSON Schema for requirements is embedded in Tessera and available at:
 
 ```
 tdt/schemas/req.schema.json

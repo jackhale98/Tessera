@@ -1,4 +1,4 @@
-//! Application state management for TDT Desktop
+//! Application state management for Tessera Desktop
 
 use std::sync::Mutex;
 use tdt_core::core::{cache::EntityCache, project::Project};

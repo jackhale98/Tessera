@@ -1,4 +1,4 @@
-//! TDT Desktop - Tauri application library
+//! Tessera Desktop - Tauri application library
 
 pub mod commands;
 pub mod error;

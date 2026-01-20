@@ -1,18 +1,18 @@
-# TDT Workflow & Collaboration
+# Tessera Workflow & Collaboration
 
-This document describes the workflow features in TDT (Tessera Design Toolkit).
+This document describes the workflow features in Tessera.
 
 ## Overview
 
-TDT provides workflow commands that help teams collaborate on product data with git-based version control. The commands are designed to be **git-transparent** - users run simple TDT commands and git operations happen automatically in the background.
+Tessera provides workflow commands that help teams collaborate on product data with git-based version control. The commands are designed to be **git-transparent** - users run simple Tessera commands and git operations happen automatically in the background.
 
-**For non-git users**: You just run `tdt approve REQ@1` - TDT handles all the git operations for you.
+**For non-git users**: You just run `tdt approve REQ@1` - Tessera handles all the git operations for you.
 
 **For git users**: All git operations are visible with `--verbose`, and you can always use git commands directly.
 
 ## Status Workflow
 
-All TDT entities follow a common status progression:
+All Tessera entities follow a common status progression:
 
 ```
 Draft → Review → Approved → Released
@@ -163,7 +163,7 @@ tdt team whoami
 
 ### Team Keyring
 
-For signature verification across the team, TDT stores public keys in `.tdt/keys/`:
+For signature verification across the team, Tessera stores public keys in `.tdt/keys/`:
 
 ```
 .tdt/
@@ -392,7 +392,7 @@ This provides a complete audit trail of who approved what and when.
 
 ## 21 CFR Part 11 Compliance
 
-For FDA-regulated industries (medical devices, pharmaceuticals, biotech), TDT supports [21 CFR Part 11](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/part-11-electronic-records-electronic-signatures-scope-and-application) compliance through GPG-signed approvals.
+For FDA-regulated industries (medical devices, pharmaceuticals, biotech), Tessera supports [21 CFR Part 11](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/part-11-electronic-records-electronic-signatures-scope-and-application) compliance through GPG-signed approvals.
 
 ### Why GPG Signatures?
 
@@ -439,7 +439,7 @@ tdt approve RISK@1 --sign -m "Quality review complete"
 
 ### Setting Up Commit Signing
 
-Before using signed approvals, each team member needs to configure commit signing. TDT supports three signing methods:
+Before using signed approvals, each team member needs to configure commit signing. Tessera supports three signing methods:
 
 | Method | Best For | Key Management | Requirements |
 |--------|----------|----------------|--------------|
@@ -447,9 +447,9 @@ Before using signed approvals, each team member needs to configure commit signin
 | **SSH** | Teams already using SSH keys | Use existing SSH keys | Git 2.34+ |
 | **gitsign** | Keyless, OIDC-based signing | No key management | gitsign binary, OIDC provider |
 
-#### Option 1: Use TDT Setup Command (Recommended)
+#### Option 1: Use Tessera Setup Command (Recommended)
 
-TDT provides a helper command to configure signing:
+Tessera provides a helper command to configure signing:
 
 ```bash
 # Check current signing status
@@ -507,7 +507,7 @@ tdt team setup-signing --method ssh --key-id ~/.ssh/id_ed25519.pub
 **Pros**: No new keys needed, simpler key management, works offline
 **Cons**: Requires Git 2.34+, GitHub verification requires uploading signing key separately
 
-TDT auto-detects SSH keys in common locations (`~/.ssh/id_ed25519.pub`, `~/.ssh/id_rsa.pub`, etc.)
+Tessera auto-detects SSH keys in common locations (`~/.ssh/id_ed25519.pub`, `~/.ssh/id_rsa.pub`, etc.)
 
 #### gitsign (Keyless OIDC-Based)
 
@@ -529,7 +529,7 @@ tdt team setup-signing --method gitsign
 
 #### Why Enable Auto-Signing?
 
-When `require_signature: true` is configured for an entity type, TDT will warn if `commit.gpgsign` is not enabled. Enabling auto-signing ensures:
+When `require_signature: true` is configured for an entity type, Tessera will warn if `commit.gpgsign` is not enabled. Enabling auto-signing ensures:
 
 - **All commits are signed**, not just approval commits
 - **All tags are signed**, creating an immutable audit trail
@@ -543,11 +543,11 @@ For detailed instructions, see:
 
 ### Part 11 Compliance Checklist
 
-Using TDT with cryptographic signing (GPG, SSH, or gitsign) satisfies several Part 11 requirements:
+Using Tessera with cryptographic signing (GPG, SSH, or gitsign) satisfies several Part 11 requirements:
 
-| Part 11 Requirement | TDT Feature |
+| Part 11 Requirement | Tessera Feature |
 |---------------------|-------------|
-| Audit trail (§11.10(e)) | Git commit history with timestamps |
+| Audit trail (11.10(e)) | Git commit history with timestamps |
 | Unique user identification (§11.100) | Signing keys + team roster |
 | Signature meaning (§11.50) | Approval comments and role |
 | Non-repudiation (§11.200) | Cryptographic signatures (GPG/SSH/gitsign) |
@@ -673,7 +673,7 @@ tdt review list --target main
 # Show PRs that need approval from your role
 tdt review list --needs-role
 
-# Show all open PRs with TDT entities
+# Show all open PRs with Tessera entities
 tdt review list --all-open
 
 # Combine with entity type filter
@@ -688,7 +688,7 @@ tdt review list --target main -t risk
 | `--all` | | Show all pending reviews (not just yours) |
 | `--target` | | Show open PRs targeting a specific branch |
 | `--needs-role` | | Show PRs needing your role's approval |
-| `--all-open` | | Show all open PRs with TDT entities |
+| `--all-open` | | Show all open PRs with Tessera entities |
 | `--output` | `-o` | Output format: table, short-id, json |
 | `--verbose` | | Print commands as they run |
 
@@ -834,7 +834,7 @@ DATE         EVENT      TYPE     ENTITY          ACTOR           COMMENT
 
 ## Git Tags for Audit Trail
 
-TDT automatically creates git tags for workflow events:
+Tessera automatically creates git tags for workflow events:
 
 ```bash
 # List all approval tags
@@ -873,7 +873,7 @@ These tags enable:
 
 ### GitHub
 
-TDT uses the `gh` CLI for GitHub integration. Install it from https://cli.github.com and authenticate:
+Tessera uses the `gh` CLI for GitHub integration. Install it from https://cli.github.com and authenticate:
 
 ```bash
 gh auth login
@@ -887,7 +887,7 @@ Commands used:
 
 ### GitLab
 
-TDT uses the `glab` CLI for GitLab integration. Install it from https://gitlab.com/gitlab-org/cli and authenticate:
+Tessera uses the `glab` CLI for GitLab integration. Install it from https://gitlab.com/gitlab-org/cli and authenticate:
 
 ```bash
 glab auth login
@@ -941,7 +941,7 @@ No changes made (dry run).
 ### Setup
 
 ```bash
-# Initialize a TDT project with workflow
+# Initialize a Tessera project with workflow
 tdt init myproject
 cd myproject
 
@@ -990,7 +990,7 @@ tdt release REQ@1
 
 ### For Teams New to Git
 
-1. **Just use TDT commands** - Run `tdt approve`, `tdt submit`, etc. Git happens automatically
+1. **Just use Tessera commands** - Run `tdt approve`, `tdt submit`, etc. Git happens automatically
 2. **Use `--verbose`** - See what git commands are running to learn
 3. **Use `--dry-run`** - Preview what will happen before executing
 

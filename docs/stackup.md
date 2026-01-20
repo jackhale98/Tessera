@@ -1,10 +1,10 @@
-# TDT Stackup Entity (Tolerance Analysis)
+# Tessera Stackup Entity (Tolerance Analysis)
 
-This document describes the Stackup entity type in TDT (Tessera Design Toolkit).
+This document describes the Stackup entity type in Tessera.
 
 ## Overview
 
-Stackups represent tolerance chain analyses with multiple dimensional contributors. They calculate whether a target dimension (like a gap or clearance) will meet specification limits given the tolerances of all contributing features. TDT supports three analysis methods: worst-case, RSS (statistical), and Monte Carlo simulation.
+Stackups represent tolerance chain analyses with multiple dimensional contributors. They calculate whether a target dimension (like a gap or clearance) will meet specification limits given the tolerances of all contributing features. Tessera supports three analysis methods: worst-case, RSS (statistical), and Monte Carlo simulation.
 
 ## Entity Type
 
@@ -85,7 +85,7 @@ Stackups represent tolerance chain analyses with multiple dimensional contributo
 | `component_id` | string | Component ID that owns this feature (cached) |
 | `component_name` | string | Component name/title (cached for readability) |
 
-**Feature Linking**: When a contributor has a `feature` reference, its `nominal`, `plus_tol`, and `minus_tol` values should match the linked feature's primary dimension. The cached fields (`name`, `component_id`, `component_name`) improve readability and are validated against the actual feature during `tdt validate`. TDT can automatically sync values when they drift out of sync.
+**Feature Linking**: When a contributor has a `feature` reference, its `nominal`, `plus_tol`, and `minus_tol` values should match the linked feature's primary dimension. The cached fields (`name`, `component_id`, `component_name`) improve readability and are validated against the actual feature during `tdt validate`. Tessera can automatically sync values when they drift out of sync.
 
 ### AnalysisResults Object (Auto-calculated)
 
@@ -189,7 +189,7 @@ contributors:
 
 ```yaml
 # Stackup: Gap Analysis
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: TOL-01HC2JB7SMQX7RS1Y0GFKBHPTH
 title: "Gap Analysis"

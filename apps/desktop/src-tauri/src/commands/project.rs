@@ -101,7 +101,7 @@ impl EntityCounts {
     }
 }
 
-/// Open an existing TDT project
+/// Open an existing Tessera project
 #[tauri::command]
 pub async fn open_project(path: String, state: State<'_, AppState>) -> CommandResult<ProjectInfo> {
     let path = PathBuf::from(&path);
@@ -122,7 +122,7 @@ pub async fn open_project(path: String, state: State<'_, AppState>) -> CommandRe
             .root()
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "TDT Project".to_string()),
+            .unwrap_or_else(|| "Tessera Project".to_string()),
         entity_counts: EntityCounts::from_cache(&cache),
         author: config.author(),
     };
@@ -134,7 +134,7 @@ pub async fn open_project(path: String, state: State<'_, AppState>) -> CommandRe
     Ok(info)
 }
 
-/// Initialize a new TDT project
+/// Initialize a new Tessera project
 #[tauri::command]
 pub async fn init_project(path: String, state: State<'_, AppState>) -> CommandResult<ProjectInfo> {
     let path = PathBuf::from(&path);
@@ -154,7 +154,7 @@ pub async fn init_project(path: String, state: State<'_, AppState>) -> CommandRe
         name: path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "TDT Project".to_string()),
+            .unwrap_or_else(|| "Tessera Project".to_string()),
         entity_counts: EntityCounts::default(),
         author: config.author(),
     };
@@ -188,7 +188,7 @@ pub async fn get_project_info(state: State<'_, AppState>) -> CommandResult<Optio
                     .root()
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "TDT Project".to_string()),
+                    .unwrap_or_else(|| "Tessera Project".to_string()),
                 entity_counts: EntityCounts::from_cache(cache),
                 author: config.author(),
             }))
@@ -218,7 +218,7 @@ pub async fn refresh_project(state: State<'_, AppState>) -> CommandResult<Projec
             .root()
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "TDT Project".to_string()),
+            .unwrap_or_else(|| "Tessera Project".to_string()),
         entity_counts: EntityCounts::from_cache(&new_cache),
         author: config.author(),
     };

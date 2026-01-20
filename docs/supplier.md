@@ -1,6 +1,6 @@
-# TDT Supplier Entity (Approved Suppliers)
+# Tessera Supplier Entity (Approved Suppliers)
 
-This document describes the Supplier entity type in TDT (Tessera Design Toolkit).
+This document describes the Supplier entity type in Tessera.
 
 ## Overview
 
@@ -96,7 +96,7 @@ Suppliers represent approved vendors for components and assemblies. They store c
 
 ```yaml
 # Supplier: Acme Manufacturing Corp
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: SUP-01HC2JB7SMQX7RS1Y0GFKBHPTA
 name: "Acme Manufacturing Corp"

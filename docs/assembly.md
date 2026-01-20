@@ -1,6 +1,6 @@
-# TDT Assembly Entity (BOM)
+# Tessera Assembly Entity (BOM)
 
-This document describes the Assembly entity type in TDT (Tessera Design Toolkit).
+This document describes the Assembly entity type in Tessera.
 
 ## Overview
 
@@ -74,7 +74,7 @@ Assemblies represent collections of components and sub-assemblies in your Bill o
 
 ```yaml
 # Assembly: Main Assembly
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: ASM-01HC2JB7SMQX7RS1Y0GFKBHPTE
 part_number: "ASM-001"

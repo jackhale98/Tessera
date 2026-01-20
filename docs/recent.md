@@ -1,6 +1,6 @@
-# TDT Recent Activity
+# Tessera Recent Activity
 
-This document describes the recent activity command in TDT (Tessera Design Toolkit).
+This document describes the recent activity command in Tessera.
 
 ## Overview
 
@@ -151,7 +151,7 @@ tdt recent -n 5 -f id | tdt bulk add-tag "in-progress"
 
 ## Performance
 
-The `recent` command uses TDT's SQLite cache for fast lookups. It queries by `file_mtime` (file modification timestamp) which is indexed for performance.
+The `recent` command uses Tessera's SQLite cache for fast lookups. It queries by `file_mtime` (file modification timestamp) which is indexed for performance.
 
 The cache auto-syncs on each command, so results reflect the current state of your project files.
 

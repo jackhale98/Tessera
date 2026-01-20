@@ -56,7 +56,7 @@ const HELP_TEMPLATE: &str = "\
 {usage-heading} {usage}
 
 PROJECT:
-  init        Initialize a new TDT project
+  init        Initialize a new Tessera project
   status      Show project status dashboard
   validate    Validate project files against schemas
 
@@ -119,7 +119,7 @@ UTILITIES:
   import      Import entities from CSV files
   bulk        Bulk operations on multiple entities
   cache       Entity cache management (rebuild, sync, status, query)
-  config      View and modify TDT configuration (show, set, unset)
+  config      View and modify Tessera configuration (show, set, unset)
   search      Search across all entity types
   recent      Show recently modified entities
   tags        View and manage entity tags (list, show)
@@ -133,9 +133,9 @@ OPTIONS:
 
 #[derive(Parser)]
 #[command(name = "tdt")]
-#[command(author, version, about = "Tessera Design Toolkit")]
+#[command(author, version, about = "Tessera - Engineering Artifact Management")]
 #[command(
-    long_about = "A Unix-style toolkit for managing engineering artifacts as plain text files under git version control."
+    long_about = "Tessera is a Unix-style toolkit for managing engineering artifacts as plain text files under git version control. Visit https://tessera-engineering.com for documentation."
 )]
 #[command(propagate_version = true)]
 #[command(help_template = HELP_TEMPLATE)]
@@ -175,7 +175,7 @@ pub enum Commands {
     // ─────────────────────────────────────────────────────────────────────
     // PROJECT MANAGEMENT
     // ─────────────────────────────────────────────────────────────────────
-    /// Initialize a new TDT project
+    /// Initialize a new Tessera project
     Init(InitArgs),
 
     /// Show project status dashboard
@@ -361,7 +361,7 @@ pub enum Commands {
     #[command(subcommand)]
     Cache(CacheCommands),
 
-    /// View and modify TDT configuration (show, set, unset)
+    /// View and modify Tessera configuration (show, set, unset)
     #[command(subcommand)]
     Config(ConfigCommands),
 

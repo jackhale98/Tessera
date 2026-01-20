@@ -1,6 +1,6 @@
-# TDT Result Entity
+# Tessera Result Entity
 
-This document describes the Result entity type in TDT (Tessera Design Toolkit).
+This document describes the Result entity type in Tessera.
 
 ## Overview
 
@@ -130,7 +130,7 @@ Results are execution records of test protocols. They capture the outcome of run
 
 ```yaml
 # Result: Temperature Cycling Test - Run 1
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: RSLT-01HC2JB7SMQX7RS1Y0GFKBHPTG
 test_id: TEST-01HC2JB7SMQX7RS1Y0GFKBHPTF
@@ -541,7 +541,7 @@ When a test passes with deviations:
 
 ## Metrics
 
-Use TDT to generate testing metrics:
+Use Tessera to generate testing metrics:
 
 ```bash
 # Overall pass rate
@@ -557,7 +557,7 @@ tdt rslt list --verdict fail --recent 30
 
 ## JSON Schema
 
-The full JSON Schema for results is embedded in TDT and available at:
+The full JSON Schema for results is embedded in Tessera and available at:
 
 ```
 tdt/schemas/rslt.schema.json

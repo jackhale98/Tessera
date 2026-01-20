@@ -1,12 +1,12 @@
-# TDT Mate Entity (Tolerances)
+# Tessera Mate Entity (Tolerances)
 
-This document describes the Mate entity type in TDT (Tessera Design Toolkit).
+This document describes the Mate entity type in Tessera.
 
 ## Overview
 
-Mates represent 1:1 contact relationships between two features, such as a pin fitting into a hole. TDT automatically calculates worst-case fit analysis when you create or recalculate a mate, determining whether it's a clearance, interference, or transition fit.
+Mates represent 1:1 contact relationships between two features, such as a pin fitting into a hole. Tessera automatically calculates worst-case fit analysis when you create or recalculate a mate, determining whether it's a clearance, interference, or transition fit.
 
-**Auto-detection**: TDT automatically determines which feature is the hole and which is the shaft based on their `internal` field - no need to remember which order to link them!
+**Auto-detection**: Tessera automatically determines which feature is the hole and which is the shaft based on their `internal` field - no need to remember which order to link them!
 
 ## Entity Type
 
@@ -38,7 +38,7 @@ Mates represent 1:1 contact relationships between two features, such as a pin fi
 | `component_id` | string | Component ID that owns this feature (cached) |
 | `component_name` | string | Component name/title (cached for readability) |
 
-**Note**: The order of `feature_a` and `feature_b` doesn't matter - TDT auto-detects which is the hole (internal) and which is the shaft (external) based on their `internal` field. The cached fields improve readability and are validated during `tdt validate`.
+**Note**: The order of `feature_a` and `feature_b` doesn't matter - Tessera auto-detects which is the hole (internal) and which is the shaft (external) based on their `internal` field. The cached fields improve readability and are validated during `tdt validate`.
 
 ### Optional Fields
 
@@ -79,7 +79,7 @@ Mates represent 1:1 contact relationships between two features, such as a pin fi
 
 ## Fit Calculation
 
-TDT automatically calculates worst-case fit from the primary dimensions of both features. The `internal` field on each feature's dimension determines which is treated as the hole and which as the shaft:
+Tessera automatically calculates worst-case fit from the primary dimensions of both features. The `internal` field on each feature's dimension determines which is treated as the hole and which as the shaft:
 
 - **Internal feature** (`internal: true`): Treated as the hole
 - **External feature** (`internal: false`): Treated as the shaft
@@ -136,13 +136,13 @@ clearance_3sigma_max = mean_clearance + 3 * sigma_clearance
 
 **Use when**: Need to understand interference probability for transition fits, or when worst-case analysis is too conservative.
 
-**Important**: A mate requires one internal feature (hole) and one external feature (shaft). TDT will report an error during validation if both features have the same `internal` value.
+**Important**: A mate requires one internal feature (hole) and one external feature (shaft). Tessera will report an error during validation if both features have the same `internal` value.
 
 ## Example
 
 ```yaml
 # Mate: Pin-Hole Mate
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: MATE-01HC2JB7SMQX7RS1Y0GFKBHPTF
 title: "Pin-Hole Mate"
@@ -357,7 +357,7 @@ min_clearance < 0 AND max_clearance > 0
 ### Creating Mates
 
 1. **Set internal field** - Ensure each feature has the correct `internal` field (true for holes, false for shafts)
-2. **Feature order doesn't matter** - TDT auto-detects hole vs shaft from the `internal` field
+2. **Feature order doesn't matter** - Tessera auto-detects hole vs shaft from the `internal` field
 3. **Complete features first** - Ensure both features have dimensions before creating mate
 4. **Verify fit type** - Check that calculated fit matches your intent
 5. **Document rationale** - Explain why this fit was chosen

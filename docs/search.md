@@ -1,6 +1,6 @@
-# TDT Global Search
+# Tessera Global Search
 
-This document describes the global search command in TDT (Tessera Design Toolkit).
+This document describes the global search command in Tessera.
 
 ## Overview
 
@@ -210,7 +210,7 @@ tdt search "critical" --type risk
 
 ## Performance
 
-The search command uses TDT's SQLite cache for fast lookups. The cache is automatically maintained and updated when entities change.
+The search command uses Tessera's SQLite cache for fast lookups. The cache is automatically maintained and updated when entities change.
 
 If search results seem stale, rebuild the cache:
 

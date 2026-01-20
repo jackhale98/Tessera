@@ -1,6 +1,6 @@
-# TDT Control Entity (Control Plan Items)
+# Tessera Control Entity (Control Plan Items)
 
-This document describes the Control entity type in TDT (Tessera Design Toolkit).
+This document describes the Control entity type in Tessera.
 
 ## Overview
 

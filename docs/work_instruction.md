@@ -1,6 +1,6 @@
-# TDT Work Instruction Entity
+# Tessera Work Instruction Entity
 
-This document describes the Work Instruction entity type in TDT (Tessera Design Toolkit).
+This document describes the Work Instruction entity type in Tessera.
 
 ## Overview
 

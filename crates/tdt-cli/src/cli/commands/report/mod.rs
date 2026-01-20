@@ -271,19 +271,23 @@ pub(crate) fn load_all_ncrs(project: &Project) -> Vec<tdt_core::entities::ncr::N
 
 pub(crate) fn load_all_capas(project: &Project) -> Vec<tdt_core::entities::capa::Capa> {
     let mut capas = Vec::new();
-    let dir = project.root().join("manufacturing/capas");
 
-    if dir.exists() {
-        for entry in walkdir::WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
-        {
-            if let Ok(capa) =
-                tdt_core::yaml::parse_yaml_file::<tdt_core::entities::capa::Capa>(entry.path())
+    // CAPAs can be in quality/capas or manufacturing/capas
+    for subdir in ["quality/capas", "manufacturing/capas"] {
+        let dir = project.root().join(subdir);
+
+        if dir.exists() {
+            for entry in walkdir::WalkDir::new(&dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
             {
-                capas.push(capa);
+                if let Ok(capa) =
+                    tdt_core::yaml::parse_yaml_file::<tdt_core::entities::capa::Capa>(entry.path())
+                {
+                    capas.push(capa);
+                }
             }
         }
     }

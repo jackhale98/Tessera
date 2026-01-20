@@ -1,6 +1,6 @@
-# TDT Hazard Entity (Safety Analysis)
+# Tessera Hazard Entity (Safety Analysis)
 
-This document describes the Hazard entity type in TDT (Tessera Design Toolkit).
+This document describes the Hazard entity type in Tessera.
 
 ## Overview
 
@@ -85,7 +85,7 @@ Hazard identification is a foundational step in safety analysis methodologies ac
 
 ```yaml
 # Hazard: High Voltage in Motor Controller
-# Created by TDT - Tessera Design Toolkit
+# Created by Tessera
 
 id: HAZ-01HC2JB7SMQX7RS1Y0GFKBHPTD
 category: electrical
@@ -351,7 +351,7 @@ tdt validate --entity-type haz
 
 ## JSON Schema
 
-The full JSON Schema for hazards is embedded in TDT and available at:
+The full JSON Schema for hazards is embedded in Tessera and available at:
 
 ```
 tdt/schemas/haz.schema.json

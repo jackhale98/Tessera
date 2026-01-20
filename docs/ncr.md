@@ -1,6 +1,6 @@
-# TDT NCR Entity (Non-Conformance Report)
+# Tessera NCR Entity (Non-Conformance Report)
 
-This document describes the NCR entity type in TDT (Tessera Design Toolkit).
+This document describes the NCR entity type in Tessera.
 
 ## Overview
 

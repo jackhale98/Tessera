@@ -79,7 +79,7 @@
 		const selected = await open({
 			directory: true,
 			multiple: false,
-			title: 'Open TDT Project'
+			title: 'Open Tessera Project'
 		});
 
 		if (selected && typeof selected === 'string') {
@@ -107,9 +107,9 @@
 			<div class="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10">
 				<span class="text-4xl font-bold text-primary">T</span>
 			</div>
-			<h1 class="mb-2 text-3xl font-bold tracking-tight">Welcome to TDT Desktop</h1>
+			<h1 class="mb-2 text-3xl font-bold tracking-tight">Welcome to Tessera</h1>
 			<p class="mb-8 text-muted-foreground">
-				Tessera Design Toolkit helps you manage engineering artifacts including requirements, risks,
+				Tessera helps you manage engineering artifacts including requirements, risks,
 				tests, BOMs, and more with full traceability.
 			</p>
 			<div class="flex flex-col gap-3 sm:flex-row sm:justify-center">

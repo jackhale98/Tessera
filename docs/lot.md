@@ -1,6 +1,6 @@
-# TDT LOT Entity (Production Lot / Device History Record)
+# Tessera LOT Entity (Production Lot / Device History Record)
 
-This document describes the LOT entity type in TDT (Tessera Design Toolkit).
+This document describes the LOT entity type in Tessera.
 
 ## Overview
 
@@ -455,7 +455,7 @@ tdt lot approve LOT@1 --process 1 --wi WORK@1 --step 3 --role quality
 
 ## Git-Based Traceability
 
-For regulated environments (FDA 21 CFR 820, ISO 13485), TDT provides an automated git workflow:
+For regulated environments (FDA 21 CFR 820, ISO 13485), Tessera provides an automated git workflow:
 
 ### Automated Branch Workflow
 

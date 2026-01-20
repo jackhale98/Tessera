@@ -1,12 +1,12 @@
-# TDT Tags
+# Tessera Tags
 
-This document describes tag management in TDT (Tessera Design Toolkit).
+This document describes tag management in Tessera.
 
 ## Overview
 
 Tags provide a flexible way to categorize and group entities across your project. Unlike fixed fields like status or priority, tags can be any string and entities can have multiple tags.
 
-TDT provides commands for:
+Tessera provides commands for:
 - Viewing all tags in use (`tdt tags list`)
 - Finding entities with a specific tag (`tdt tags show`)
 - Adding/removing tags in bulk (`tdt bulk add-tag/remove-tag`)
@@ -213,7 +213,7 @@ tdt recent -n 10 -f id | tdt bulk add-tag "in-progress"
 
 ## Performance
 
-Tag queries use TDT's SQLite cache:
+Tag queries use Tessera's SQLite cache:
 - `tags list` aggregates tags from the cache (O(n) where n = entities)
 - `tags show` filters by tag using indexed lookups
 - Both are fast even with thousands of entities

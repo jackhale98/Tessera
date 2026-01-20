@@ -177,8 +177,8 @@
 				<span class="text-sm font-bold text-primary-foreground">T</span>
 			</div>
 			<div class="flex flex-col">
-				<span class="text-sm font-semibold text-sidebar-foreground">TDT Desktop</span>
-				<span class="text-xs text-muted-foreground">Design Toolkit</span>
+				<span class="text-sm font-semibold text-sidebar-foreground">Tessera</span>
+				<span class="text-xs text-muted-foreground">Engineering Artifacts</span>
 			</div>
 		</div>
 	</div>

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TDT Desktop",
+  "productName": "Tessera Desktop",
   "version": "0.6.0",
-  "identifier": "dev.tdt.desktop",
+  "identifier": "com.tessera-engineering.desktop",
   "build": {
     "frontendDist": "../build",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "TDT - Tessera Design Toolkit",
+        "title": "Tessera - Engineering Artifact Management",
         "width": 1400,
         "height": 900,
         "minWidth": 900,
