@@ -1,6 +1,6 @@
 [package]
-name = "tdt"
-description = "TDT CLI - Command-line interface for Tessera Design Toolkit"
+name = "tessera-design-toolkit"
+description = "Tessera Design Toolkit (TDT) - CLI for managing engineering artifacts with requirements, risks, BOMs, tolerance analysis, and full traceability"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,8 +22,8 @@ name = "tdt"
 path = "src/main.rs"
 
 [dependencies]
-# Core library
-tdt-core = { path = "../tdt-core" }
+# Core library (package renamed but lib is still tdt_core)
+tdt-core = { package = "tessera-design-toolkit-core", version = "0.6.0", path = "../tdt-core" }
 
 # CLI
 clap.workspace = true
