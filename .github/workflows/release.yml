@@ -101,15 +101,15 @@ jobs:
 
       - name: Build (cross)
         if: matrix.cross && !matrix.rustflags
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --target ${{ matrix.target }} --package tdt
 
       - name: Build (cross with rustflags)
         if: matrix.cross && matrix.rustflags
-        run: RUSTFLAGS="${{ matrix.rustflags }}" cross build --release --target ${{ matrix.target }}
+        run: RUSTFLAGS="${{ matrix.rustflags }}" cross build --release --target ${{ matrix.target }} --package tdt
 
       - name: Build (native)
         if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --package tdt
 
       - name: Strip binary (Unix)
         if: runner.os != 'Windows'

@@ -32,17 +32,18 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      # Build only CLI and core packages (desktop app requires GTK which is handled in release workflow)
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --package tdt --package tdt-core
 
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --verbose --package tdt --package tdt-core
 
       - name: Check formatting
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy
+        run: cargo clippy --package tdt --package tdt-core
 
   # Verify it compiles on all platforms
   build-check:
@@ -54,4 +55,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check
+      # Check only CLI and core packages (desktop app requires platform-specific deps)
+      - run: cargo check --package tdt --package tdt-core
