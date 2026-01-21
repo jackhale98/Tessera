@@ -16,8 +16,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# Core library
-tdt-core = { path = "../../../crates/tdt-core" }
+# Core library (package renamed but lib is still tdt_core)
+tdt-core = { package = "tessera-design-toolkit-core", path = "../../../crates/tdt-core" }
 
 # Tauri
 tauri = { version = "2", features = [] }
