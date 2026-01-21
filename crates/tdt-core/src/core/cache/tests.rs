@@ -1410,7 +1410,8 @@ bom:
     let cmp_shared = flattened.iter().find(|i| i.component_id == "CMP-01SHARED");
     assert!(cmp_shared.is_some(), "Should find CMP-01SHARED");
     assert_eq!(
-        cmp_shared.unwrap().effective_qty, 8,
+        cmp_shared.unwrap().effective_qty,
+        8,
         "CMP-01SHARED should have effective qty 8 (2*3 + 1*2)"
     );
 
@@ -1418,7 +1419,8 @@ bom:
     let cmp_unique = flattened.iter().find(|i| i.component_id == "CMP-02UNIQUE");
     assert!(cmp_unique.is_some(), "Should find CMP-02UNIQUE");
     assert_eq!(
-        cmp_unique.unwrap().effective_qty, 4,
+        cmp_unique.unwrap().effective_qty,
+        4,
         "CMP-02UNIQUE should have effective qty 4 (1*4)"
     );
 }
@@ -1494,7 +1496,11 @@ subassemblies:
     let flattened = cache.get_flattened_bom("ASM-01CIRCULAR");
 
     // Should have collected components from both assemblies
-    assert_eq!(flattened.len(), 2, "Should have 2 components despite circular reference");
+    assert_eq!(
+        flattened.len(),
+        2,
+        "Should have 2 components despite circular reference"
+    );
 
     let cmp_a = flattened.iter().find(|i| i.component_id == "CMP-01A");
     assert!(cmp_a.is_some());
@@ -1525,13 +1531,22 @@ created: 2024-01-15T10:30:00Z
 
     // Query BOM items - should be empty
     let bom_items = cache.get_bom_items("ASM-01EMPTY");
-    assert!(bom_items.is_empty(), "Empty assembly should have no BOM items");
+    assert!(
+        bom_items.is_empty(),
+        "Empty assembly should have no BOM items"
+    );
 
     let sub_items = cache.get_subassembly_items("ASM-01EMPTY");
-    assert!(sub_items.is_empty(), "Empty assembly should have no subassembly items");
+    assert!(
+        sub_items.is_empty(),
+        "Empty assembly should have no subassembly items"
+    );
 
     let flattened = cache.get_flattened_bom("ASM-01EMPTY");
-    assert!(flattened.is_empty(), "Empty assembly should have no components in flattened BOM");
+    assert!(
+        flattened.is_empty(),
+        "Empty assembly should have no components in flattened BOM"
+    );
 }
 
 #[test]

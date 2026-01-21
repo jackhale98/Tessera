@@ -1251,7 +1251,10 @@ impl<'a> AssemblyService<'a> {
     /// Batch-load quotes by IDs
     ///
     /// Loads only the specified quotes from the filesystem.
-    pub fn batch_load_quotes(&self, ids: &HashSet<&String>) -> ServiceResult<HashMap<String, Quote>> {
+    pub fn batch_load_quotes(
+        &self,
+        ids: &HashSet<&String>,
+    ) -> ServiceResult<HashMap<String, Quote>> {
         let quotes_dir = self.quotes_dir();
         let mut result = HashMap::new();
 
@@ -1340,8 +1343,12 @@ impl<'a> AssemblyService<'a> {
             let purchase_qty = effective_qty * production_qty;
 
             // Resolve unit price using priority: selected_quote → component quotes → unit_cost
-            let (unit_price, quote_id, price_break_tier) =
-                self.resolve_component_price(cmp, purchase_qty, &quotes_by_id, &quotes_by_component);
+            let (unit_price, quote_id, price_break_tier) = self.resolve_component_price(
+                cmp,
+                purchase_qty,
+                &quotes_by_id,
+                &quotes_by_component,
+            );
 
             // Calculate extended price
             let extended_price = unit_price.map(|p| p * effective_qty as f64);
@@ -2280,30 +2287,28 @@ mod tests {
         let result = BomCostResultDetailed {
             total_unit_cost: 100.0,
             total_nre_cost: 500.0,
-            component_costs: vec![
-                ComponentCostLine {
-                    component_id: "CMP-1".into(),
-                    title: "Test".into(),
-                    part_number: "PN-1".into(),
-                    effective_qty: 2,
-                    unit_price: Some(50.0),
-                    extended_price: Some(100.0),
-                    quote_id: None,
-                    price_break_tier: None,
-                    nre_contribution: 0.0,
-                },
-            ],
+            component_costs: vec![ComponentCostLine {
+                component_id: "CMP-1".into(),
+                title: "Test".into(),
+                part_number: "PN-1".into(),
+                effective_qty: 2,
+                unit_price: Some(50.0),
+                extended_price: Some(100.0),
+                quote_id: None,
+                price_break_tier: None,
+                nre_contribution: 0.0,
+            }],
             warnings: Vec::new(),
         };
 
         // Test total_production_cost
         assert_eq!(result.total_production_cost(10, false), 1000.0); // 100 * 10
-        assert_eq!(result.total_production_cost(10, true), 1500.0);  // 100 * 10 + 500
+        assert_eq!(result.total_production_cost(10, true), 1500.0); // 100 * 10 + 500
 
         // Test effective_unit_cost
-        assert_eq!(result.effective_unit_cost(0), 100.0);    // No amortization
-        assert_eq!(result.effective_unit_cost(100), 105.0);  // 100 + 500/100
-        assert_eq!(result.effective_unit_cost(500), 101.0);  // 100 + 500/500
+        assert_eq!(result.effective_unit_cost(0), 100.0); // No amortization
+        assert_eq!(result.effective_unit_cost(100), 105.0); // 100 + 500/100
+        assert_eq!(result.effective_unit_cost(500), 101.0); // 100 + 500/500
 
         // Test helpers
         assert_eq!(result.components_with_cost(), 1);

@@ -924,4 +924,3 @@ fn load_all_entities(project: &Project) -> Result<Vec<GenericEntity>> {
 
     Ok(entities)
 }
-

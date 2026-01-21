@@ -190,22 +190,24 @@ fn find_quote_references(
     for quote in quotes {
         // Check if this quote references the target as supplier
         if quote.supplier_id.as_ref().is_some_and(|s| s == target_id)
-            && !found_refs.iter().any(|(id, _, _)| id == &quote.id) {
-                found_refs.push((
-                    quote.id.clone(),
-                    "quote".to_string(),
-                    "supplier".to_string(),
-                ));
-            }
+            && !found_refs.iter().any(|(id, _, _)| id == &quote.id)
+        {
+            found_refs.push((
+                quote.id.clone(),
+                "quote".to_string(),
+                "supplier".to_string(),
+            ));
+        }
 
         // Check if this quote references the target as component
         if quote.component_id.as_ref().is_some_and(|c| c == target_id)
-            && !found_refs.iter().any(|(id, _, _)| id == &quote.id) {
-                found_refs.push((
-                    quote.id.clone(),
-                    "quote".to_string(),
-                    "component".to_string(),
-                ));
-            }
+            && !found_refs.iter().any(|(id, _, _)| id == &quote.id)
+        {
+            found_refs.push((
+                quote.id.clone(),
+                "quote".to_string(),
+                "component".to_string(),
+            ));
+        }
     }
 }

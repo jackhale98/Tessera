@@ -613,13 +613,14 @@ fn output_cached_deviations(
         | OutputFormat::Dot
         | OutputFormat::Tree => {
             // Build columns list, adding ID column if --show-id is set
-            let columns: Vec<ListColumn> = if args.show_id && !args.columns.contains(&ListColumn::Id) {
-                let mut cols = vec![ListColumn::Id];
-                cols.extend(args.columns.iter().copied());
-                cols
-            } else {
-                args.columns.clone()
-            };
+            let columns: Vec<ListColumn> =
+                if args.show_id && !args.columns.contains(&ListColumn::Id) {
+                    let mut cols = vec![ListColumn::Id];
+                    cols.extend(args.columns.iter().copied());
+                    cols
+                } else {
+                    args.columns.clone()
+                };
 
             // Build header
             let mut headers = vec![];
@@ -827,13 +828,14 @@ fn output_deviations(
         | OutputFormat::Dot
         | OutputFormat::Tree => {
             // Build columns list, adding ID column if --show-id is set
-            let columns: Vec<ListColumn> = if args.show_id && !args.columns.contains(&ListColumn::Id) {
-                let mut cols = vec![ListColumn::Id];
-                cols.extend(args.columns.iter().copied());
-                cols
-            } else {
-                args.columns.clone()
-            };
+            let columns: Vec<ListColumn> =
+                if args.show_id && !args.columns.contains(&ListColumn::Id) {
+                    let mut cols = vec![ListColumn::Id];
+                    cols.extend(args.columns.iter().copied());
+                    cols
+                } else {
+                    args.columns.clone()
+                };
 
             // Build header
             let mut headers = vec![];

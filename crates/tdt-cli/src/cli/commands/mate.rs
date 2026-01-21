@@ -320,9 +320,7 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     // Post-sort for columns not in service (Match, FeatureA, FeatureB)
     if let Some(ref sort_col) = args.sort {
         match sort_col {
-            ListColumn::Match => {
-                mates.sort_by_key(|a| fit_matches_type(a))
-            }
+            ListColumn::Match => mates.sort_by_key(|a| fit_matches_type(a)),
             ListColumn::FeatureA => {
                 mates.sort_by(|a, b| a.feature_a.id.to_string().cmp(&b.feature_a.id.to_string()))
             }

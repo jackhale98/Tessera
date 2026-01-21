@@ -1787,9 +1787,8 @@ impl EntityCache {
 
         let rows = match stmt.query_map(params![assembly_id], |row| {
             let ref_des_str: Option<String> = row.get(2)?;
-            let reference_designators = ref_des_str.and_then(|s| {
-                serde_json::from_str::<Vec<String>>(&s).ok()
-            });
+            let reference_designators =
+                ref_des_str.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok());
             Ok(super::CachedBomItem {
                 component_id: row.get(0)?,
                 quantity: row.get::<_, i64>(1)? as u32,
@@ -1839,7 +1838,8 @@ impl EntityCache {
     /// Components that appear multiple times (via different subassemblies) are
     /// aggregated into a single entry with the total quantity.
     pub fn get_flattened_bom(&self, assembly_id: &str) -> Vec<super::FlattenedBomItem> {
-        let mut component_qty_map: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut component_qty_map: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
         let mut visited = std::collections::HashSet::new();
 
         self.collect_flattened_bom_recursive(

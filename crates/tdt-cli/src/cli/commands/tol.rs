@@ -2285,9 +2285,7 @@ fn run_3d_analysis(
         std::collections::HashMap::new();
     for feat in features.values() {
         if let Some(ref label) = feat.datum_label {
-            let geom_class = feat
-                .geometry_class
-                .unwrap_or(GeometryClass::Complex);
+            let geom_class = feat.geometry_class.unwrap_or(GeometryClass::Complex);
             let position = feat
                 .geometry_3d
                 .as_ref()

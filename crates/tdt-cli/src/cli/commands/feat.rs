@@ -511,11 +511,7 @@ fn output_features(
         | OutputFormat::Dot
         | OutputFormat::Tree => {
             // Build columns list, adding ID column if --show-id is set
-            let mut columns: Vec<&str> = if args.show_id {
-                vec!["id"]
-            } else {
-                vec![]
-            };
+            let mut columns: Vec<&str> = if args.show_id { vec!["id"] } else { vec![] };
             columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
 
             let rows: Vec<TableRow> = features
@@ -575,11 +571,7 @@ fn output_cached_features(
         | OutputFormat::Dot
         | OutputFormat::Tree => {
             // Build columns list, adding ID column if --show-id is set
-            let mut columns: Vec<&str> = if args.show_id {
-                vec!["id"]
-            } else {
-                vec![]
-            };
+            let mut columns: Vec<&str> = if args.show_id { vec!["id"] } else { vec![] };
             columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
 
             let rows: Vec<TableRow> = features

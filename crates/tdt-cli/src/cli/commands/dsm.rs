@@ -501,16 +501,10 @@ fn add_mate_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()> {
         if let Ok(content) = fs::read_to_string(&mate_entity.file_path) {
             if let Ok(mate) = serde_yml::from_str::<serde_json::Value>(&content) {
                 // Get component IDs from mate via feature_a and feature_b
-                let comp_a = get_component_from_feature_field(
-                    &mate,
-                    "feature_a",
-                    &feature_to_component,
-                );
-                let comp_b = get_component_from_feature_field(
-                    &mate,
-                    "feature_b",
-                    &feature_to_component,
-                );
+                let comp_a =
+                    get_component_from_feature_field(&mate, "feature_a", &feature_to_component);
+                let comp_b =
+                    get_component_from_feature_field(&mate, "feature_b", &feature_to_component);
 
                 if let (Some(cmp1), Some(cmp2)) = (comp_a, comp_b) {
                     if cmp1 != cmp2 {
@@ -571,9 +565,7 @@ fn add_tolerance_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()>
                 // Collect all unique components in the stackup
                 let mut stackup_components: Vec<String> = Vec::new();
 
-                if let Some(contributors) =
-                    stackup.get("contributors").and_then(|c| c.as_array())
-                {
+                if let Some(contributors) = stackup.get("contributors").and_then(|c| c.as_array()) {
                     for contrib in contributors {
                         let comp_id = if let Some(feat_id) =
                             contrib.get("feature_id").and_then(|v| v.as_str())
@@ -582,13 +574,11 @@ fn add_tolerance_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()>
                             feature_to_component.get(feat_id).cloned()
                         } else if let Some(feature) = contrib.get("feature") {
                             // Nested feature object
-                            if let Some(cid) =
-                                feature.get("component_id").and_then(|v| v.as_str())
+                            if let Some(cid) = feature.get("component_id").and_then(|v| v.as_str())
                             {
                                 // Has component_id directly
                                 Some(cid.to_string())
-                            } else if let Some(feat_id) =
-                                feature.get("id").and_then(|v| v.as_str())
+                            } else if let Some(feat_id) = feature.get("id").and_then(|v| v.as_str())
                             {
                                 // Only has feature id - look up component
                                 feature_to_component.get(feat_id).cloned()

@@ -476,11 +476,7 @@ fn output_quotes(
         | OutputFormat::Dot
         | OutputFormat::Tree => {
             // Build columns list, adding ID column if --show-id is set
-            let mut columns: Vec<&str> = if args.show_id {
-                vec!["id"]
-            } else {
-                vec![]
-            };
+            let mut columns: Vec<&str> = if args.show_id { vec!["id"] } else { vec![] };
             columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
 
             let rows: Vec<TableRow> = quotes.iter().map(|q| quote_to_row(q, short_ids)).collect();
@@ -651,11 +647,7 @@ fn output_cached_quotes(
         | OutputFormat::Dot
         | OutputFormat::Tree => {
             // Build columns list, adding ID column if --show-id is set
-            let mut columns: Vec<&str> = if args.show_id {
-                vec!["id"]
-            } else {
-                vec![]
-            };
+            let mut columns: Vec<&str> = if args.show_id { vec!["id"] } else { vec![] };
             columns.extend(args.columns.iter().map(|c| c.to_string().leak() as &str));
 
             let rows: Vec<TableRow> = quotes

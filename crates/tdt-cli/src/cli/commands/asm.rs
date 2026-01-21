@@ -1493,7 +1493,8 @@ fn run_cost(args: CostArgs) -> Result<()> {
             if let Some(ref qid) = line.quote_id {
                 if let Some(quote) = quote_map.get(qid) {
                     if quote.is_expired() && args.warn_expired {
-                        let valid_until = quote.valid_until.map(|d| d.to_string()).unwrap_or_default();
+                        let valid_until =
+                            quote.valid_until.map(|d| d.to_string()).unwrap_or_default();
                         if !expired_warnings.iter().any(|(_, t, _)| t == &line.title) {
                             expired_warnings.push((qid.clone(), line.title.clone(), valid_until));
                         }
@@ -1503,7 +1504,10 @@ fn run_cost(args: CostArgs) -> Result<()> {
                 // No quote used - check if quotes are available but unselected
                 if let Some(cmp_quotes) = component_quotes.get(&line.component_id) {
                     if !cmp_quotes.is_empty() {
-                        if !unselected_warnings.iter().any(|(id, _, _)| id == &line.component_id) {
+                        if !unselected_warnings
+                            .iter()
+                            .any(|(id, _, _)| id == &line.component_id)
+                        {
                             unselected_warnings.push((
                                 line.component_id.clone(),
                                 line.title.clone(),
@@ -2737,12 +2741,24 @@ fn collect_bom_ids_from_cache(
             if !visited.contains(&item.assembly_id) {
                 visited.insert(item.assembly_id.clone());
                 assembly_ids.insert(item.assembly_id.clone());
-                collect_recursive(cache, &item.assembly_id, component_ids, assembly_ids, visited);
+                collect_recursive(
+                    cache,
+                    &item.assembly_id,
+                    component_ids,
+                    assembly_ids,
+                    visited,
+                );
             }
         }
     }
 
-    collect_recursive(cache, assembly_id, &mut component_ids, &mut assembly_ids, &mut visited);
+    collect_recursive(
+        cache,
+        assembly_id,
+        &mut component_ids,
+        &mut assembly_ids,
+        &mut visited,
+    );
     (component_ids, assembly_ids)
 }
 

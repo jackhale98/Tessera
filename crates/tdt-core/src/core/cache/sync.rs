@@ -498,18 +498,14 @@ impl EntityCache {
             if let Some(bom) = value.get("bom").and_then(|v| v.as_sequence()) {
                 for item in bom {
                     if let Some(component_id) = item.get("component_id").and_then(|v| v.as_str()) {
-                        let quantity = item
-                            .get("quantity")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(1) as u32;
+                        let quantity =
+                            item.get("quantity").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
                         let ref_des = item
                             .get("reference_designators")
                             .and_then(|v| v.as_sequence())
                             .map(|seq| {
                                 serde_json::to_string(
-                                    &seq.iter()
-                                        .filter_map(|v| v.as_str())
-                                        .collect::<Vec<_>>(),
+                                    &seq.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
                                 )
                                 .unwrap_or_default()
                             });
@@ -825,9 +821,7 @@ impl EntityCache {
 
     pub(super) fn cache_result_data(&self, id: &str, value: &serde_yml::Value) -> Result<()> {
         // Try test_id first, fall back to test for backwards compatibility
-        let test_id = value["test_id"]
-            .as_str()
-            .or_else(|| value["test"].as_str());
+        let test_id = value["test_id"].as_str().or_else(|| value["test"].as_str());
 
         self.conn
             .execute(
