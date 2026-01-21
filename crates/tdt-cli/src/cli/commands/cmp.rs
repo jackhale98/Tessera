@@ -999,6 +999,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         global,
     );
 
+    // Sync cache after creation
+    super::utils::sync_cache(&project);
+
     // Open in editor if requested
     if args.edit || (!args.no_edit && !args.interactive) {
         println!();
@@ -1375,6 +1378,9 @@ fn run_set_quote(args: SetQuoteArgs) -> Result<()> {
         println!("   (Previously: {})", style(old_display).dim());
     }
 
+    // Sync cache after quote selection change
+    super::utils::sync_cache(&project);
+
     Ok(())
 }
 
@@ -1435,6 +1441,9 @@ fn run_clear_quote(args: ClearQuoteArgs) -> Result<()> {
             style("Note: No unit_cost set. BOM costing will show $0.00").yellow()
         );
     }
+
+    // Sync cache after quote selection change
+    super::utils::sync_cache(&project);
 
     Ok(())
 }
@@ -1567,6 +1576,9 @@ fn run_routing_add(args: RoutingAddArgs) -> Result<()> {
         if new_len == 1 { "" } else { "s" }
     );
 
+    // Sync cache after routing change
+    super::utils::sync_cache(&project);
+
     Ok(())
 }
 
@@ -1640,6 +1652,9 @@ fn run_routing_rm(args: RoutingRmArgs) -> Result<()> {
         new_len,
         if new_len == 1 { "" } else { "s" }
     );
+
+    // Sync cache after routing change
+    super::utils::sync_cache(&project);
 
     Ok(())
 }
@@ -1763,6 +1778,9 @@ fn run_routing_set(args: RoutingSetArgs) -> Result<()> {
             if old_len == 1 { "" } else { "s" }
         );
     }
+
+    // Sync cache after routing change
+    super::utils::sync_cache(&project);
 
     Ok(())
 }

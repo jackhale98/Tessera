@@ -203,6 +203,33 @@ impl EntityCache {
                 FOREIGN KEY (id) REFERENCES entities(id) ON DELETE CASCADE
             );
 
+            -- BOM items (assembly → component relationships with quantities)
+            -- NOTE: No FK constraints because entities may be processed in arbitrary order during sync.
+            -- Orphaned entries are cleaned up when the parent assembly is removed (see remove_entity).
+            CREATE TABLE IF NOT EXISTS bom_items (
+                id INTEGER PRIMARY KEY,
+                assembly_id TEXT NOT NULL,
+                component_id TEXT NOT NULL,
+                quantity INTEGER NOT NULL DEFAULT 1,
+                reference_designators TEXT,
+                UNIQUE(assembly_id, component_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_bom_items_assembly ON bom_items(assembly_id);
+            CREATE INDEX IF NOT EXISTS idx_bom_items_component ON bom_items(component_id);
+
+            -- Subassembly items (parent assembly → child assembly relationships with quantities)
+            -- NOTE: No FK constraints because entities may be processed in arbitrary order during sync.
+            -- Orphaned entries are cleaned up when the parent assembly is removed (see remove_entity).
+            CREATE TABLE IF NOT EXISTS subassembly_items (
+                id INTEGER PRIMARY KEY,
+                parent_assembly_id TEXT NOT NULL,
+                child_assembly_id TEXT NOT NULL,
+                quantity INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(parent_assembly_id, child_assembly_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_subassembly_parent ON subassembly_items(parent_assembly_id);
+            CREATE INDEX IF NOT EXISTS idx_subassembly_child ON subassembly_items(child_assembly_id);
+
             -- Result-specific data
             CREATE TABLE IF NOT EXISTS results (
                 id TEXT PRIMARY KEY,

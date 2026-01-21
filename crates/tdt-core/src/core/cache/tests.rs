@@ -1110,3 +1110,443 @@ traces_to:
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].target_id, "REQ-0003C");
 }
+
+// =========================================================================
+// BOM Cache Tests
+// =========================================================================
+
+#[test]
+fn test_bom_items_caching() {
+    let (_tmp, project) = create_test_project();
+
+    // Create components first (required for foreign key constraints)
+    write_test_entity(
+        &project,
+        "bom/components/CMP-01BOLT.tdt.yaml",
+        r#"
+id: CMP-01BOLT
+title: M5 Bolt
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/components/CMP-02WASHER.tdt.yaml",
+        r#"
+id: CMP-02WASHER
+title: M5 Washer
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    // Create an assembly with BOM items
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-01TOP.tdt.yaml",
+        r#"
+id: ASM-01TOP
+title: Top Level Assembly
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+bom:
+  - component_id: CMP-01BOLT
+    quantity: 4
+    reference_designators:
+      - "H1"
+      - "H2"
+      - "H3"
+      - "H4"
+  - component_id: CMP-02WASHER
+    quantity: 8
+"#,
+    );
+
+    let mut cache = EntityCache::open_without_sync(&project).unwrap();
+    cache.rebuild().unwrap();
+
+    // Query BOM items
+    let bom_items = cache.get_bom_items("ASM-01TOP");
+    assert_eq!(bom_items.len(), 2, "Expected 2 BOM items");
+
+    // Verify quantities
+    let bolt_item = bom_items.iter().find(|i| i.component_id == "CMP-01BOLT");
+    assert!(bolt_item.is_some(), "Should find bolt in BOM");
+    assert_eq!(bolt_item.unwrap().quantity, 4);
+    assert!(bolt_item.unwrap().reference_designators.is_some());
+
+    let washer_item = bom_items.iter().find(|i| i.component_id == "CMP-02WASHER");
+    assert!(washer_item.is_some(), "Should find washer in BOM");
+    assert_eq!(washer_item.unwrap().quantity, 8);
+}
+
+#[test]
+fn test_subassembly_items_caching() {
+    let (_tmp, project) = create_test_project();
+
+    // Create an assembly with subassemblies
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-01TOP.tdt.yaml",
+        r#"
+id: ASM-01TOP
+title: Top Level Assembly
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+subassemblies:
+  - ASM-02SUB
+  - ASM-03SUB
+"#,
+    );
+
+    // Create subassemblies
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-02SUB.tdt.yaml",
+        r#"
+id: ASM-02SUB
+title: Subassembly 2
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-03SUB.tdt.yaml",
+        r#"
+id: ASM-03SUB
+title: Subassembly 3
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    let mut cache = EntityCache::open_without_sync(&project).unwrap();
+    cache.rebuild().unwrap();
+
+    // Query subassembly items
+    let sub_items = cache.get_subassembly_items("ASM-01TOP");
+    assert_eq!(sub_items.len(), 2, "Expected 2 subassembly items");
+
+    // Default quantity is 1 for string-format subassemblies
+    for item in &sub_items {
+        assert_eq!(item.quantity, 1, "Default quantity should be 1");
+    }
+
+    let sub_ids: Vec<&str> = sub_items.iter().map(|i| i.assembly_id.as_str()).collect();
+    assert!(sub_ids.contains(&"ASM-02SUB"));
+    assert!(sub_ids.contains(&"ASM-03SUB"));
+}
+
+#[test]
+fn test_flattened_bom_simple() {
+    let (_tmp, project) = create_test_project();
+
+    // Create components first
+    write_test_entity(
+        &project,
+        "bom/components/CMP-01A.tdt.yaml",
+        r#"
+id: CMP-01A
+title: Component A
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/components/CMP-02B.tdt.yaml",
+        r#"
+id: CMP-02B
+title: Component B
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    // Create a simple assembly with direct components
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-01TOP.tdt.yaml",
+        r#"
+id: ASM-01TOP
+title: Simple Assembly
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+bom:
+  - component_id: CMP-01A
+    quantity: 2
+  - component_id: CMP-02B
+    quantity: 3
+"#,
+    );
+
+    let mut cache = EntityCache::open_without_sync(&project).unwrap();
+    cache.rebuild().unwrap();
+
+    // Get flattened BOM
+    let flattened = cache.get_flattened_bom("ASM-01TOP");
+    assert_eq!(flattened.len(), 2, "Expected 2 components in flattened BOM");
+
+    let cmp_a = flattened.iter().find(|i| i.component_id == "CMP-01A");
+    assert!(cmp_a.is_some());
+    assert_eq!(cmp_a.unwrap().effective_qty, 2);
+
+    let cmp_b = flattened.iter().find(|i| i.component_id == "CMP-02B");
+    assert!(cmp_b.is_some());
+    assert_eq!(cmp_b.unwrap().effective_qty, 3);
+}
+
+#[test]
+fn test_flattened_bom_with_subassemblies() {
+    let (_tmp, project) = create_test_project();
+
+    // Create a hierarchy:
+    // TOP (qty 1)
+    //   ├─ SUB-A (qty 2)
+    //   │   └─ CMP-01 (qty 3) => effective: 6
+    //   └─ SUB-B (qty 1)
+    //       └─ CMP-01 (qty 2) => effective: 2
+    //       └─ CMP-02 (qty 4) => effective: 4
+    // Total CMP-01: 6 + 2 = 8, CMP-02: 4
+
+    // Create components first
+    write_test_entity(
+        &project,
+        "bom/components/CMP-01SHARED.tdt.yaml",
+        r#"
+id: CMP-01SHARED
+title: Shared Component
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/components/CMP-02UNIQUE.tdt.yaml",
+        r#"
+id: CMP-02UNIQUE
+title: Unique Component
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-01TOP.tdt.yaml",
+        r#"
+id: ASM-01TOP
+title: Top Level Assembly
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+subassemblies:
+  - id: ASM-02SUBA
+    quantity: 2
+  - id: ASM-03SUBB
+    quantity: 1
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-02SUBA.tdt.yaml",
+        r#"
+id: ASM-02SUBA
+title: Subassembly A
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+bom:
+  - component_id: CMP-01SHARED
+    quantity: 3
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-03SUBB.tdt.yaml",
+        r#"
+id: ASM-03SUBB
+title: Subassembly B
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+bom:
+  - component_id: CMP-01SHARED
+    quantity: 2
+  - component_id: CMP-02UNIQUE
+    quantity: 4
+"#,
+    );
+
+    let mut cache = EntityCache::open_without_sync(&project).unwrap();
+    cache.rebuild().unwrap();
+
+    // Get flattened BOM
+    let flattened = cache.get_flattened_bom("ASM-01TOP");
+
+    // Should have 2 unique components
+    assert_eq!(flattened.len(), 2, "Expected 2 unique components");
+
+    // CMP-01SHARED should have qty 8 (2*3 + 1*2)
+    let cmp_shared = flattened.iter().find(|i| i.component_id == "CMP-01SHARED");
+    assert!(cmp_shared.is_some(), "Should find CMP-01SHARED");
+    assert_eq!(
+        cmp_shared.unwrap().effective_qty, 8,
+        "CMP-01SHARED should have effective qty 8 (2*3 + 1*2)"
+    );
+
+    // CMP-02UNIQUE should have qty 4 (1*4)
+    let cmp_unique = flattened.iter().find(|i| i.component_id == "CMP-02UNIQUE");
+    assert!(cmp_unique.is_some(), "Should find CMP-02UNIQUE");
+    assert_eq!(
+        cmp_unique.unwrap().effective_qty, 4,
+        "CMP-02UNIQUE should have effective qty 4 (1*4)"
+    );
+}
+
+#[test]
+fn test_flattened_bom_handles_circular_reference() {
+    let (_tmp, project) = create_test_project();
+
+    // Create components first
+    write_test_entity(
+        &project,
+        "bom/components/CMP-01A.tdt.yaml",
+        r#"
+id: CMP-01A
+title: Component A
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/components/CMP-02B.tdt.yaml",
+        r#"
+id: CMP-02B
+title: Component B
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    // Create circular reference: ASM-A contains ASM-B, ASM-B contains ASM-A (invalid but shouldn't crash)
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-01CIRCULAR.tdt.yaml",
+        r#"
+id: ASM-01CIRCULAR
+title: Circular A
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+bom:
+  - component_id: CMP-01A
+    quantity: 1
+subassemblies:
+  - ASM-02CIRCULAR
+"#,
+    );
+
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-02CIRCULAR.tdt.yaml",
+        r#"
+id: ASM-02CIRCULAR
+title: Circular B
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+bom:
+  - component_id: CMP-02B
+    quantity: 2
+subassemblies:
+  - ASM-01CIRCULAR
+"#,
+    );
+
+    let mut cache = EntityCache::open_without_sync(&project).unwrap();
+    cache.rebuild().unwrap();
+
+    // Should not hang or crash - should visit each assembly only once
+    let flattened = cache.get_flattened_bom("ASM-01CIRCULAR");
+
+    // Should have collected components from both assemblies
+    assert_eq!(flattened.len(), 2, "Should have 2 components despite circular reference");
+
+    let cmp_a = flattened.iter().find(|i| i.component_id == "CMP-01A");
+    assert!(cmp_a.is_some());
+
+    let cmp_b = flattened.iter().find(|i| i.component_id == "CMP-02B");
+    assert!(cmp_b.is_some());
+}
+
+#[test]
+fn test_bom_items_empty_assembly() {
+    let (_tmp, project) = create_test_project();
+
+    // Create an assembly with no BOM
+    write_test_entity(
+        &project,
+        "bom/assemblies/ASM-01EMPTY.tdt.yaml",
+        r#"
+id: ASM-01EMPTY
+title: Empty Assembly
+status: draft
+author: Test
+created: 2024-01-15T10:30:00Z
+"#,
+    );
+
+    let mut cache = EntityCache::open_without_sync(&project).unwrap();
+    cache.rebuild().unwrap();
+
+    // Query BOM items - should be empty
+    let bom_items = cache.get_bom_items("ASM-01EMPTY");
+    assert!(bom_items.is_empty(), "Empty assembly should have no BOM items");
+
+    let sub_items = cache.get_subassembly_items("ASM-01EMPTY");
+    assert!(sub_items.is_empty(), "Empty assembly should have no subassembly items");
+
+    let flattened = cache.get_flattened_bom("ASM-01EMPTY");
+    assert!(flattened.is_empty(), "Empty assembly should have no components in flattened BOM");
+}
+
+#[test]
+fn test_bom_items_nonexistent_assembly() {
+    let (_tmp, project) = create_test_project();
+    let mut cache = EntityCache::open_without_sync(&project).unwrap();
+    cache.rebuild().unwrap();
+
+    // Query BOM items for non-existent assembly - should return empty
+    let bom_items = cache.get_bom_items("ASM-NONEXISTENT");
+    assert!(bom_items.is_empty());
+
+    let sub_items = cache.get_subassembly_items("ASM-NONEXISTENT");
+    assert!(sub_items.is_empty());
+
+    let flattened = cache.get_flattened_bom("ASM-NONEXISTENT");
+    assert!(flattened.is_empty());
+}

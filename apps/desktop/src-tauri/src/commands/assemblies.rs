@@ -9,7 +9,7 @@ use tdt_core::core::entity::Status;
 use tdt_core::entities::assembly::{Assembly, BomItem};
 use tdt_core::services::assembly::{
     AssemblyFilter, AssemblyService, AssemblySortField, AssemblyStats, BomCostResult,
-    BomMassResult, BomNode, CreateAssembly, UpdateAssembly,
+    BomCostResultDetailed, BomMassResult, BomNode, CreateAssembly, UpdateAssembly,
 };
 use tdt_core::services::common::SortDirection;
 
@@ -550,6 +550,43 @@ pub async fn calculate_assembly_cost(
 
     let service = AssemblyService::new(project, cache);
     let result = service.calculate_cost(&id, quantity.unwrap_or(1))?;
+
+    Ok(result)
+}
+
+/// Calculate detailed cost for an assembly using cache-optimized BOM traversal
+///
+/// This is the preferred method for cost calculation as it:
+/// - Uses the cache for fast BOM hierarchy traversal
+/// - Returns detailed per-component cost breakdown
+/// - Includes price break tier information
+/// - Tracks NRE (non-recurring engineering) costs separately
+///
+/// Parameters:
+/// - `id`: Assembly ID
+/// - `production_qty`: Number of assemblies to build (affects price break selection)
+#[tauri::command]
+pub async fn calculate_assembly_cost_detailed(
+    id: String,
+    production_qty: Option<u32>,
+    state: State<'_, AppState>,
+) -> CommandResult<BomCostResultDetailed> {
+    // Sync cache first to ensure fresh BOM data
+    {
+        let mut cache_guard = state.cache.lock().unwrap();
+        if let Some(cache) = cache_guard.as_mut() {
+            let _ = cache.sync();
+        }
+    }
+
+    let project = state.project.lock().unwrap();
+    let cache = state.cache.lock().unwrap();
+
+    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+
+    let service = AssemblyService::new(project, cache);
+    let result = service.calculate_cost_cached(&id, production_qty.unwrap_or(1))?;
 
     Ok(result)
 }

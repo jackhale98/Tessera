@@ -38,6 +38,8 @@ impl EntityCache {
             DELETE FROM assemblies;
             DELETE FROM results;
             DELETE FROM links;
+            DELETE FROM bom_items;
+            DELETE FROM subassembly_items;
             "#,
             )
             .into_diagnostic()?;
@@ -305,6 +307,22 @@ impl EntityCache {
             )
             .into_diagnostic()?;
 
+        // Delete BOM items (for assemblies)
+        self.conn
+            .execute(
+                "DELETE FROM bom_items WHERE assembly_id = ?1 OR component_id = ?1",
+                params![id],
+            )
+            .into_diagnostic()?;
+
+        // Delete subassembly items (for assemblies)
+        self.conn
+            .execute(
+                "DELETE FROM subassembly_items WHERE parent_assembly_id = ?1 OR child_assembly_id = ?1",
+                params![id],
+            )
+            .into_diagnostic()?;
+
         Ok(())
     }
 
@@ -435,6 +453,79 @@ impl EntityCache {
             }
         }
 
+        // Special handling for assembly BOM and subassemblies
+        if source_id.starts_with("ASM-") {
+            // Clear existing BOM data for this assembly before re-inserting
+            self.conn
+                .execute(
+                    "DELETE FROM bom_items WHERE assembly_id = ?1",
+                    params![source_id],
+                )
+                .into_diagnostic()?;
+            self.conn
+                .execute(
+                    "DELETE FROM subassembly_items WHERE parent_assembly_id = ?1",
+                    params![source_id],
+                )
+                .into_diagnostic()?;
+
+            // Extract subassembly references with quantities
+            if let Some(subassemblies) = value.get("subassemblies").and_then(|v| v.as_sequence()) {
+                for subasm in subassemblies {
+                    // Subassemblies can be either a simple string ID or an object with id and quantity
+                    if let Some(subasm_id) = subasm.as_str() {
+                        // Simple string format: assume quantity = 1
+                        self.insert_link(source_id, subasm_id, "contains_subassembly")?;
+                        self.insert_subassembly_item(source_id, subasm_id, 1)?;
+                    } else if let Some(subasm_obj) = subasm.as_mapping() {
+                        // Object format: {id: "ASM-...", quantity: N}
+                        if let Some(subasm_id) = subasm_obj
+                            .get(&serde_yml::Value::String("id".to_string()))
+                            .and_then(|v| v.as_str())
+                        {
+                            let quantity = subasm_obj
+                                .get(&serde_yml::Value::String("quantity".to_string()))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(1) as u32;
+                            self.insert_link(source_id, subasm_id, "contains_subassembly")?;
+                            self.insert_subassembly_item(source_id, subasm_id, quantity)?;
+                        }
+                    }
+                }
+            }
+
+            // Extract BOM component references with quantities
+            if let Some(bom) = value.get("bom").and_then(|v| v.as_sequence()) {
+                for item in bom {
+                    if let Some(component_id) = item.get("component_id").and_then(|v| v.as_str()) {
+                        let quantity = item
+                            .get("quantity")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(1) as u32;
+                        let ref_des = item
+                            .get("reference_designators")
+                            .and_then(|v| v.as_sequence())
+                            .map(|seq| {
+                                serde_json::to_string(
+                                    &seq.iter()
+                                        .filter_map(|v| v.as_str())
+                                        .collect::<Vec<_>>(),
+                                )
+                                .unwrap_or_default()
+                            });
+
+                        self.insert_link(source_id, component_id, "contains_component")?;
+                        self.insert_bom_item(
+                            source_id,
+                            component_id,
+                            quantity,
+                            ref_des.as_deref(),
+                        )?;
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -448,6 +539,41 @@ impl EntityCache {
             .execute(
                 "INSERT OR IGNORE INTO links (source_id, target_id, link_type) VALUES (?1, ?2, ?3)",
                 params![source_id, target_id, link_type],
+            )
+            .into_diagnostic()?;
+        Ok(())
+    }
+
+    /// Insert a BOM item (assembly → component relationship with quantity)
+    pub(super) fn insert_bom_item(
+        &self,
+        assembly_id: &str,
+        component_id: &str,
+        quantity: u32,
+        reference_designators: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                r#"INSERT OR REPLACE INTO bom_items (assembly_id, component_id, quantity, reference_designators)
+                   VALUES (?1, ?2, ?3, ?4)"#,
+                params![assembly_id, component_id, quantity, reference_designators],
+            )
+            .into_diagnostic()?;
+        Ok(())
+    }
+
+    /// Insert a subassembly item (parent assembly → child assembly relationship with quantity)
+    pub(super) fn insert_subassembly_item(
+        &self,
+        parent_assembly_id: &str,
+        child_assembly_id: &str,
+        quantity: u32,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                r#"INSERT OR REPLACE INTO subassembly_items (parent_assembly_id, child_assembly_id, quantity)
+                   VALUES (?1, ?2, ?3)"#,
+                params![parent_assembly_id, child_assembly_id, quantity],
             )
             .into_diagnostic()?;
         Ok(())

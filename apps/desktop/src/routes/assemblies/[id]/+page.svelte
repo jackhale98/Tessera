@@ -8,7 +8,7 @@
 	import { StatusBadge } from '$lib/components/common';
 	import { entities, traceability, assemblies } from '$lib/api/tauri';
 	import type { EntityData } from '$lib/api/types';
-	import type { LinkInfo, BomNode, BomCostResult, BomMassResult } from '$lib/api/tauri';
+	import type { LinkInfo, BomNode, BomCostResult, BomMassResult, BomCostResultDetailed, ComponentCostLine } from '$lib/api/tauri';
 	import {
 		Layers,
 		User,
@@ -35,6 +35,7 @@
 	let linksTo = $state<LinkInfo[]>([]);
 	let bomTree = $state<BomNode | null>(null);
 	let costResult = $state<BomCostResult | null>(null);
+	let costResultDetailed = $state<BomCostResultDetailed | null>(null);
 	let massResult = $state<BomMassResult | null>(null);
 	let loading = $state(true);
 	let linksLoading = $state(true);
@@ -155,14 +156,16 @@
 
 		bomLoading = true;
 		try {
-			const [tree, cost, mass] = await Promise.all([
+			const [tree, cost, costDetailed, mass] = await Promise.all([
 				assemblies.getBomTree(id, qty),
 				assemblies.calculateCost(id, qty),
+				assemblies.calculateCostDetailed(id, qty),
 				assemblies.calculateMass(id, qty)
 			]);
 
 			bomTree = tree;
 			costResult = cost;
+			costResultDetailed = costDetailed;
 			massResult = mass;
 
 			// Auto-expand root
@@ -284,6 +287,16 @@
 
 	const flatBomRows = $derived(bomTree ? flattenBomTree(bomTree).slice(1) : []); // Skip root assembly
 
+	// Helper to get detailed cost info for a component
+	function getComponentCostDetails(componentId: string): ComponentCostLine | undefined {
+		if (!costResultDetailed) return undefined;
+		return costResultDetailed.component_costs.find(c => c.component_id === componentId);
+	}
+
+	// Use detailed unit cost if available
+	const unitCostDetailed = $derived(costResultDetailed?.total_unit_cost ?? null);
+	const nreCostDetailed = $derived(costResultDetailed?.total_nre_cost ?? null);
+
 	$effect(() => {
 		// Only load if we have an ID and haven't already loaded this ID
 		if (id && id !== loadedId) {
@@ -363,14 +376,14 @@
 							<p class="py-4 text-center text-muted-foreground">No components in BOM</p>
 						{:else}
 							<!-- Summary Cards -->
-							<div class="mb-4 grid gap-4 md:grid-cols-3">
+							<div class="mb-4 grid gap-4 md:grid-cols-4">
 								<div class="rounded-lg border bg-muted/30 p-4">
 									<div class="flex items-center gap-2 text-sm text-muted-foreground">
 										<DollarSign class="h-4 w-4" />
 										Unit Cost
 									</div>
 									<div class="mt-1 text-2xl font-bold">
-										{formatCurrency(unitCost)}
+										{formatCurrency(unitCostDetailed ?? unitCost)}
 									</div>
 									{#if quantity > 1}
 										<p class="mt-1 text-xs text-muted-foreground">
@@ -384,8 +397,22 @@
 										Total Cost (x{quantity})
 									</div>
 									<div class="mt-1 text-2xl font-bold text-green-500">
-										{formatCurrency(costResult?.total_cost)}
+										{formatCurrency((unitCostDetailed ?? unitCost ?? 0) * quantity)}
 									</div>
+								</div>
+								<div class="rounded-lg border bg-muted/30 p-4">
+									<div class="flex items-center gap-2 text-sm text-muted-foreground">
+										<DollarSign class="h-4 w-4" />
+										NRE / Tooling
+									</div>
+									<div class="mt-1 text-2xl font-bold text-blue-500">
+										{formatCurrency(nreCostDetailed ?? costResult?.total_nre)}
+									</div>
+									{#if nreCostDetailed && nreCostDetailed > 0 && quantity > 1}
+										<p class="mt-1 text-xs text-muted-foreground">
+											{formatCurrency(nreCostDetailed / quantity)}/unit amortized
+										</p>
+									{/if}
 								</div>
 								<div class="rounded-lg border bg-muted/30 p-4">
 									<div class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -399,7 +426,22 @@
 							</div>
 
 							<!-- Warnings -->
-							{#if costResult && costResult.missing_cost.length > 0}
+							{#if costResultDetailed && costResultDetailed.warnings.length > 0}
+								<div class="mb-4 flex items-start gap-2 rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3">
+									<AlertTriangle class="mt-0.5 h-4 w-4 text-yellow-500" />
+									<div class="text-sm">
+										<span class="font-medium text-yellow-500">Cost Calculation Warnings</span>
+										<ul class="mt-1 list-disc list-inside text-muted-foreground">
+											{#each costResultDetailed.warnings.slice(0, 5) as warning}
+												<li>{warning}</li>
+											{/each}
+											{#if costResultDetailed.warnings.length > 5}
+												<li class="text-xs">...and {costResultDetailed.warnings.length - 5} more</li>
+											{/if}
+										</ul>
+									</div>
+								</div>
+							{:else if costResult && costResult.missing_cost.length > 0}
 								<div class="mb-4 flex items-start gap-2 rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3">
 									<AlertTriangle class="mt-0.5 h-4 w-4 text-yellow-500" />
 									<div class="text-sm">
@@ -527,10 +569,24 @@
 													{/if}
 												</TableCell>
 												<TableCell class="text-right font-mono text-sm">
-													{formatCurrency(row.node.unit_cost)}
+													{@const costDetails = getComponentCostDetails(row.node.id)}
+													<div class="flex items-center justify-end gap-1">
+														<span>{formatCurrency(costDetails?.unit_price ?? row.node.unit_cost)}</span>
+														{#if costDetails?.price_break_tier && costDetails.price_break_tier > 1}
+															<Badge variant="outline" class="ml-1 text-[10px] px-1 py-0 h-4">
+																{costDetails.price_break_tier}+
+															</Badge>
+														{/if}
+													</div>
+													{#if costDetails?.quote_id}
+														<p class="text-[10px] text-muted-foreground truncate max-w-24" title={costDetails.quote_id}>
+															{costDetails.quote_id.split('-')[0]}
+														</p>
+													{/if}
 												</TableCell>
 												<TableCell class="text-right font-mono text-sm font-medium">
-													{formatCurrency(row.node.extended_cost)}
+													{@const costDetails = getComponentCostDetails(row.node.id)}
+													{formatCurrency(costDetails?.extended_price ?? row.node.extended_cost)}
 												</TableCell>
 												<TableCell class="text-right font-mono text-sm">
 													{formatMass(row.node.extended_mass)}
@@ -542,10 +598,18 @@
 							</div>
 
 							<!-- NRE Costs -->
-							{#if costResult && costResult.total_nre > 0}
-								<div class="mt-4 flex items-center justify-between rounded-lg border bg-muted/30 p-3">
-									<span class="text-sm text-muted-foreground">NRE / Tooling Costs</span>
-									<span class="font-mono font-medium">{formatCurrency(costResult.total_nre)}</span>
+							{#if (nreCostDetailed ?? costResult?.total_nre ?? 0) > 0}
+								<div class="mt-4 rounded-lg border bg-muted/30 p-3">
+									<div class="flex items-center justify-between">
+										<span class="text-sm text-muted-foreground">NRE / Tooling Costs (one-time)</span>
+										<span class="font-mono font-medium">{formatCurrency(nreCostDetailed ?? costResult?.total_nre)}</span>
+									</div>
+									{#if quantity > 1}
+										<div class="mt-2 flex items-center justify-between text-sm">
+											<span class="text-muted-foreground">Amortized over {quantity} units</span>
+											<span class="font-mono text-blue-500">{formatCurrency((nreCostDetailed ?? costResult?.total_nre ?? 0) / quantity)}/unit</span>
+										</div>
+									{/if}
 								</div>
 							{/if}
 						{/if}
@@ -696,7 +760,7 @@
 				</Card>
 
 				<!-- Cost Summary -->
-				{#if costResult}
+				{#if costResult || costResultDetailed}
 					<Card>
 						<CardHeader>
 							<CardTitle class="flex items-center gap-2">
@@ -707,27 +771,48 @@
 						<CardContent class="space-y-4">
 							<div class="flex items-center justify-between">
 								<span class="text-sm text-muted-foreground">Unit Cost</span>
-								<span class="font-mono font-medium">{formatCurrency(unitCost)}</span>
+								<span class="font-mono font-medium">{formatCurrency(unitCostDetailed ?? unitCost)}</span>
 							</div>
 							<div class="flex items-center justify-between">
 								<span class="text-sm text-muted-foreground">Total (x{quantity})</span>
-								<span class="font-mono font-medium text-green-500">{formatCurrency(costResult.total_cost)}</span>
+								<span class="font-mono font-medium text-green-500">{formatCurrency((unitCostDetailed ?? unitCost ?? 0) * quantity)}</span>
 							</div>
-							{#if costResult.total_nre > 0}
+							{#if (nreCostDetailed ?? costResult?.total_nre ?? 0) > 0}
 								<div class="flex items-center justify-between">
 									<span class="text-sm text-muted-foreground">NRE Costs</span>
-									<span class="font-mono font-medium">{formatCurrency(costResult.total_nre)}</span>
+									<span class="font-mono font-medium text-blue-500">{formatCurrency(nreCostDetailed ?? costResult?.total_nre)}</span>
 								</div>
+								{#if quantity > 1}
+									<div class="flex items-center justify-between">
+										<span class="text-sm text-muted-foreground">Effective Unit</span>
+										<span class="font-mono text-xs">{formatCurrency((unitCostDetailed ?? unitCost ?? 0) + ((nreCostDetailed ?? costResult?.total_nre ?? 0) / quantity))}</span>
+									</div>
+								{/if}
 							{/if}
-							<div class="flex items-center justify-between">
-								<span class="text-sm text-muted-foreground">Components w/ Cost</span>
-								<Badge variant="default">{costResult.components_with_cost}</Badge>
-							</div>
-							{#if costResult.components_without_cost > 0}
+							{#if costResultDetailed}
+								{@const withCost = costResultDetailed.component_costs.filter(c => c.unit_price != null).length}
+								{@const withoutCost = costResultDetailed.component_costs.filter(c => c.unit_price == null).length}
 								<div class="flex items-center justify-between">
-									<span class="text-sm text-muted-foreground">Missing Cost</span>
-									<Badge variant="destructive">{costResult.components_without_cost}</Badge>
+									<span class="text-sm text-muted-foreground">Components w/ Cost</span>
+									<Badge variant="default">{withCost}</Badge>
 								</div>
+								{#if withoutCost > 0}
+									<div class="flex items-center justify-between">
+										<span class="text-sm text-muted-foreground">Missing Cost</span>
+										<Badge variant="destructive">{withoutCost}</Badge>
+									</div>
+								{/if}
+							{:else if costResult}
+								<div class="flex items-center justify-between">
+									<span class="text-sm text-muted-foreground">Components w/ Cost</span>
+									<Badge variant="default">{costResult.components_with_cost}</Badge>
+								</div>
+								{#if costResult.components_without_cost > 0}
+									<div class="flex items-center justify-between">
+										<span class="text-sm text-muted-foreground">Missing Cost</span>
+										<Badge variant="destructive">{costResult.components_without_cost}</Badge>
+									</div>
+								{/if}
 							{/if}
 						</CardContent>
 					</Card>

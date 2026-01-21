@@ -56,7 +56,8 @@ pub mod work_instruction;
 
 pub use assembly::{
     AssemblyFilter, AssemblyService, AssemblySortField, AssemblyStats, BomCostResult,
-    BomMassResult, BomNode, CreateAssembly, UpdateAssembly,
+    BomCostResultDetailed, BomMassResult, BomNode, ComponentCostLine, CreateAssembly,
+    UpdateAssembly,
 };
 pub use base::ServiceBase;
 pub use capa::{

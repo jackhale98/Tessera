@@ -540,6 +540,27 @@ export interface BomMassResult {
 	missing_mass: string[];
 }
 
+/** Per-component cost breakdown line */
+export interface ComponentCostLine {
+	component_id: string;
+	title: string;
+	part_number: string;
+	effective_qty: number;
+	unit_price?: number;
+	extended_price?: number;
+	quote_id?: string;
+	price_break_tier?: number;
+	nre_contribution: number;
+}
+
+/** Detailed BOM cost result with per-component breakdown */
+export interface BomCostResultDetailed {
+	total_unit_cost: number;
+	total_nre_cost: number;
+	component_costs: ComponentCostLine[];
+	warnings: string[];
+}
+
 export const assemblies = {
 	list: (params?: ListAssembliesParams) => call<ListAssembliesResult>('list_assemblies', { params }),
 	get: (id: string) => call<unknown>('get_assembly', { id }),
@@ -549,6 +570,8 @@ export const assemblies = {
 	getBomTree: (id: string, quantity?: number) => call<BomNode>('get_bom_tree', { id, quantity }),
 	calculateCost: (id: string, quantity?: number) =>
 		call<BomCostResult>('calculate_assembly_cost', { id, quantity }),
+	calculateCostDetailed: (id: string, productionQty?: number) =>
+		call<BomCostResultDetailed>('calculate_assembly_cost_detailed', { id, productionQty }),
 	calculateMass: (id: string, quantity?: number) =>
 		call<BomMassResult>('calculate_assembly_mass', { id, quantity }),
 	addComponent: (assemblyId: string, componentId: string, quantity: number) =>

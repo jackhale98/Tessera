@@ -1209,6 +1209,319 @@ impl<'a> AssemblyService<'a> {
 
         Ok(())
     }
+
+    // =========================================================================
+    // Cache-based BOM methods (Phase 2 - fast path using cache)
+    // =========================================================================
+
+    /// Get flattened BOM using cache (no assembly file reads)
+    ///
+    /// Returns all components in the BOM hierarchy with their effective quantities
+    /// accumulated from all paths. This is much faster than loading YAML files
+    /// for large assemblies as it uses the SQLite cache.
+    ///
+    /// Note: The cache must be synced (`cache.sync()`) after any BOM changes.
+    pub fn get_flattened_bom_cached(
+        &self,
+        assembly_id: &str,
+    ) -> ServiceResult<Vec<crate::core::cache::FlattenedBomItem>> {
+        Ok(self.cache.get_flattened_bom(assembly_id))
+    }
+
+    /// Batch-load components by IDs
+    ///
+    /// Loads only the specified components from the filesystem, avoiding
+    /// loading all components when only a subset is needed.
+    pub fn batch_load_components(
+        &self,
+        ids: &HashSet<&String>,
+    ) -> ServiceResult<HashMap<String, Component>> {
+        let cmp_dir = self.components_dir();
+        let mut result = HashMap::new();
+
+        for id in ids {
+            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, id)? {
+                result.insert(cmp.id.to_string(), cmp);
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Batch-load quotes by IDs
+    ///
+    /// Loads only the specified quotes from the filesystem.
+    pub fn batch_load_quotes(&self, ids: &HashSet<&String>) -> ServiceResult<HashMap<String, Quote>> {
+        let quotes_dir = self.quotes_dir();
+        let mut result = HashMap::new();
+
+        if !quotes_dir.exists() {
+            return Ok(result);
+        }
+
+        for id in ids {
+            if let Some((_, quote)) = loader::load_entity::<Quote>(&quotes_dir, id)? {
+                result.insert(quote.id.to_string(), quote);
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Calculate BOM cost using cache for hierarchy traversal (fast path)
+    ///
+    /// This is an optimized version of `calculate_cost()` that:
+    /// 1. Uses the cache for BOM hierarchy traversal (no assembly file reads)
+    /// 2. Batch-loads only the unique components and quotes needed
+    /// 3. Uses existing `Quote.price_for_qty()` logic for price breaks
+    ///
+    /// The `production_qty` parameter is the number of assemblies being built,
+    /// which affects price break calculations. For example, if building 100
+    /// assemblies and each needs 5 of component X, the purchase quantity is 500.
+    ///
+    /// Returns a detailed cost breakdown with per-line pricing info.
+    pub fn calculate_cost_cached(
+        &self,
+        assembly_id: &str,
+        production_qty: u32,
+    ) -> ServiceResult<BomCostResultDetailed> {
+        // 1. Get flattened BOM from cache (fast - no file reads)
+        let flattened = self.get_flattened_bom_cached(assembly_id)?;
+
+        // 2. Collect unique component IDs
+        let component_ids: HashSet<&String> = flattened.iter().map(|b| &b.component_id).collect();
+
+        // 3. Batch-load components (only the ones we need)
+        let components = self.batch_load_components(&component_ids)?;
+
+        // 4. Load quotes for pricing
+        // Note: We load all quotes rather than batch-loading by ID because we also need
+        // to look up quotes by component ID for fallback pricing. For projects with many
+        // quotes, this could be optimized further by caching quote data.
+        let quotes_dir = self.quotes_dir();
+        let all_quotes: Vec<Quote> = if quotes_dir.exists() {
+            loader::load_all(&quotes_dir)?
+        } else {
+            Vec::new()
+        };
+
+        // Build maps for efficient lookup
+        let quotes_by_id: HashMap<String, &Quote> =
+            all_quotes.iter().map(|q| (q.id.to_string(), q)).collect();
+        let quotes_by_component: HashMap<String, &Quote> = all_quotes
+            .iter()
+            .filter_map(|q| q.component.as_ref().map(|c| (c.clone(), q)))
+            .collect();
+
+        // 6. Calculate costs
+        let mut result = BomCostResultDetailed {
+            total_unit_cost: 0.0,
+            total_nre_cost: 0.0,
+            component_costs: Vec::new(),
+            warnings: Vec::new(),
+        };
+
+        let mut processed_quotes: HashSet<String> = HashSet::new();
+
+        for item in &flattened {
+            let cmp = match components.get(&item.component_id) {
+                Some(c) => c,
+                None => {
+                    result.warnings.push(format!(
+                        "Component {} not found in filesystem",
+                        item.component_id
+                    ));
+                    continue;
+                }
+            };
+
+            // Calculate effective quantity for this production run
+            let effective_qty = item.effective_qty;
+            let purchase_qty = effective_qty * production_qty;
+
+            // Resolve unit price using priority: selected_quote → component quotes → unit_cost
+            let (unit_price, quote_id, price_break_tier) =
+                self.resolve_component_price(cmp, purchase_qty, &quotes_by_id, &quotes_by_component);
+
+            // Calculate extended price
+            let extended_price = unit_price.map(|p| p * effective_qty as f64);
+
+            // Track NRE costs from quote (avoid double-counting)
+            let nre_contribution = if let Some(ref qid) = quote_id {
+                if !processed_quotes.contains(qid) {
+                    processed_quotes.insert(qid.clone());
+                    if let Some(quote) = quotes_by_id.get(qid) {
+                        quote.total_nre()
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+
+            // Add to totals
+            if let Some(ext) = extended_price {
+                result.total_unit_cost += ext;
+            }
+            result.total_nre_cost += nre_contribution;
+
+            // Record line item
+            result.component_costs.push(ComponentCostLine {
+                component_id: item.component_id.clone(),
+                title: cmp.title.clone(),
+                part_number: cmp.part_number.clone(),
+                effective_qty,
+                unit_price,
+                extended_price,
+                quote_id,
+                price_break_tier,
+                nre_contribution,
+            });
+        }
+
+        Ok(result)
+    }
+
+    /// Resolve price for a component using the standard priority chain
+    ///
+    /// Priority: selected_quote → quotes for component → unit_cost fallback
+    fn resolve_component_price(
+        &self,
+        cmp: &Component,
+        purchase_qty: u32,
+        quotes_by_id: &HashMap<String, &Quote>,
+        quotes_by_component: &HashMap<String, &Quote>,
+    ) -> (Option<f64>, Option<String>, Option<u32>) {
+        // 1. Try selected_quote first
+        if let Some(quote_id) = &cmp.selected_quote {
+            if let Some(quote) = quotes_by_id.get(quote_id) {
+                if let Some(price) = quote.price_for_qty(purchase_qty) {
+                    let tier = quote
+                        .price_breaks
+                        .iter()
+                        .filter(|pb| pb.min_qty <= purchase_qty)
+                        .map(|pb| pb.min_qty)
+                        .last();
+                    return (Some(price), Some(quote_id.clone()), tier);
+                }
+            }
+        }
+
+        // 2. Try quotes linked to this component
+        if let Some(quote) = quotes_by_component.get(&cmp.id.to_string()) {
+            if let Some(price) = quote.price_for_qty(purchase_qty) {
+                let tier = quote
+                    .price_breaks
+                    .iter()
+                    .filter(|pb| pb.min_qty <= purchase_qty)
+                    .map(|pb| pb.min_qty)
+                    .last();
+                return (Some(price), Some(quote.id.to_string()), tier);
+            }
+        }
+
+        // 3. Fall back to component's unit_cost
+        (cmp.unit_cost, None, None)
+    }
+}
+
+/// Detailed BOM cost result with per-line breakdown
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BomCostResultDetailed {
+    /// Total unit cost for one assembly (sum of extended prices)
+    pub total_unit_cost: f64,
+
+    /// Total NRE costs (tooling, setup, etc.) - one-time costs
+    pub total_nre_cost: f64,
+
+    /// Per-component cost breakdown
+    pub component_costs: Vec<ComponentCostLine>,
+
+    /// Warnings (missing components, etc.)
+    pub warnings: Vec<String>,
+}
+
+impl BomCostResultDetailed {
+    /// Get total cost for a production run
+    ///
+    /// `production_qty` - number of assemblies being built
+    /// `amortize_nre` - if true, amortize NRE over production_qty
+    pub fn total_production_cost(&self, production_qty: u32, amortize_nre: bool) -> f64 {
+        let unit_total = self.total_unit_cost * production_qty as f64;
+        if amortize_nre {
+            unit_total + self.total_nre_cost
+        } else {
+            unit_total
+        }
+    }
+
+    /// Get effective unit cost including amortized NRE
+    pub fn effective_unit_cost(&self, amortize_qty: u32) -> f64 {
+        if amortize_qty == 0 {
+            self.total_unit_cost
+        } else {
+            self.total_unit_cost + (self.total_nre_cost / amortize_qty as f64)
+        }
+    }
+
+    /// Count of components with pricing
+    pub fn components_with_cost(&self) -> usize {
+        self.component_costs
+            .iter()
+            .filter(|c| c.unit_price.is_some())
+            .count()
+    }
+
+    /// Count of components without pricing
+    pub fn components_without_cost(&self) -> usize {
+        self.component_costs
+            .iter()
+            .filter(|c| c.unit_price.is_none())
+            .count()
+    }
+
+    /// List of component IDs missing cost data
+    pub fn missing_cost_ids(&self) -> Vec<String> {
+        self.component_costs
+            .iter()
+            .filter(|c| c.unit_price.is_none())
+            .map(|c| c.component_id.clone())
+            .collect()
+    }
+}
+
+/// Cost line item for a single component in the BOM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComponentCostLine {
+    /// Component entity ID
+    pub component_id: String,
+
+    /// Component title
+    pub title: String,
+
+    /// Part number
+    pub part_number: String,
+
+    /// Effective quantity per assembly (accumulated from BOM hierarchy)
+    pub effective_qty: u32,
+
+    /// Unit price (from quote or component fallback)
+    pub unit_price: Option<f64>,
+
+    /// Extended price (unit_price × effective_qty)
+    pub extended_price: Option<f64>,
+
+    /// Quote ID used for pricing (if any)
+    pub quote_id: Option<String>,
+
+    /// Price break tier used (min_qty of the tier)
+    pub price_break_tier: Option<u32>,
+
+    /// NRE contribution from this quote (only counted once per quote)
+    pub nre_contribution: f64,
 }
 
 #[cfg(test)]
@@ -1723,5 +2036,278 @@ mod tests {
             .unwrap();
         assert_eq!(filtered.items.len(), 1);
         assert_eq!(filtered.items[0].part_number, "PROD-001");
+    }
+
+    // =========================================================================
+    // Cache-based cost calculation tests
+    // =========================================================================
+
+    #[test]
+    fn test_calculate_cost_cached_simple() {
+        let (tmp, project, mut cache) = setup_test_project();
+
+        // Create components with costs
+        let cmp1 = create_test_component(&tmp, "CMP-CC1", Some(10.0), None);
+        let cmp2 = create_test_component(&tmp, "CMP-CC2", Some(25.0), None);
+
+        let asm_id = {
+            let service = AssemblyService::new(&project, &cache);
+
+            // Create assembly
+            let asm = service
+                .create(CreateAssembly {
+                    part_number: "ASM-CACHED-COST".into(),
+                    title: "Cached Cost Test".into(),
+                    author: "Test".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+
+            service
+                .add_component(&asm.id.to_string(), &cmp1.id.to_string(), 4)
+                .unwrap();
+            service
+                .add_component(&asm.id.to_string(), &cmp2.id.to_string(), 2)
+                .unwrap();
+
+            asm.id.to_string()
+        };
+
+        // Sync cache so BOM items are populated
+        cache.sync().unwrap();
+
+        // Calculate cost using cache (new service instance)
+        let service = AssemblyService::new(&project, &cache);
+        let result = service.calculate_cost_cached(&asm_id, 1).unwrap();
+
+        // 4 * 10 + 2 * 25 = 90
+        assert_eq!(result.total_unit_cost, 90.0);
+        assert_eq!(result.components_with_cost(), 2);
+        assert_eq!(result.components_without_cost(), 0);
+        assert_eq!(result.component_costs.len(), 2);
+    }
+
+    #[test]
+    fn test_calculate_cost_cached_with_production_qty() {
+        let (tmp, project, mut cache) = setup_test_project();
+
+        // Create component with cost
+        let cmp = create_test_component(&tmp, "CMP-PQ", Some(5.0), None);
+
+        let asm_id = {
+            let service = AssemblyService::new(&project, &cache);
+
+            // Create assembly
+            let asm = service
+                .create(CreateAssembly {
+                    part_number: "ASM-PQ".into(),
+                    title: "Production Qty Test".into(),
+                    author: "Test".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+
+            service
+                .add_component(&asm.id.to_string(), &cmp.id.to_string(), 2)
+                .unwrap();
+
+            asm.id.to_string()
+        };
+
+        // Sync cache
+        cache.sync().unwrap();
+
+        // Calculate for production qty of 100 (new service instance)
+        let service = AssemblyService::new(&project, &cache);
+        let result = service.calculate_cost_cached(&asm_id, 100).unwrap();
+
+        // Unit cost is still 2 * 5 = 10 (per assembly)
+        assert_eq!(result.total_unit_cost, 10.0);
+
+        // Total production cost would be 10 * 100 = 1000
+        assert_eq!(result.total_production_cost(100, false), 1000.0);
+    }
+
+    #[test]
+    fn test_calculate_cost_cached_missing_cost() {
+        let (tmp, project, mut cache) = setup_test_project();
+
+        // Create component without cost
+        let cmp = create_test_component(&tmp, "CMP-NC", None, None);
+        let cmp_id = cmp.id.to_string();
+
+        let asm_id = {
+            let service = AssemblyService::new(&project, &cache);
+
+            // Create assembly
+            let asm = service
+                .create(CreateAssembly {
+                    part_number: "ASM-NC".into(),
+                    title: "No Cost Test".into(),
+                    author: "Test".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+
+            service
+                .add_component(&asm.id.to_string(), &cmp_id, 3)
+                .unwrap();
+
+            asm.id.to_string()
+        };
+
+        // Sync cache
+        cache.sync().unwrap();
+
+        let service = AssemblyService::new(&project, &cache);
+        let result = service.calculate_cost_cached(&asm_id, 1).unwrap();
+
+        assert_eq!(result.total_unit_cost, 0.0);
+        assert_eq!(result.components_with_cost(), 0);
+        assert_eq!(result.components_without_cost(), 1);
+        assert_eq!(result.missing_cost_ids(), vec![cmp_id]);
+    }
+
+    #[test]
+    fn test_calculate_cost_cached_with_subassembly() {
+        let (tmp, project, mut cache) = setup_test_project();
+
+        // Create components
+        let cmp1 = create_test_component(&tmp, "CMP-SUB1", Some(10.0), None);
+        let cmp2 = create_test_component(&tmp, "CMP-SUB2", Some(20.0), None);
+
+        let parent_id = {
+            let service = AssemblyService::new(&project, &cache);
+
+            // Create sub-assembly with cmp1 (qty 2)
+            let sub_asm = service
+                .create(CreateAssembly {
+                    part_number: "SUB-ASM".into(),
+                    title: "Sub Assembly".into(),
+                    author: "Test".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+            service
+                .add_component(&sub_asm.id.to_string(), &cmp1.id.to_string(), 2)
+                .unwrap();
+
+            // Create parent assembly with sub-assembly and cmp2 (qty 3)
+            let parent = service
+                .create(CreateAssembly {
+                    part_number: "PARENT-ASM".into(),
+                    title: "Parent Assembly".into(),
+                    author: "Test".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+            service
+                .add_subassembly(&parent.id.to_string(), &sub_asm.id.to_string())
+                .unwrap();
+            service
+                .add_component(&parent.id.to_string(), &cmp2.id.to_string(), 3)
+                .unwrap();
+
+            parent.id.to_string()
+        };
+
+        // Sync cache
+        cache.sync().unwrap();
+
+        let service = AssemblyService::new(&project, &cache);
+        let result = service.calculate_cost_cached(&parent_id, 1).unwrap();
+
+        // Sub-assembly: 2 * 10 = 20
+        // Parent direct: 3 * 20 = 60
+        // Total: 20 + 60 = 80
+        assert_eq!(result.total_unit_cost, 80.0);
+        assert_eq!(result.components_with_cost(), 2);
+    }
+
+    #[test]
+    fn test_get_flattened_bom_cached() {
+        let (tmp, project, mut cache) = setup_test_project();
+
+        // Create components
+        let cmp1 = create_test_component(&tmp, "CMP-FLAT1", Some(5.0), None);
+        let cmp2 = create_test_component(&tmp, "CMP-FLAT2", Some(10.0), None);
+        let cmp1_id = cmp1.id.to_string();
+        let cmp2_id = cmp2.id.to_string();
+
+        let asm_id = {
+            let service = AssemblyService::new(&project, &cache);
+
+            // Create assembly
+            let asm = service
+                .create(CreateAssembly {
+                    part_number: "ASM-FLAT".into(),
+                    title: "Flat BOM Test".into(),
+                    author: "Test".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+
+            service
+                .add_component(&asm.id.to_string(), &cmp1_id, 4)
+                .unwrap();
+            service
+                .add_component(&asm.id.to_string(), &cmp2_id, 2)
+                .unwrap();
+
+            asm.id.to_string()
+        };
+
+        // Sync cache
+        cache.sync().unwrap();
+
+        let service = AssemblyService::new(&project, &cache);
+        let flattened = service.get_flattened_bom_cached(&asm_id).unwrap();
+
+        assert_eq!(flattened.len(), 2);
+
+        // Verify component quantities
+        let cmp1_entry = flattened.iter().find(|f| f.component_id == cmp1_id);
+        let cmp2_entry = flattened.iter().find(|f| f.component_id == cmp2_id);
+
+        assert!(cmp1_entry.is_some());
+        assert!(cmp2_entry.is_some());
+        assert_eq!(cmp1_entry.unwrap().effective_qty, 4);
+        assert_eq!(cmp2_entry.unwrap().effective_qty, 2);
+    }
+
+    #[test]
+    fn test_bom_cost_result_detailed_helpers() {
+        let result = BomCostResultDetailed {
+            total_unit_cost: 100.0,
+            total_nre_cost: 500.0,
+            component_costs: vec![
+                ComponentCostLine {
+                    component_id: "CMP-1".into(),
+                    title: "Test".into(),
+                    part_number: "PN-1".into(),
+                    effective_qty: 2,
+                    unit_price: Some(50.0),
+                    extended_price: Some(100.0),
+                    quote_id: None,
+                    price_break_tier: None,
+                    nre_contribution: 0.0,
+                },
+            ],
+            warnings: Vec::new(),
+        };
+
+        // Test total_production_cost
+        assert_eq!(result.total_production_cost(10, false), 1000.0); // 100 * 10
+        assert_eq!(result.total_production_cost(10, true), 1500.0);  // 100 * 10 + 500
+
+        // Test effective_unit_cost
+        assert_eq!(result.effective_unit_cost(0), 100.0);    // No amortization
+        assert_eq!(result.effective_unit_cost(100), 105.0);  // 100 + 500/100
+        assert_eq!(result.effective_unit_cost(500), 101.0);  // 100 + 500/500
+
+        // Test helpers
+        assert_eq!(result.components_with_cost(), 1);
+        assert_eq!(result.components_without_cost(), 0);
+        assert!(result.missing_cost_ids().is_empty());
     }
 }

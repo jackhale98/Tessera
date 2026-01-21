@@ -1766,4 +1766,132 @@ impl EntityCache {
             }
         }
     }
+
+    // =========================================================================
+    // BOM Query Methods (for fast BOM cost calculations)
+    // =========================================================================
+
+    /// Get BOM items for an assembly (direct components with quantities)
+    ///
+    /// Returns all components directly in this assembly's BOM, with their quantities.
+    /// Does NOT recurse into subassemblies.
+    pub fn get_bom_items(&self, assembly_id: &str) -> Vec<super::CachedBomItem> {
+        let mut stmt = match self.conn.prepare(
+            r#"SELECT component_id, quantity, reference_designators
+               FROM bom_items
+               WHERE assembly_id = ?1"#,
+        ) {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+
+        let rows = match stmt.query_map(params![assembly_id], |row| {
+            let ref_des_str: Option<String> = row.get(2)?;
+            let reference_designators = ref_des_str.and_then(|s| {
+                serde_json::from_str::<Vec<String>>(&s).ok()
+            });
+            Ok(super::CachedBomItem {
+                component_id: row.get(0)?,
+                quantity: row.get::<_, i64>(1)? as u32,
+                reference_designators,
+            })
+        }) {
+            Ok(r) => r,
+            Err(_) => return vec![],
+        };
+
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Get subassembly items for an assembly (direct subassemblies with quantities)
+    ///
+    /// Returns all subassemblies directly in this assembly, with their quantities.
+    /// Does NOT recurse into nested subassemblies.
+    pub fn get_subassembly_items(&self, assembly_id: &str) -> Vec<super::CachedSubassemblyItem> {
+        let mut stmt = match self.conn.prepare(
+            r#"SELECT child_assembly_id, quantity
+               FROM subassembly_items
+               WHERE parent_assembly_id = ?1"#,
+        ) {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+
+        let rows = match stmt.query_map(params![assembly_id], |row| {
+            Ok(super::CachedSubassemblyItem {
+                assembly_id: row.get(0)?,
+                quantity: row.get::<_, i64>(1)? as u32,
+            })
+        }) {
+            Ok(r) => r,
+            Err(_) => return vec![],
+        };
+
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Get flattened BOM for an assembly (all components with effective quantities)
+    ///
+    /// Recursively traverses the BOM hierarchy and returns all components with their
+    /// accumulated quantities. For example, if assembly A contains 2x subassembly B,
+    /// and B contains 3x component C, the effective quantity of C is 6.
+    ///
+    /// Components that appear multiple times (via different subassemblies) are
+    /// aggregated into a single entry with the total quantity.
+    pub fn get_flattened_bom(&self, assembly_id: &str) -> Vec<super::FlattenedBomItem> {
+        let mut component_qty_map: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut visited = std::collections::HashSet::new();
+
+        self.collect_flattened_bom_recursive(
+            assembly_id,
+            1, // multiplier starts at 1
+            &mut component_qty_map,
+            &mut visited,
+        );
+
+        // Convert to Vec<FlattenedBomItem>
+        component_qty_map
+            .into_iter()
+            .map(|(component_id, effective_qty)| super::FlattenedBomItem {
+                component_id,
+                effective_qty,
+                assembly_path: vec![], // Not tracking path for simplicity
+            })
+            .collect()
+    }
+
+    /// Helper: Recursively collect components with quantity multipliers
+    fn collect_flattened_bom_recursive(
+        &self,
+        assembly_id: &str,
+        multiplier: u32,
+        component_qty_map: &mut std::collections::HashMap<String, u32>,
+        visited: &mut std::collections::HashSet<String>,
+    ) {
+        // Prevent infinite loops from circular references
+        if visited.contains(assembly_id) {
+            return;
+        }
+        visited.insert(assembly_id.to_string());
+
+        // Get direct components
+        for item in self.get_bom_items(assembly_id) {
+            let effective_qty = item.quantity * multiplier;
+            *component_qty_map.entry(item.component_id).or_insert(0) += effective_qty;
+        }
+
+        // Recurse into subassemblies
+        for subasm in self.get_subassembly_items(assembly_id) {
+            let sub_multiplier = subasm.quantity * multiplier;
+            self.collect_flattened_bom_recursive(
+                &subasm.assembly_id,
+                sub_multiplier,
+                component_qty_map,
+                visited,
+            );
+        }
+
+        // Allow re-visiting for different paths (but not infinite loops within same traversal)
+        // Note: We keep visited set to prevent cycles within THIS traversal
+    }
 }

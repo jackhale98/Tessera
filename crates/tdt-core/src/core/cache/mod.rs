@@ -35,7 +35,7 @@ use crate::core::project::Project;
 const CACHE_FILE: &str = ".tdt/cache.db";
 
 /// Current schema version - cache is rebuilt on version mismatch
-const SCHEMA_VERSION: i32 = 11;
+const SCHEMA_VERSION: i32 = 13;
 
 /// The entity cache backed by SQLite
 pub struct EntityCache {
@@ -118,6 +118,8 @@ impl EntityCache {
                 DROP TABLE IF EXISTS ncrs;
                 DROP TABLE IF EXISTS capas;
                 DROP TABLE IF EXISTS assemblies;
+                DROP TABLE IF EXISTS bom_items;
+                DROP TABLE IF EXISTS subassembly_items;
                 DROP TABLE IF EXISTS results;
                 DROP TABLE IF EXISTS links;
                 DROP TABLE IF EXISTS cache_meta;

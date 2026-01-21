@@ -458,3 +458,33 @@ pub struct SearchResult {
     pub status: Status,
     pub author: String,
 }
+
+// =========================================================================
+// BOM-related Cache Types (for fast BOM cost calculations)
+// =========================================================================
+
+/// Cached BOM item (assembly → component relationship with quantity)
+#[derive(Debug, Clone)]
+pub struct CachedBomItem {
+    pub component_id: String,
+    pub quantity: u32,
+    pub reference_designators: Option<Vec<String>>,
+}
+
+/// Cached subassembly item (parent assembly → child assembly relationship with quantity)
+#[derive(Debug, Clone)]
+pub struct CachedSubassemblyItem {
+    pub assembly_id: String,
+    pub quantity: u32,
+}
+
+/// Flattened BOM item with accumulated quantity (for cost calculations)
+#[derive(Debug, Clone)]
+pub struct FlattenedBomItem {
+    /// Component ID
+    pub component_id: String,
+    /// Effective quantity (accumulated from all paths through the BOM hierarchy)
+    pub effective_qty: u32,
+    /// Assembly path for debugging (optional, may be empty)
+    pub assembly_path: Vec<String>,
+}

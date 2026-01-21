@@ -199,6 +199,7 @@ pub fn run() {
             commands::remove_subassembly,
             commands::get_bom_tree,
             commands::calculate_assembly_cost,
+            commands::calculate_assembly_cost_detailed,
             commands::calculate_assembly_mass,
             commands::get_assembly_routing,
             commands::set_assembly_routing,

@@ -1393,6 +1393,9 @@ fn run_add_component(args: AddComponentArgs) -> Result<()> {
         assembly.total_component_count()
     );
 
+    // Sync cache after BOM modification
+    super::utils::sync_cache(&project);
+
     Ok(())
 }
 
@@ -1430,6 +1433,9 @@ fn run_remove_component(args: RemoveComponentArgs) -> Result<()> {
     );
     println!("   BOM now has {} line items", assembly.bom.len());
 
+    // Sync cache after BOM modification
+    super::utils::sync_cache(&project);
+
     Ok(())
 }
 
@@ -1437,6 +1443,7 @@ fn run_cost(args: CostArgs) -> Result<()> {
     use tdt_core::entities::quote::Quote;
 
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let mut cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let short_ids = ShortIdIndex::load(&project);
 
     // Resolve assembly ID
@@ -1447,15 +1454,97 @@ fn run_cost(args: CostArgs) -> Result<()> {
     // Load assembly
     let assembly = find_assembly(&project, &resolved_id)?;
 
-    // Load all components, assemblies, and quotes for lookup
-    let components = load_all_components(&project);
+    let production_qty = args.qty;
+    let include_nre = !args.no_nre;
+
+    // Sync cache to ensure BOM data is fresh (needed for both flat and hierarchical modes)
+    cache.sync().map_err(|e| miette::miette!("{}", e))?;
+
+    // Use optimized cache-based calculation for flat mode
+    if args.flat {
+        let service = AssemblyService::new(&project, &cache);
+        let result = service
+            .calculate_cost_cached(&assembly.id.to_string(), production_qty)
+            .map_err(|e| miette::miette!("{}", e))?;
+
+        // Load quotes for warning detection
+        let quotes = load_all_quotes(&project);
+        let quote_map: std::collections::HashMap<String, &Quote> =
+            quotes.iter().map(|q| (q.id.to_string(), q)).collect();
+
+        // Build component -> quotes map for unselected warnings
+        let mut component_quotes: std::collections::HashMap<String, Vec<&Quote>> =
+            std::collections::HashMap::new();
+        for quote in &quotes {
+            if let Some(ref cmp_id) = quote.component {
+                component_quotes
+                    .entry(cmp_id.clone())
+                    .or_default()
+                    .push(quote);
+            }
+        }
+
+        // Detect warnings
+        let mut expired_warnings: Vec<(String, String, String)> = Vec::new();
+        let mut unselected_warnings: Vec<(String, String, usize)> = Vec::new();
+
+        for line in &result.component_costs {
+            // Check for expired quotes
+            if let Some(ref qid) = line.quote_id {
+                if let Some(quote) = quote_map.get(qid) {
+                    if quote.is_expired() && args.warn_expired {
+                        let valid_until = quote.valid_until.map(|d| d.to_string()).unwrap_or_default();
+                        if !expired_warnings.iter().any(|(_, t, _)| t == &line.title) {
+                            expired_warnings.push((qid.clone(), line.title.clone(), valid_until));
+                        }
+                    }
+                }
+            } else {
+                // No quote used - check if quotes are available but unselected
+                if let Some(cmp_quotes) = component_quotes.get(&line.component_id) {
+                    if !cmp_quotes.is_empty() {
+                        if !unselected_warnings.iter().any(|(id, _, _)| id == &line.component_id) {
+                            unselected_warnings.push((
+                                line.component_id.clone(),
+                                line.title.clone(),
+                                cmp_quotes.len(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Output using cached result
+        return output_cached_cost_result(
+            &assembly,
+            &result,
+            &args,
+            &short_ids,
+            &expired_warnings,
+            &unselected_warnings,
+            include_nre,
+            production_qty,
+        );
+    }
+
+    // For non-flat (hierarchical) mode, use cache-optimized loading
+    // First, collect all needed IDs from cache (fast)
+    let (needed_component_ids, needed_assembly_ids) =
+        collect_bom_ids_from_cache(&cache, &assembly.id.to_string());
+
+    // Batch-load only the entities we need (instead of loading ALL entities)
+    let components = load_components_by_ids(&project, &needed_component_ids);
     let component_map: std::collections::HashMap<String, &Component> =
         components.iter().map(|c| (c.id.to_string(), c)).collect();
 
-    let assemblies = load_all_assemblies(&project);
+    let mut assemblies = load_assemblies_by_ids(&project, &needed_assembly_ids);
+    // Add the root assembly if not already included
+    assemblies.push(assembly.clone());
     let assembly_map: std::collections::HashMap<String, &Assembly> =
         assemblies.iter().map(|a| (a.id.to_string(), a)).collect();
 
+    // Load all quotes (usually few, and we need them for selected_quote lookups)
     let quotes = load_all_quotes(&project);
     let quote_map: std::collections::HashMap<String, &Quote> =
         quotes.iter().map(|q| (q.id.to_string(), q)).collect();
@@ -1471,9 +1560,6 @@ fn run_cost(args: CostArgs) -> Result<()> {
                 .push(quote);
         }
     }
-
-    let production_qty = args.qty;
-    let include_nre = !args.no_nre;
 
     // Track components with quotes but no selection (for user feedback)
     let mut unselected_quote_warnings: Vec<(String, String, usize)> = Vec::new(); // (id, title, quote_count)
@@ -2118,6 +2204,265 @@ fn run_cost(args: CostArgs) -> Result<()> {
     Ok(())
 }
 
+/// Output cost result from cached calculation (flat mode)
+fn output_cached_cost_result(
+    assembly: &Assembly,
+    result: &tdt_core::services::BomCostResultDetailed,
+    args: &CostArgs,
+    short_ids: &ShortIdIndex,
+    expired_warnings: &[(String, String, String)],
+    unselected_warnings: &[(String, String, usize)],
+    include_nre: bool,
+    production_qty: u32,
+) -> Result<()> {
+    let total_piece_cost = result.total_unit_cost;
+    let total_nre = result.total_nre_cost;
+
+    // Output header
+    println!(
+        "{} {}",
+        style("Assembly:").bold(),
+        style(&assembly.title).cyan()
+    );
+    println!("{} {}", style("Part Number:").bold(), assembly.part_number);
+    println!(
+        "{}",
+        style("(flattened view - all components from subassemblies)").dim()
+    );
+    if production_qty > 1 {
+        println!(
+            "{} {}",
+            style("Production Qty:").bold(),
+            style(production_qty).yellow()
+        );
+    }
+    if let Some(amort_qty) = args.amortize {
+        if include_nre {
+            println!(
+                "{} {} units",
+                style("NRE Amortization:").bold(),
+                style(amort_qty).cyan()
+            );
+        }
+    }
+    println!();
+
+    // Print breakdown table
+    if (args.breakdown || args.flat) && !result.component_costs.is_empty() {
+        let show_nre_col = include_nre && total_nre > 0.0;
+
+        // Print header
+        if show_nre_col {
+            println!(
+                "{:<10} {:<20} {:<5} {:<10} {:<10} {:<8} {:<10}",
+                style("ID").bold(),
+                style("TITLE").bold(),
+                style("QTY").bold(),
+                style("UNIT").bold(),
+                style("LINE").bold(),
+                style("NRE").bold(),
+                style("SOURCE").bold()
+            );
+            println!("{}", "-".repeat(80));
+        } else {
+            println!(
+                "{:<10} {:<22} {:<5} {:<10} {:<10} {:<10}",
+                style("ID").bold(),
+                style("TITLE").bold(),
+                style("QTY").bold(),
+                style("UNIT").bold(),
+                style("LINE").bold(),
+                style("SOURCE").bold()
+            );
+            println!("{}", "-".repeat(70));
+        }
+
+        for line in &result.component_costs {
+            let id_short = short_ids
+                .get_short_id(&line.component_id)
+                .unwrap_or_else(|| truncate_str(&line.component_id, 8));
+
+            let source = if line.quote_id.is_some() {
+                format!("quote@{}", line.price_break_tier.unwrap_or(1))
+            } else if line.unit_price.is_some() {
+                "unit_cost".to_string()
+            } else {
+                "none".to_string()
+            };
+
+            if let Some(ext_price) = line.extended_price {
+                if show_nre_col {
+                    let nre_str = if line.nre_contribution > 0.0 {
+                        format!("${:.0}", line.nre_contribution)
+                    } else {
+                        "-".to_string()
+                    };
+                    println!(
+                        "{:<10} {:<20} {:<5} ${:<9.2} ${:<9.2} {:<8} {}",
+                        id_short,
+                        truncate_str(&line.title, 18),
+                        line.effective_qty,
+                        line.unit_price.unwrap_or(0.0),
+                        ext_price,
+                        nre_str,
+                        style(&source).dim()
+                    );
+                } else {
+                    println!(
+                        "{:<10} {:<22} {:<5} ${:<9.2} ${:<9.2} {}",
+                        id_short,
+                        truncate_str(&line.title, 20),
+                        line.effective_qty,
+                        line.unit_price.unwrap_or(0.0),
+                        ext_price,
+                        style(&source).dim()
+                    );
+                }
+            } else if show_nre_col {
+                println!(
+                    "{:<10} {:<20} {:<5} {:<10} {:<10} {:<8} {}",
+                    id_short,
+                    truncate_str(&line.title, 18),
+                    line.effective_qty,
+                    style("-").dim(),
+                    style("-").dim(),
+                    style("-").dim(),
+                    style(&source).dim()
+                );
+            } else {
+                println!(
+                    "{:<10} {:<22} {:<5} {:<10} {:<10} {}",
+                    id_short,
+                    truncate_str(&line.title, 20),
+                    line.effective_qty,
+                    style("-").dim(),
+                    style("-").dim(),
+                    style(&source).dim()
+                );
+            }
+        }
+
+        let line_width = if show_nre_col { 80 } else { 70 };
+        println!("{}", "-".repeat(line_width));
+    }
+
+    // Cost summary
+    println!("{} ${:.2}", style("Piece Cost:").bold(), total_piece_cost);
+
+    // Calculate total cost (piece cost × production quantity)
+    let total_run_cost = total_piece_cost * production_qty as f64;
+
+    if include_nre && total_nre > 0.0 {
+        println!("{} ${:.2}", style("Total NRE:").bold(), total_nre);
+
+        // Total cost = (piece cost × qty) + NRE (one-time)
+        let total_with_nre = total_run_cost + total_nre;
+
+        if let Some(amort_qty) = args.amortize {
+            let nre_per_unit = total_nre / amort_qty as f64;
+            println!(
+                "{} ${:.4} (NRE / {} units)",
+                style("NRE per Unit:").bold(),
+                nre_per_unit,
+                amort_qty
+            );
+            let effective_unit = total_piece_cost + nre_per_unit;
+            println!(
+                "{} ${:.4}",
+                style("Effective Unit Cost:").green().bold(),
+                effective_unit
+            );
+        }
+
+        // Always show the combined total when there's NRE
+        if production_qty > 1 {
+            println!(
+                "{} ${:.2} ({} units × ${:.2} + ${:.2} NRE)",
+                style("Total Cost:").green().bold(),
+                total_with_nre,
+                production_qty,
+                total_piece_cost,
+                total_nre
+            );
+        } else {
+            println!(
+                "{} ${:.2} (piece + NRE)",
+                style("Total Cost:").green().bold(),
+                total_with_nre
+            );
+        }
+    } else if production_qty > 1 {
+        // Show both piece cost and total run cost when qty > 1
+        println!(
+            "{} ${:.2} ({} units × ${:.2})",
+            style("Total Cost:").green().bold(),
+            total_run_cost,
+            production_qty,
+            total_piece_cost
+        );
+    } else {
+        println!(
+            "{} ${:.2}",
+            style("Total Cost:").green().bold(),
+            total_piece_cost
+        );
+    }
+
+    // Show warnings about expired quotes
+    if !expired_warnings.is_empty() {
+        println!();
+        println!(
+            "{} {} quote(s) used in this BOM have expired:",
+            style("⚠ Warning:").red().bold(),
+            expired_warnings.len()
+        );
+        for (quote_id, title, valid_until) in expired_warnings {
+            let quote_short = short_ids
+                .get_short_id(quote_id)
+                .unwrap_or_else(|| truncate_str(quote_id, 10));
+            println!(
+                "   {} {} (quote {} expired {})",
+                style("•").dim(),
+                style(truncate_str(title, 30)).cyan(),
+                style(&quote_short).yellow(),
+                style(valid_until).red()
+            );
+        }
+        println!(
+            "   {}",
+            style("Consider requesting updated quotes for accurate pricing").dim()
+        );
+    }
+
+    // Show warnings about components with quotes but no selection
+    if !unselected_warnings.is_empty() {
+        println!();
+        println!(
+            "{} Some components have quotes but no selected quote:",
+            style("Note:").yellow().bold()
+        );
+        for (id, title, count) in unselected_warnings {
+            let id_short = short_ids
+                .get_short_id(id)
+                .unwrap_or_else(|| truncate_str(id, 10));
+            println!(
+                "   {} {} ({} quote{}) - use: tdt cmp set-quote {} <quote-id>",
+                style("•").dim(),
+                style(truncate_str(title, 30)).cyan(),
+                count,
+                if *count == 1 { "" } else { "s" },
+                id_short
+            );
+        }
+        println!(
+            "   {}",
+            style("Run 'tdt quote compare <component>' to see available quotes").dim()
+        );
+    }
+
+    Ok(())
+}
+
 /// Load all quotes from the project
 fn load_all_quotes(project: &Project) -> Vec<tdt_core::entities::quote::Quote> {
     let mut quotes = Vec::new();
@@ -2355,6 +2700,105 @@ fn load_all_assemblies(project: &Project) -> Vec<Assembly> {
         {
             if let Ok(asm) = tdt_core::yaml::parse_yaml_file::<Assembly>(entry.path()) {
                 assemblies.push(asm);
+            }
+        }
+    }
+
+    assemblies
+}
+
+/// Collect all component and assembly IDs needed for a BOM hierarchy using cache
+/// This is faster than loading all entities from filesystem
+fn collect_bom_ids_from_cache(
+    cache: &EntityCache,
+    assembly_id: &str,
+) -> (HashSet<String>, HashSet<String>) {
+    let mut component_ids = HashSet::new();
+    let mut assembly_ids = HashSet::new();
+    let mut visited = HashSet::new();
+    visited.insert(assembly_id.to_string());
+
+    fn collect_recursive(
+        cache: &EntityCache,
+        asm_id: &str,
+        component_ids: &mut HashSet<String>,
+        assembly_ids: &mut HashSet<String>,
+        visited: &mut HashSet<String>,
+    ) {
+        // Get BOM items (components)
+        let bom_items = cache.get_bom_items(asm_id);
+        for item in bom_items {
+            component_ids.insert(item.component_id.clone());
+        }
+
+        // Get subassembly items
+        let subasm_items = cache.get_subassembly_items(asm_id);
+        for item in subasm_items {
+            if !visited.contains(&item.assembly_id) {
+                visited.insert(item.assembly_id.clone());
+                assembly_ids.insert(item.assembly_id.clone());
+                collect_recursive(cache, &item.assembly_id, component_ids, assembly_ids, visited);
+            }
+        }
+    }
+
+    collect_recursive(cache, assembly_id, &mut component_ids, &mut assembly_ids, &mut visited);
+    (component_ids, assembly_ids)
+}
+
+/// Load specific components by ID (faster than loading all)
+fn load_components_by_ids(project: &Project, ids: &HashSet<String>) -> Vec<Component> {
+    if ids.is_empty() {
+        return Vec::new();
+    }
+
+    let mut components = Vec::new();
+    let dir = project.root().join("bom/components");
+
+    if dir.exists() {
+        for entry in walkdir::WalkDir::new(&dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
+        {
+            if let Ok(cmp) = tdt_core::yaml::parse_yaml_file::<Component>(entry.path()) {
+                if ids.contains(&cmp.id.to_string()) {
+                    components.push(cmp);
+                    if components.len() == ids.len() {
+                        break; // Found all we need
+                    }
+                }
+            }
+        }
+    }
+
+    components
+}
+
+/// Load specific assemblies by ID (faster than loading all)
+fn load_assemblies_by_ids(project: &Project, ids: &HashSet<String>) -> Vec<Assembly> {
+    if ids.is_empty() {
+        return Vec::new();
+    }
+
+    let mut assemblies = Vec::new();
+    let dir = project.root().join("bom/assemblies");
+
+    if dir.exists() {
+        for entry in walkdir::WalkDir::new(&dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| e.path().to_string_lossy().ends_with(".tdt.yaml"))
+        {
+            if let Ok(asm) = tdt_core::yaml::parse_yaml_file::<Assembly>(entry.path()) {
+                if ids.contains(&asm.id.to_string()) {
+                    assemblies.push(asm);
+                    if assemblies.len() == ids.len() {
+                        break; // Found all we need
+                    }
+                }
             }
         }
     }
