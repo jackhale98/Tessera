@@ -12,7 +12,7 @@ use tdt_core::core::project::Project;
 use tdt_core::core::suspect::get_suspect_links;
 use tdt_core::core::EntityPrefix;
 use tdt_core::entities::feature::Feature;
-use tdt_core::entities::mate::{FitAnalysis, Mate};
+use tdt_core::entities::mate::{FitAnalysis, FitResult, Mate, MateType};
 use tdt_core::entities::risk::Risk;
 use tdt_core::entities::stackup::Stackup;
 use tdt_core::schema::registry::SchemaRegistry;
@@ -718,7 +718,7 @@ fn check_mate_values(
 
         if min_diff > 1e-6 || max_diff > 1e-6 || actual.fit_result != expected_analysis.fit_result {
             if fix {
-                mate.fit_analysis = Some(expected_analysis);
+                mate.fit_analysis = Some(expected_analysis.clone());
                 needs_fix = true;
             } else {
                 issues.push(format!(
@@ -733,10 +733,32 @@ fn check_mate_values(
             }
         }
     } else if fix {
-        mate.fit_analysis = Some(expected_analysis);
+        mate.fit_analysis = Some(expected_analysis.clone());
         needs_fix = true;
     } else {
         issues.push("fit_analysis not calculated".to_string());
+    }
+
+    // Check if specified mate_type matches calculated fit_result
+    // This is a design issue: the engineer specified one fit type but the tolerances produce another
+    let actual_fit = mate
+        .fit_analysis
+        .as_ref()
+        .map(|a| &a.fit_result)
+        .unwrap_or(&expected_analysis.fit_result);
+
+    let type_matches = match (&mate.mate_type, actual_fit) {
+        (MateType::Clearance, FitResult::Clearance) => true,
+        (MateType::Interference, FitResult::Interference) => true,
+        (MateType::Transition, FitResult::Transition) => true,
+        _ => false,
+    };
+
+    if !type_matches {
+        issues.push(format!(
+            "mate_type mismatch: specified '{}' but calculated fit is '{}' - tolerances don't achieve intended fit",
+            mate.mate_type, actual_fit
+        ));
     }
 
     // Fix if requested and there are changes to make
@@ -855,6 +877,65 @@ fn check_stackup_values(
             "Contributor dimensions synced - consider running 'tdt validate --fix --deep' or 'tdt tol analyze' to update analysis results"
                 .to_string(),
         );
+    }
+
+    // Check if any analysis shows Fail or Marginal (design issue that needs attention)
+    // This is similar to mate type mismatch - the tolerances don't achieve the desired fit
+    if let Some(ref wc) = stackup.analysis_results.worst_case {
+        use tdt_core::entities::stackup::AnalysisResult;
+        match wc.result {
+            AnalysisResult::Fail => {
+                issues.push(format!(
+                    "worst-case analysis shows FAIL: margin = {:.4} {} (min: {:.4}, max: {:.4})",
+                    wc.margin,
+                    &stackup.target.units,
+                    wc.min,
+                    wc.max
+                ));
+            }
+            AnalysisResult::Marginal => {
+                issues.push(format!(
+                    "worst-case analysis shows MARGINAL: margin = {:.4} {} (min: {:.4}, max: {:.4})",
+                    wc.margin,
+                    &stackup.target.units,
+                    wc.min,
+                    wc.max
+                ));
+            }
+            AnalysisResult::Pass => {}
+        }
+    }
+
+    // RSS uses Cpk to determine pass/fail: Cpk >= 1.33 = pass, 1.0-1.33 = marginal, < 1.0 = fail
+    if let Some(ref rss) = stackup.analysis_results.rss {
+        if rss.cpk < 1.0 {
+            issues.push(format!(
+                "RSS analysis shows FAIL: Cpk = {:.2} (< 1.0) - yield: {:.2}%",
+                rss.cpk, rss.yield_percent
+            ));
+        } else if rss.cpk < 1.33 {
+            issues.push(format!(
+                "RSS analysis shows MARGINAL: Cpk = {:.2} (< 1.33) - yield: {:.2}%",
+                rss.cpk, rss.yield_percent
+            ));
+        }
+    }
+
+    // Monte Carlo uses Ppk to determine pass/fail: Ppk >= 1.33 = pass, 1.0-1.33 = marginal, < 1.0 = fail
+    if let Some(ref mc) = stackup.analysis_results.monte_carlo {
+        if let Some(ppk) = mc.ppk {
+            if ppk < 1.0 {
+                issues.push(format!(
+                    "Monte Carlo analysis shows FAIL: Ppk = {:.2} (< 1.0) - yield: {:.2}%",
+                    ppk, mc.yield_percent
+                ));
+            } else if ppk < 1.33 {
+                issues.push(format!(
+                    "Monte Carlo analysis shows MARGINAL: Ppk = {:.2} (< 1.33) - yield: {:.2}%",
+                    ppk, mc.yield_percent
+                ));
+            }
+        }
     }
 
     // Write back if we synced any contributors or re-ran analysis

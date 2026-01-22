@@ -165,6 +165,7 @@ struct ToleranceMetrics {
     features: usize,
     mates: usize,
     mates_with_analysis: usize,
+    mates_type_mismatch: usize,
     stackups: usize,
     stackups_with_analysis: usize,
     stackups_pass: usize,
@@ -330,10 +331,18 @@ fn collect_tolerance_metrics(project: &Project, cache: &EntityCache) -> Toleranc
     let mate_stats = mate_service.stats().unwrap_or_default();
     let stackup_stats = stackup_service.stats().unwrap_or_default();
 
+    // Calculate mate type mismatches: analyzed mates that don't match intent
+    let mates_type_mismatch = if mate_stats.analyzed_count > 0 {
+        mate_stats.analyzed_count - mate_stats.matches_intent
+    } else {
+        0
+    };
+
     ToleranceMetrics {
         features: feat_stats.total,
         mates: mate_stats.total,
         mates_with_analysis: mate_stats.analyzed_count,
+        mates_type_mismatch,
         stackups: stackup_stats.total,
         stackups_with_analysis: stackup_stats.analyzed_count,
         stackups_pass: stackup_stats.by_result.pass,
@@ -428,7 +437,15 @@ fn format_tolerance_metrics(m: &ToleranceMetrics) -> Vec<String> {
     // Mates
     if m.mates > 0 {
         let mates_unanalyzed = m.mates - m.mates_with_analysis;
-        if mates_unanalyzed > 0 {
+        if m.mates_type_mismatch > 0 {
+            // Show type mismatch warning (fit doesn't match intent)
+            lines.push(format!(
+                "Mates:      {} ({} fit mismatch) {}",
+                m.mates,
+                m.mates_type_mismatch,
+                style("⚠").red()
+            ));
+        } else if mates_unanalyzed > 0 {
             lines.push(format!(
                 "Mates:      {} ({} unanalyzed)",
                 m.mates, mates_unanalyzed

@@ -1672,13 +1672,12 @@ fn run_analyze_all(args: &AnalyzeArgs) -> Result<()> {
 
         // Skip stackups with no contributors
         if stackup.contributors.is_empty() {
-            if args.verbose {
-                println!(
-                    "{} {} - no contributors, skipping",
-                    style("⚠").yellow(),
-                    style(&short_id).cyan()
-                );
-            }
+            println!(
+                "{} {} - no contributors, skipping (use 'tdt tol add {} FEAT@N' to add)",
+                style("⚠").yellow(),
+                style(&short_id).cyan(),
+                short_id
+            );
             skipped += 1;
             continue;
         }
