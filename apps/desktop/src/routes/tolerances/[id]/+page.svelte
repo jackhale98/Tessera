@@ -110,6 +110,56 @@
 	}
 	const analysisResults = $derived(data.analysis_results as AnalysisResults | null);
 
+	// Check for analysis warnings
+	const analysisWarnings = $derived(() => {
+		const warnings: { type: 'error' | 'warning'; message: string }[] = [];
+		if (!analysisResults) return warnings;
+
+		// Check worst-case result
+		const wcResult = analysisResults.worst_case?.result?.toLowerCase();
+		if (wcResult === 'fail') {
+			warnings.push({
+				type: 'error',
+				message: `Worst-case analysis FAILS: margin = ${analysisResults.worst_case?.margin.toFixed(4)} ${target?.units ?? 'mm'}`
+			});
+		} else if (wcResult === 'marginal') {
+			warnings.push({
+				type: 'warning',
+				message: `Worst-case analysis is MARGINAL: margin = ${analysisResults.worst_case?.margin.toFixed(4)} ${target?.units ?? 'mm'}`
+			});
+		}
+
+		// Check Cpk
+		const cpk = analysisResults.rss?.cpk;
+		if (cpk !== undefined && cpk < 1.0) {
+			warnings.push({
+				type: 'error',
+				message: `RSS Cpk = ${cpk.toFixed(2)} is below 1.0 (process is not capable)`
+			});
+		} else if (cpk !== undefined && cpk < 1.33) {
+			warnings.push({
+				type: 'warning',
+				message: `RSS Cpk = ${cpk.toFixed(2)} is below 1.33 (minimum acceptable)`
+			});
+		}
+
+		// Check Ppk
+		const ppk = analysisResults.monte_carlo?.ppk;
+		if (ppk !== undefined && ppk < 1.0) {
+			warnings.push({
+				type: 'error',
+				message: `Monte Carlo Ppk = ${ppk.toFixed(2)} is below 1.0 (process is not capable)`
+			});
+		} else if (ppk !== undefined && ppk < 1.33) {
+			warnings.push({
+				type: 'warning',
+				message: `Monte Carlo Ppk = ${ppk.toFixed(2)} is below 1.33 (minimum acceptable)`
+			});
+		}
+
+		return warnings;
+	});
+
 	async function loadData() {
 		if (!id) return;
 
@@ -224,6 +274,22 @@
 			backLabel="Stackups"
 			onEdit={() => goto(`/tolerances/${id}/edit`)}
 		/>
+
+		<!-- Analysis Warnings -->
+		{#if analysisWarnings().length > 0}
+			<div class="space-y-2">
+				{#each analysisWarnings() as warning}
+					<Card class={warning.type === 'error' ? 'border-destructive bg-destructive/10' : 'border-yellow-500 bg-yellow-500/10'}>
+						<CardContent class="flex items-center gap-3 pt-6">
+							<AlertTriangle class={`h-5 w-5 ${warning.type === 'error' ? 'text-destructive' : 'text-yellow-500'}`} />
+							<p class={`text-sm font-medium ${warning.type === 'error' ? 'text-destructive' : 'text-yellow-600 dark:text-yellow-500'}`}>
+								{warning.message}
+							</p>
+						</CardContent>
+					</Card>
+				{/each}
+			</div>
+		{/if}
 
 		<div class="grid gap-6 lg:grid-cols-3">
 			<!-- Main content -->

@@ -16,6 +16,7 @@ pub mod dev;
 pub mod diff;
 pub mod dmm;
 pub mod dsm;
+pub mod export;
 pub mod feat;
 pub mod haz;
 pub mod history;

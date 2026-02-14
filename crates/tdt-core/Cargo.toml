@@ -43,6 +43,10 @@ rand.workspace = true
 # 3D Tolerance Analysis
 nalgebra.workspace = true
 
+# Parsing (SysML import)
+pest.workspace = true
+pest_derive.workspace = true
+
 # Cache
 rusqlite.workspace = true
 sha2.workspace = true

@@ -887,10 +887,7 @@ fn check_stackup_values(
             AnalysisResult::Fail => {
                 issues.push(format!(
                     "worst-case analysis shows FAIL: margin = {:.4} {} (min: {:.4}, max: {:.4})",
-                    wc.margin,
-                    &stackup.target.units,
-                    wc.min,
-                    wc.max
+                    wc.margin, &stackup.target.units, wc.min, wc.max
                 ));
             }
             AnalysisResult::Marginal => {

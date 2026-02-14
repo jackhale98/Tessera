@@ -8,7 +8,7 @@
 	import { entities, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
 	import type { LinkInfo } from '$lib/api/tauri';
-	import { Plug, User, Calendar, Tag, CircleDot, ArrowLeftRight, BarChart3, History } from 'lucide-svelte';
+	import { Plug, User, Calendar, Tag, CircleDot, ArrowLeftRight, BarChart3, History, AlertTriangle } from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
 
@@ -53,6 +53,12 @@
 		statistical?: StatisticalFit;
 	}
 	const fitAnalysis = $derived(data.fit_analysis as FitAnalysis | null);
+
+	// Check if specified mate type matches calculated fit result
+	const hasTypeMismatch = $derived(() => {
+		if (!fitAnalysis?.fit_result) return false;
+		return mateType.toLowerCase() !== fitAnalysis.fit_result.toLowerCase();
+	});
 
 	async function loadData() {
 		if (!id) return;
@@ -169,6 +175,23 @@
 			backLabel="Mates"
 			onEdit={() => goto(`/mates/${id}/edit`)}
 		/>
+
+		<!-- Type Mismatch Warning -->
+		{#if hasTypeMismatch()}
+			<Card class="border-destructive bg-destructive/10">
+				<CardContent class="flex items-center gap-3 pt-6">
+					<AlertTriangle class="h-5 w-5 text-destructive" />
+					<div>
+						<p class="font-medium text-destructive">Fit Type Mismatch</p>
+						<p class="text-sm text-muted-foreground">
+							Specified mate type is <Badge variant={getMateTypeVariant(mateType)} class="capitalize mx-1">{mateType}</Badge>
+							but calculated fit result is <Badge variant={getFitResultVariant(fitAnalysis?.fit_result ?? '')} class="capitalize mx-1">{fitAnalysis?.fit_result}</Badge>.
+							The tolerances don't achieve the intended fit.
+						</p>
+					</div>
+				</CardContent>
+			</Card>
+		{/if}
 
 		<div class="grid gap-6 lg:grid-cols-3">
 			<!-- Main content -->

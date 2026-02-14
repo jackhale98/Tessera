@@ -1,4 +1,4 @@
-//! `tdt import` command - Import entities from CSV files
+//! `tdt import` command - Import entities from CSV or SysML files
 
 mod asm;
 mod capa;
@@ -13,6 +13,7 @@ mod req;
 mod risk;
 mod rslt;
 mod sup;
+mod sysml;
 mod test;
 
 use console::style;
@@ -24,20 +25,29 @@ use tdt_core::core::project::Project;
 
 pub use common::generate_template;
 
+/// What the first positional argument resolved to
+#[derive(Debug, Clone)]
+pub(crate) enum ImportTarget {
+    /// A standard CSV entity type import
+    EntityType(EntityPrefix),
+    /// SysML v2 format import
+    Sysml,
+}
+
 #[derive(clap::Args, Debug)]
 pub struct ImportArgs {
-    /// Entity type to import (req, risk, cmp, sup, feat, rslt, asm, etc.)
-    #[arg(value_parser = parse_entity_type)]
-    pub entity_type: Option<EntityPrefix>,
+    /// Entity type or format to import (req, risk, cmp, sup, feat, rslt, asm, sysml, etc.)
+    #[arg(value_parser = parse_import_target)]
+    pub target: Option<ImportTarget>,
 
-    /// CSV file to import
+    /// File to import (CSV or SysML)
     pub file: Option<PathBuf>,
 
     /// Generate a CSV template for the entity type
     #[arg(long)]
     pub template: bool,
 
-    /// Validate CSV without creating files
+    /// Validate without creating files
     #[arg(long)]
     pub dry_run: bool,
 
@@ -70,23 +80,24 @@ pub struct ImportArgs {
     pub assembly: Option<String>,
 }
 
-fn parse_entity_type(s: &str) -> Result<EntityPrefix, String> {
+fn parse_import_target(s: &str) -> Result<ImportTarget, String> {
     match s.to_lowercase().as_str() {
-        "req" => Ok(EntityPrefix::Req),
-        "risk" => Ok(EntityPrefix::Risk),
-        "cmp" => Ok(EntityPrefix::Cmp),
-        "asm" => Ok(EntityPrefix::Asm),
-        "sup" => Ok(EntityPrefix::Sup),
-        "test" => Ok(EntityPrefix::Test),
-        "rslt" | "result" => Ok(EntityPrefix::Rslt),
-        "proc" => Ok(EntityPrefix::Proc),
-        "ctrl" => Ok(EntityPrefix::Ctrl),
-        "ncr" => Ok(EntityPrefix::Ncr),
-        "capa" => Ok(EntityPrefix::Capa),
-        "quote" | "quot" => Ok(EntityPrefix::Quot),
-        "feat" | "feature" => Ok(EntityPrefix::Feat),
+        "sysml" => Ok(ImportTarget::Sysml),
+        "req" => Ok(ImportTarget::EntityType(EntityPrefix::Req)),
+        "risk" => Ok(ImportTarget::EntityType(EntityPrefix::Risk)),
+        "cmp" => Ok(ImportTarget::EntityType(EntityPrefix::Cmp)),
+        "asm" => Ok(ImportTarget::EntityType(EntityPrefix::Asm)),
+        "sup" => Ok(ImportTarget::EntityType(EntityPrefix::Sup)),
+        "test" => Ok(ImportTarget::EntityType(EntityPrefix::Test)),
+        "rslt" | "result" => Ok(ImportTarget::EntityType(EntityPrefix::Rslt)),
+        "proc" => Ok(ImportTarget::EntityType(EntityPrefix::Proc)),
+        "ctrl" => Ok(ImportTarget::EntityType(EntityPrefix::Ctrl)),
+        "ncr" => Ok(ImportTarget::EntityType(EntityPrefix::Ncr)),
+        "capa" => Ok(ImportTarget::EntityType(EntityPrefix::Capa)),
+        "quote" | "quot" => Ok(ImportTarget::EntityType(EntityPrefix::Quot)),
+        "feat" | "feature" => Ok(ImportTarget::EntityType(EntityPrefix::Feat)),
         _ => Err(format!(
-            "Unsupported entity type: '{}'. Supported: req, risk, cmp, asm, sup, test, rslt, proc, ctrl, ncr, capa, quote, feat",
+            "Unsupported import target: '{}'. Supported: req, risk, cmp, asm, sup, test, rslt, proc, ctrl, ncr, capa, quote, feat, sysml",
             s
         )),
     }
@@ -95,23 +106,32 @@ fn parse_entity_type(s: &str) -> Result<EntityPrefix, String> {
 pub fn run(args: ImportArgs) -> Result<()> {
     // Handle template generation
     if args.template {
-        let entity_type = args.entity_type.ok_or_else(|| {
+        let target = args.target.ok_or_else(|| {
             miette::miette!(
                 "Entity type required for template generation. Usage: tdt import --template req"
             )
         })?;
-        return generate_template(entity_type);
+        match target {
+            ImportTarget::EntityType(entity_type) => return generate_template(entity_type),
+            ImportTarget::Sysml => {
+                return Err(miette::miette!(
+                    "Template generation not available for SysML format"
+                ));
+            }
+        }
     }
 
-    // Require both entity type and file for import
-    let entity_type = args
-        .entity_type
-        .ok_or_else(|| miette::miette!("Entity type required. Usage: tdt import req data.csv"))?;
-
-    let file_path = args
-        .file
+    // Require both target and file for import
+    let target = args
+        .target
         .clone()
-        .ok_or_else(|| miette::miette!("CSV file required. Usage: tdt import req data.csv"))?;
+        .ok_or_else(|| miette::miette!("Import target required. Usage: tdt import req data.csv  OR  tdt import sysml model.sysml"))?;
+
+    let file_path = args.file.clone().ok_or_else(|| {
+        miette::miette!(
+            "File required. Usage: tdt import req data.csv  OR  tdt import sysml model.sysml"
+        )
+    })?;
 
     if !file_path.exists() {
         return Err(miette::miette!("File not found: {}", file_path.display()));
@@ -119,9 +139,55 @@ pub fn run(args: ImportArgs) -> Result<()> {
 
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
 
+    // Handle SysML import
+    if let ImportTarget::Sysml = target {
+        println!(
+            "{} Importing SysML v2 from {}{}",
+            style("->").blue(),
+            style(file_path.display()).yellow(),
+            if args.dry_run {
+                style(" (dry run)").dim().to_string()
+            } else {
+                String::new()
+            }
+        );
+        println!();
+
+        let stats = sysml::import(&project, &file_path, args.dry_run)?;
+
+        // Print summary
+        println!();
+        println!("{}", style("─".repeat(50)).dim());
+        println!("{}", style("Import Summary").bold());
+        println!("{}", style("─".repeat(50)).dim());
+        println!("  Entities parsed:  {}", style(stats.rows_processed).cyan());
+        println!(
+            "  Entities created: {}",
+            style(stats.entities_created).green()
+        );
+
+        if args.dry_run {
+            println!();
+            println!(
+                "{}",
+                style("Dry run complete. No files were created.").yellow()
+            );
+        } else {
+            super::utils::sync_cache(&project);
+        }
+
+        return Ok(());
+    }
+
+    // Standard CSV entity import
+    let entity_type = match target {
+        ImportTarget::EntityType(et) => et,
+        ImportTarget::Sysml => unreachable!(),
+    };
+
     println!(
         "{} Importing {} entities from {}{}",
-        style("→").blue(),
+        style("->").blue(),
         style(entity_type.as_str()).cyan(),
         style(file_path.display()).yellow(),
         if args.dry_run {

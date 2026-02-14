@@ -49,6 +49,7 @@ A CLI and desktop application for managing requirements, risks, tests, BOMs, tol
   - [Version Control](#version-control-git-wrappers)
   - [Baselines](#baselines-git-tags)
   - [Bulk Operations](#bulk-operations)
+  - [SysML v2 Interchange](#sysml-v2-interchange)
 - [Example Workflows](#example-workflows)
 - [Manufacturing Quality Loop](#manufacturing-quality-loop)
 - [Tolerance Format](#tolerance-format)
@@ -76,6 +77,7 @@ A CLI and desktop application for managing requirements, risks, tests, BOMs, tol
 - **FMEA Risk Management** - Built-in support for Failure Mode and Effects Analysis
 - **BOM Management** - Components and assemblies with supplier tracking
 - **Tolerance Analysis** - Features, mates, and stackups with worst-case, RSS, Monte Carlo, and 3D SDT analysis
+- **SysML v2 Interchange** - Export and import SysML v2 textual notation for MBSE integration
 - **Desktop App (Beta)** - Full-featured GUI for visual entity management
 
 ---
@@ -808,6 +810,34 @@ tdt req list --status draft --output id | tdt bulk set-status review
 
 This works with all entity types and all bulk commands (`set-status`, `add-tag`, `remove-tag`, `set-author`).
 
+### SysML v2 Interchange
+
+Export project data to SysML v2 textual notation for use with MBSE tools, or import SysML v2 files to create Tessera entities.
+
+```bash
+# Export all requirements, tests, components, and results to SysML v2
+tdt export sysml                          # Output to stdout
+tdt export sysml -f model.sysml           # Write to file
+tdt export sysml --package MyProject      # Custom package name
+
+# Import from a SysML v2 file
+tdt import sysml model.sysml             # Create entities from SysML
+tdt import sysml model.sysml --dry-run   # Preview without creating files
+tdt import sysml model.sysml --update    # Update existing entities
+```
+
+**Export** generates SysML v2 textual notation with:
+- `requirement def` blocks for requirements with `doc` and `@TdtMetadata` annotations
+- `verification def` blocks for tests with `@VerificationMethod` and `objective` linking
+- `part def` blocks for components
+- `satisfy requirement : X by Y;` relationships from `satisfied_by` links
+- Test results as structured comments with verdict and execution date
+
+**Import** parses SysML v2 and creates Tessera entity YAML files with:
+- Round-trip ID preservation (TDT entity IDs in SysML short IDs are reused)
+- Bidirectional link restoration (`verifies`/`verified_by`, `satisfied_by`)
+- Metadata recovery from `@TdtMetadata` annotations (status, author, category, tags)
+
 ---
 
 ## Example Workflows
@@ -968,6 +998,25 @@ QUOT@2   SUP@2      13.75       50   21d      pending
 QUOT@3   SUP@3      10.00      500   45d      pending
 
 ★ Lowest price: 10.00 from SUP@3
+```
+
+### SysML v2 Round-Trip
+
+Export your project to SysML v2 for review in MBSE tools, then import changes back:
+
+```bash
+# Export current project state
+$ tdt export sysml -f project.sysml
+✓ Exported 7 requirements, 4 tests, 4 results, 3 components
+
+# Share with SysML tools, make edits, then re-import
+$ tdt import sysml updated_model.sysml
+✓ Imported 7 requirements, 4 tests, 3 components
+  Links: 4 verified_by, 3 satisfied_by
+
+# Verify imported entities
+$ tdt req list
+$ tdt trace coverage
 ```
 
 > **Note:** For complete YAML schema documentation and field references, see the individual entity docs in the [docs/](docs/) directory.

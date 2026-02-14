@@ -5017,6 +5017,8 @@ dependencies = [
  "jsonschema",
  "miette",
  "nalgebra",
+ "pest",
+ "pest_derive",
  "rand 0.9.2",
  "rusqlite",
  "rust-embed",

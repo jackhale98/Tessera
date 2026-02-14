@@ -1,0 +1,131 @@
+// Minimal SysML v2 grammar for TDT-relevant constructs
+
+file = { SOI ~ package ~ EOI }
+
+package = { "package" ~ identifier ~ "{" ~ package_body ~ "}" }
+
+package_body = { package_item* }
+
+package_item = {
+    import_stmt
+    | requirement_def
+    | verification_def
+    | part_def
+    | satisfy_stmt
+    | line_comment
+    | block_comment
+}
+
+// Import statements (captured but ignored)
+import_stmt = { "import" ~ import_path ~ ";" }
+import_path = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | ":" | "*" | ".")* }
+
+// Requirement definition
+requirement_def = {
+    "requirement" ~ "def" ~ short_id? ~ identifier ~ "{" ~ req_body ~ "}"
+}
+
+req_body = { req_item* }
+req_item = {
+    doc_block
+    | annotation
+    | line_comment
+    | block_comment
+}
+
+// Verification case definition
+verification_def = {
+    "verification" ~ "def" ~ short_id? ~ identifier ~ "{" ~ verif_body ~ "}"
+}
+
+verif_body = { verif_item* }
+verif_item = {
+    doc_block
+    | annotation
+    | objective_block
+    | return_stmt
+    | line_comment
+    | block_comment
+}
+
+// Part definition
+part_def = {
+    "part" ~ "def" ~ short_id? ~ identifier ~ (("{" ~ part_body ~ "}") | ";")
+}
+
+part_body = { part_item* }
+part_item = {
+    doc_block
+    | annotation
+    | line_comment
+    | block_comment
+}
+
+// Satisfy statement
+satisfy_stmt = {
+    "satisfy" ~ "requirement" ~ ":" ~ identifier ~ "by" ~ identifier ~ ";"
+}
+
+// Objective block (inside verification)
+objective_block = {
+    "objective" ~ "{" ~ objective_item* ~ "}"
+}
+
+objective_item = {
+    verify_req_stmt
+    | line_comment
+    | block_comment
+}
+
+verify_req_stmt = {
+    "verify" ~ "requirement" ~ ":" ~ identifier ~ ";"
+}
+
+// Return statement
+return_stmt = {
+    "return" ~ identifier ~ ":" ~ identifier ~ ";"
+}
+
+// Doc block
+doc_block = {
+    "doc" ~ block_comment_raw
+}
+
+block_comment_raw = @{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Annotation
+annotation = {
+    "@" ~ identifier ~ "{" ~ annotation_body ~ "}"
+}
+
+annotation_body = { annotation_item* }
+annotation_item = {
+    annotation_enum_kv | annotation_kv
+}
+
+annotation_kv = {
+    identifier ~ "=" ~ annotation_value ~ ";"
+}
+
+annotation_enum_kv = {
+    identifier ~ "=" ~ identifier ~ "::" ~ identifier ~ ";"
+}
+
+annotation_value = {
+    quoted_string | identifier
+}
+
+// Short ID (e.g., <'REQ-01KC8FF44V...'>)
+short_id = { "<" ~ "'" ~ short_id_content ~ "'" ~ ">" }
+short_id_content = @{ (!"'" ~ ANY)+ }
+
+// Terminals
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+quoted_string = @{ "\"" ~ quoted_inner ~ "\"" }
+quoted_inner = @{ (!"\"" ~ !"\\" ~ ANY | "\\" ~ ANY)* }
+
+line_comment = @{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
+block_comment = @{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }

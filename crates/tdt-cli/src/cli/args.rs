@@ -18,6 +18,7 @@ use crate::cli::commands::{
     diff::DiffArgs,
     dmm::DmmArgs,
     dsm::DsmArgs,
+    export::ExportCommands,
     feat::FeatCommands,
     haz::HazCommands,
     history::HistoryArgs,
@@ -115,8 +116,11 @@ WORKFLOW (opt-in):
   review      View pending reviews (list, summary)
   team        Team roster management (list, whoami, init, add, remove)
 
+INTERCHANGE:
+  export      Export project data (sysml)
+  import      Import entities from CSV or SysML files
+
 UTILITIES:
-  import      Import entities from CSV files
   bulk        Bulk operations on multiple entities
   cache       Entity cache management (rebuild, sync, status, query)
   config      View and modify Tessera configuration (show, set, unset)
@@ -348,11 +352,18 @@ pub enum Commands {
     Team(TeamCommands),
 
     // ─────────────────────────────────────────────────────────────────────
-    // UTILITIES
+    // INTERCHANGE
     // ─────────────────────────────────────────────────────────────────────
-    /// Import entities from CSV files
+    /// Export project data (sysml)
+    #[command(subcommand)]
+    Export(ExportCommands),
+
+    /// Import entities from CSV or SysML files
     Import(ImportArgs),
 
+    // ─────────────────────────────────────────────────────────────────────
+    // UTILITIES
+    // ─────────────────────────────────────────────────────────────────────
     /// Bulk operations on multiple entities
     #[command(subcommand)]
     Bulk(BulkCommands),

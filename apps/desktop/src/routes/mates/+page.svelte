@@ -23,13 +23,31 @@
 		return `${value >= 0 ? '+' : ''}${value.toFixed(4)}`;
 	}
 
-	// Helper to format fit result with pass/fail indication
+	// Helper to check if mate type matches calculated fit result
+	function checkTypeMismatch(entity: EntityData): boolean {
+		const mateType = entity.data?.mate_type as string | undefined;
+		const fitAnalysis = entity.data?.fit_analysis as { fit_result?: string } | undefined;
+		const fitResult = fitAnalysis?.fit_result;
+		if (!mateType || !fitResult) return false;
+		return mateType.toLowerCase() !== fitResult.toLowerCase();
+	}
+
+	// Helper to format fit result with pass/fail indication and mismatch warning
 	function formatFitResult(value: unknown, entity: EntityData): string {
 		const fitAnalysis = entity.data?.fit_analysis as { fit_result?: string } | undefined;
 		const result = fitAnalysis?.fit_result;
 		if (!result) return '-';
-		// Return the fit result - display will show color via cell content
-		return result.charAt(0).toUpperCase() + result.slice(1);
+		const formatted = result.charAt(0).toUpperCase() + result.slice(1);
+		// Add warning indicator if type doesn't match calculated result
+		if (checkTypeMismatch(entity)) {
+			return `⚠ ${formatted}`;
+		}
+		return formatted;
+	}
+
+	// Count mates with type mismatch
+	function countMismatches(entities: EntityData[]): number {
+		return entities.filter(e => checkTypeMismatch(e)).length;
 	}
 
 	const columns = [
@@ -107,13 +125,26 @@
 	</div>
 
 	<!-- Stats -->
-	<div class="grid gap-4 md:grid-cols-3">
+	<div class="grid gap-4 md:grid-cols-4">
 		<Card>
 			<CardHeader class="pb-2">
 				<CardTitle class="text-sm font-medium text-muted-foreground">Total Mates</CardTitle>
 			</CardHeader>
 			<CardContent>
 				<div class="text-2xl font-bold">{entitiesData.length}</div>
+			</CardContent>
+		</Card>
+		<Card>
+			<CardHeader class="pb-2">
+				<CardTitle class="text-sm font-medium text-muted-foreground">Type Mismatch</CardTitle>
+			</CardHeader>
+			<CardContent>
+				<div class="text-2xl font-bold" class:text-destructive={countMismatches(entitiesData) > 0}>
+					{countMismatches(entitiesData)}
+					{#if countMismatches(entitiesData) > 0}
+						<span class="text-sm font-normal ml-1">⚠</span>
+					{/if}
+				</div>
 			</CardContent>
 		</Card>
 		<Card>

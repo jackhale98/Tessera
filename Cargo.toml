@@ -43,6 +43,10 @@ rand = "0.9"
 # 3D Tolerance Analysis
 nalgebra = { version = "0.34", default-features = false, features = ["libm", "macros", "serde-serialize-no-std", "alloc"] }
 
+# Parsing
+pest = "2"
+pest_derive = "2"
+
 # Cache
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"

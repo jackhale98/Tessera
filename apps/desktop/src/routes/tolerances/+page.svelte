@@ -11,28 +11,66 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	// Helper to format WC result
-	function formatWcResult(value: unknown, entity: EntityData): string {
-		const results = entity.data?.analysis_results as { worst_case?: { result?: string } } | undefined;
-		const result = results?.worst_case?.result;
-		if (!result) return '-';
-		return result.charAt(0).toUpperCase() + result.slice(1);
+	// Helper types for analysis results
+	interface AnalysisResults {
+		worst_case?: { result?: string };
+		rss?: { cpk?: number; yield_percent?: number };
 	}
 
-	// Helper to format Cpk
+	// Helper to format WC result with warning indicator
+	function formatWcResult(value: unknown, entity: EntityData): string {
+		const results = entity.data?.analysis_results as AnalysisResults | undefined;
+		const result = results?.worst_case?.result;
+		if (!result) return '-';
+		const formatted = result.charAt(0).toUpperCase() + result.slice(1);
+		// Add warning for fail/marginal
+		if (result.toLowerCase() === 'fail') {
+			return `⚠ ${formatted}`;
+		}
+		return formatted;
+	}
+
+	// Helper to format Cpk with warning indicator
 	function formatCpk(value: unknown, entity: EntityData): string {
-		const results = entity.data?.analysis_results as { rss?: { cpk?: number } } | undefined;
+		const results = entity.data?.analysis_results as AnalysisResults | undefined;
 		const cpk = results?.rss?.cpk;
 		if (cpk === undefined || cpk === null) return '-';
+		// Add warning for low Cpk (< 1.33 is typically minimum acceptable)
+		if (cpk < 1.0) {
+			return `⚠ ${cpk.toFixed(2)}`;
+		}
 		return cpk.toFixed(2);
 	}
 
 	// Helper to format Yield
 	function formatYield(value: unknown, entity: EntityData): string {
-		const results = entity.data?.analysis_results as { rss?: { yield_percent?: number } } | undefined;
+		const results = entity.data?.analysis_results as AnalysisResults | undefined;
 		const yieldPct = results?.rss?.yield_percent;
 		if (yieldPct === undefined || yieldPct === null) return '-';
 		return `${yieldPct.toFixed(1)}%`;
+	}
+
+	// Count stackups with issues
+	function countFailing(entities: EntityData[]): number {
+		return entities.filter(e => {
+			const results = e.data?.analysis_results as AnalysisResults | undefined;
+			return results?.worst_case?.result?.toLowerCase() === 'fail';
+		}).length;
+	}
+
+	function countMarginal(entities: EntityData[]): number {
+		return entities.filter(e => {
+			const results = e.data?.analysis_results as AnalysisResults | undefined;
+			return results?.worst_case?.result?.toLowerCase() === 'marginal';
+		}).length;
+	}
+
+	function countLowCpk(entities: EntityData[]): number {
+		return entities.filter(e => {
+			const results = e.data?.analysis_results as AnalysisResults | undefined;
+			const cpk = results?.rss?.cpk;
+			return cpk !== undefined && cpk !== null && cpk < 1.33;
+		}).length;
 	}
 
 	const columns = [
@@ -103,7 +141,7 @@
 	</div>
 
 	<!-- Stats -->
-	<div class="grid gap-4 md:grid-cols-3">
+	<div class="grid gap-4 md:grid-cols-5">
 		<Card>
 			<CardHeader class="pb-2">
 				<CardTitle class="text-sm font-medium text-muted-foreground">Total Stackups</CardTitle>
@@ -114,10 +152,35 @@
 		</Card>
 		<Card>
 			<CardHeader class="pb-2">
-				<CardTitle class="text-sm font-medium text-muted-foreground">Draft</CardTitle>
+				<CardTitle class="text-sm font-medium text-muted-foreground">WC Failing</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<div class="text-2xl font-bold">{entitiesData.filter(e => e.status === 'draft').length}</div>
+				<div class="text-2xl font-bold" class:text-destructive={countFailing(entitiesData) > 0}>
+					{countFailing(entitiesData)}
+					{#if countFailing(entitiesData) > 0}
+						<span class="text-sm font-normal ml-1">⚠</span>
+					{/if}
+				</div>
+			</CardContent>
+		</Card>
+		<Card>
+			<CardHeader class="pb-2">
+				<CardTitle class="text-sm font-medium text-muted-foreground">WC Marginal</CardTitle>
+			</CardHeader>
+			<CardContent>
+				<div class="text-2xl font-bold" class:text-yellow-500={countMarginal(entitiesData) > 0}>
+					{countMarginal(entitiesData)}
+				</div>
+			</CardContent>
+		</Card>
+		<Card>
+			<CardHeader class="pb-2">
+				<CardTitle class="text-sm font-medium text-muted-foreground">Low Cpk (&lt;1.33)</CardTitle>
+			</CardHeader>
+			<CardContent>
+				<div class="text-2xl font-bold" class:text-yellow-500={countLowCpk(entitiesData) > 0}>
+					{countLowCpk(entitiesData)}
+				</div>
 			</CardContent>
 		</Card>
 		<Card>

@@ -751,6 +751,86 @@ orphans=$(tdt trace orphans --count)
         </div>
       </section>
 
+      <!-- SysML v2 Interchange -->
+      <section>
+        <h2 class="section-title">SysML v2 Interchange</h2>
+        <p class="section-desc">
+          Export project data to SysML v2 textual notation for use with MBSE tools (Cameo, Capella, etc.),
+          or import SysML v2 files to populate your Tessera project. Full round-trip fidelity with
+          metadata preservation.
+        </p>
+
+        <div class="benefits-list">
+          <div class="benefit-item">
+            <span class="icon">&#10003;</span>
+            <span>Requirements as <code>requirement def</code> with doc blocks</span>
+          </div>
+          <div class="benefit-item">
+            <span class="icon">&#10003;</span>
+            <span>Tests as <code>verification def</code> with method annotations</span>
+          </div>
+          <div class="benefit-item">
+            <span class="icon">&#10003;</span>
+            <span>Components as <code>part def</code> elements</span>
+          </div>
+          <div class="benefit-item">
+            <span class="icon">&#10003;</span>
+            <span>Traceability via <code>satisfy</code> and <code>verify</code> relationships</span>
+          </div>
+          <div class="benefit-item">
+            <span class="icon">&#10003;</span>
+            <span>Round-trip ID and metadata preservation</span>
+          </div>
+          <div class="benefit-item">
+            <span class="icon">&#10003;</span>
+            <span>Test results as structured comments with verdicts</span>
+          </div>
+        </div>
+
+        <div class="terminal">
+          <div class="terminal-header">
+            <div class="terminal-dot red"></div>
+            <div class="terminal-dot yellow"></div>
+            <div class="terminal-dot green"></div>
+            <span class="terminal-title">SysML v2 Export &amp; Import</span>
+          </div>
+          <pre><span class="comment"># Export entire project to SysML v2 textual notation</span>
+<span class="cmd">$</span> tdt export sysml -f model.sysml
+<span class="success">&#10003; Exported 7 requirements, 4 tests, 4 results, 3 components</span>
+
+<span class="comment"># Preview the generated SysML</span>
+<span class="cmd">$</span> tdt export sysml --package MyProject
+<span class="output">package MyProject {
+    import Requirements::*;
+    import VerificationCases::*;
+
+    requirement def &lt;'REQ-01KC8FF44V...'&gt; StrokeLength {
+        doc /* The actuator shall have a min stroke of 100mm. */
+        @TdtMetadata { status = approved; author = "Jack"; }
+    }
+
+    verification def &lt;'TEST-01KC99PD5A...'&gt; ShaftClearanceCheck {
+        doc /* Verify shaft-bushing clearance. */
+        @VerificationMethod { kind = VerificationMethodKind::inspect; }
+        objective { verify requirement : StrokeLength; }
+        return verdict : VerdictKind;
+    }
+
+    part def &lt;'CMP-01KC8FHP5Z...'&gt; ActuatorShaft;
+
+    satisfy requirement : StrokeLength by ActuatorShaft;
+}</span>
+
+<span class="comment"># Import a SysML file into a Tessera project</span>
+<span class="cmd">$</span> tdt import sysml model.sysml
+<span class="success">&#10003; Imported 7 requirements, 4 tests, 3 components
+  Links: 4 verified_by, 3 satisfied_by</span>
+
+<span class="comment"># Dry-run to preview import without writing files</span>
+<span class="cmd">$</span> tdt import sysml model.sysml --dry-run</pre>
+        </div>
+      </section>
+
       <!-- External Tools -->
       <section>
         <h2 class="section-title">External Tool Integration</h2>
@@ -775,7 +855,12 @@ orphans=$(tdt trace orphans --count)
             <p>Generate architecture diagrams from DSM DOT output.</p>
           </div>
           <div class="integration-card">
-            <div class="integration-card-icon">🤖</div>
+            <div class="integration-card-icon">&#9881;</div>
+            <h3>SysML v2 / MBSE</h3>
+            <p>Export and import SysML v2 textual notation for Cameo, Capella, and other MBSE tools.</p>
+          </div>
+          <div class="integration-card">
+            <div class="integration-card-icon">&#129302;</div>
             <h3>AI Assistants</h3>
             <p>Plain text works perfectly with Claude, ChatGPT, and Copilot.</p>
           </div>
