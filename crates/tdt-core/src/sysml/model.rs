@@ -8,6 +8,8 @@ pub struct SysmlPackage {
     pub verifications: Vec<SysmlVerificationCase>,
     pub parts: Vec<SysmlPartDef>,
     pub satisfy_rels: Vec<SatisfyRelationship>,
+    /// Number of unrecognized SysML constructs that were skipped during parsing
+    pub skipped_count: usize,
 }
 
 /// A SysML requirement definition

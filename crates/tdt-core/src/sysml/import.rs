@@ -19,6 +19,10 @@ use crate::sysml::model::*;
 struct SysmlParser;
 
 /// Parse a SysML v2 text file into the intermediate representation.
+///
+/// Unrecognized SysML constructs (e.g., `action def`, `state def`, `port def`)
+/// are silently skipped. The count of skipped constructs is returned in
+/// `SysmlPackage::skipped_count` for diagnostic reporting.
 pub fn parse_sysml(text: &str) -> Result<SysmlPackage, String> {
     let pairs =
         SysmlParser::parse(Rule::file, text).map_err(|e| format!("SysML parse error: {}", e))?;
@@ -79,6 +83,9 @@ fn parse_package_item(
         }
         Rule::import_stmt | Rule::line_comment | Rule::block_comment => {
             // Skip
+        }
+        Rule::unknown_item => {
+            pkg.skipped_count += 1;
         }
         _ => {}
     }
@@ -717,6 +724,55 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_with_unknown_constructs() {
+        let input = r#"package MixedModel {
+    import Requirements::*;
+    import VerificationCases::*;
+
+    // Known constructs
+    requirement def <'REQ-01AAAAAAAAAAAAAAAAAAAAAAAAAA'> StrokeLength {
+        doc /* The actuator shall have a minimum stroke length of 100mm. */
+    }
+
+    // Unknown constructs that should be skipped
+    action def DoSomething {
+        first start;
+        then done;
+    }
+
+    attribute def Power {
+        attribute watts : Real;
+    }
+
+    enum def Color {
+        enum red;
+        enum green;
+        enum blue;
+    }
+
+    state def Running {
+        entry; then do; then exit;
+    }
+
+    port def SensorPort;
+
+    allocate something to somethingElse;
+
+    // Another known construct after unknowns
+    part def <'CMP-01CCCCCCCCCCCCCCCCCCCCCCCCCC'> ActuatorShaft;
+
+    satisfy requirement : StrokeLength by ActuatorShaft;
+}"#;
+        let pkg = parse_sysml(input).unwrap();
+        assert_eq!(pkg.name, "MixedModel");
+        assert_eq!(pkg.requirements.len(), 1);
+        assert_eq!(pkg.parts.len(), 1);
+        assert_eq!(pkg.satisfy_rels.len(), 1);
+        // 5 unknown constructs: action def, attribute def, enum def, state def, port def + allocate stmt = 6
+        assert_eq!(pkg.skipped_count, 6);
+    }
+
+    #[test]
     fn test_convert_to_entities() {
         let pkg = SysmlPackage {
             name: "Test".to_string(),
@@ -737,6 +793,7 @@ mod tests {
             verifications: vec![],
             parts: vec![],
             satisfy_rels: vec![],
+            skipped_count: 0,
         };
 
         let result = convert_to_entities(&pkg, "test").unwrap();

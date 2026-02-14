@@ -14,7 +14,30 @@ package_item = {
     | satisfy_stmt
     | line_comment
     | block_comment
+    | unknown_item
 }
+
+// Catch-all for unrecognized SysML constructs (must be last in package_item).
+// Matches either a block with balanced braces or a semicolon-terminated statement.
+unknown_item = {
+    unknown_block_item | unknown_stmt_item
+}
+
+unknown_block_item = {
+    unknown_tokens ~ "{" ~ unknown_inner* ~ "}"
+}
+
+unknown_stmt_item = {
+    unknown_tokens ~ ";"
+}
+
+unknown_tokens = @{ (!("{" | "}" | ";") ~ ANY)+ }
+
+unknown_inner = {
+    "{" ~ unknown_inner* ~ "}" | unknown_inner_token
+}
+
+unknown_inner_token = @{ (!("{" | "}") ~ ANY)+ }
 
 // Import statements (captured but ignored)
 import_stmt = { "import" ~ import_path ~ ";" }

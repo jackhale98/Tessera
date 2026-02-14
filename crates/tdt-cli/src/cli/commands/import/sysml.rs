@@ -28,6 +28,13 @@ pub fn import(project: &Project, file_path: &PathBuf, dry_run: bool) -> Result<I
         package.parts.len(),
         package.satisfy_rels.len(),
     );
+    if package.skipped_count > 0 {
+        println!(
+            "  {} Skipped {} unrecognized SysML construct(s)",
+            style("note:").dim(),
+            package.skipped_count,
+        );
+    }
     println!();
 
     let import_result =
