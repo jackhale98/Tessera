@@ -17,6 +17,7 @@ use crate::entities::process::{
     ProcessType, SkillLevel, StepApprovalConfig,
 };
 
+use super::base::ServiceBase;
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
 };
@@ -245,12 +246,17 @@ pub struct StatusCounts {
 pub struct ProcessService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> ProcessService<'a> {
     /// Create a new process service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing processes
@@ -372,14 +378,9 @@ impl<'a> ProcessService<'a> {
             entity_revision: 1,
         };
 
-        // Ensure directory exists
-        let dir = self.get_directory();
-        fs::create_dir_all(&dir)?;
-
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, Some("PROC"))?;
 
         Ok(process)
     }
@@ -453,8 +454,7 @@ impl<'a> ProcessService<'a> {
         process.entity_revision += 1;
 
         // Write back
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, None)?;
 
         Ok(process)
     }
@@ -495,8 +495,7 @@ impl<'a> ProcessService<'a> {
         process.equipment.push(equipment);
         process.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, None)?;
 
         Ok(process)
     }
@@ -517,8 +516,7 @@ impl<'a> ProcessService<'a> {
 
         process.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, None)?;
 
         Ok(process)
     }
@@ -538,8 +536,7 @@ impl<'a> ProcessService<'a> {
         process.parameters.push(parameter);
         process.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, None)?;
 
         Ok(process)
     }
@@ -560,8 +557,7 @@ impl<'a> ProcessService<'a> {
 
         process.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, None)?;
 
         Ok(process)
     }
@@ -577,8 +573,7 @@ impl<'a> ProcessService<'a> {
         process.capability = Some(capability);
         process.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, None)?;
 
         Ok(process)
     }
@@ -590,8 +585,7 @@ impl<'a> ProcessService<'a> {
         process.safety = Some(safety);
         process.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&process).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&process, &path, None)?;
 
         Ok(process)
     }

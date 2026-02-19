@@ -12,6 +12,7 @@ use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
+use crate::services::base::ServiceBase;
 use crate::entities::quote::{Currency, NreCost, PriceBreak, Quote, QuoteLinks, QuoteStatus};
 
 use super::common::{
@@ -267,12 +268,17 @@ pub struct ComparedQuote {
 pub struct QuoteService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> QuoteService<'a> {
     /// Create a new quote service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing quotes
@@ -413,14 +419,9 @@ impl<'a> QuoteService<'a> {
             entity_revision: 1,
         };
 
-        // Ensure directory exists
-        let dir = self.get_directory();
-        fs::create_dir_all(&dir)?;
-
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml = serde_yml::to_string(&quote).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&quote, &path, Some("QUOT"))?;
 
         Ok(quote)
     }
@@ -468,8 +469,7 @@ impl<'a> QuoteService<'a> {
         quote.entity_revision += 1;
 
         // Write back
-        let yaml = serde_yml::to_string(&quote).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&quote, &path, None)?;
 
         Ok(quote)
     }
@@ -510,8 +510,7 @@ impl<'a> QuoteService<'a> {
 
         quote.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&quote).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&quote, &path, None)?;
 
         Ok(quote)
     }
@@ -532,8 +531,7 @@ impl<'a> QuoteService<'a> {
 
         quote.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&quote).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&quote, &path, None)?;
 
         Ok(quote)
     }
@@ -545,8 +543,7 @@ impl<'a> QuoteService<'a> {
         quote.nre_costs.push(nre);
         quote.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&quote).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&quote, &path, None)?;
 
         Ok(quote)
     }
@@ -567,8 +564,7 @@ impl<'a> QuoteService<'a> {
 
         quote.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&quote).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&quote, &path, None)?;
 
         Ok(quote)
     }
@@ -580,8 +576,7 @@ impl<'a> QuoteService<'a> {
         quote.quote_status = status;
         quote.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&quote).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&quote, &path, None)?;
 
         Ok(quote)
     }

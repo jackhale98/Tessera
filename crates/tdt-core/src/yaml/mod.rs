@@ -2,6 +2,7 @@
 
 pub mod diagnostics;
 pub mod parser;
+pub mod template;
 
 pub use diagnostics::{YamlError, YamlSyntaxError};
 pub use parser::{parse_yaml, parse_yaml_file};

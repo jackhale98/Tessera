@@ -19,6 +19,7 @@ use crate::entities::requirement::{Level, Links, Requirement, RequirementType, S
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
 };
+use crate::services::base::ServiceBase;
 
 /// Filter options specific to requirements
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -187,12 +188,17 @@ pub struct UpdateRequirement {
 pub struct RequirementService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> RequirementService<'a> {
     /// Create a new requirement service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing requirements of a given type
@@ -465,9 +471,7 @@ impl<'a> RequirementService<'a> {
 
         // Write to file
         let path = self.get_file_path(&id, input.req_type);
-        let yaml =
-            serde_yml::to_string(&requirement).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&requirement, &path, Some("REQ"))?;
 
         Ok(requirement)
     }
@@ -513,9 +517,7 @@ impl<'a> RequirementService<'a> {
         requirement.revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&requirement).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&requirement, &path, None)?;
 
         Ok(requirement)
     }

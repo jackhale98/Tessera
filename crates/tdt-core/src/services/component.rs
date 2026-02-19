@@ -16,6 +16,7 @@ use crate::entities::component::{
     Component, ComponentCategory, ComponentLinks, ComponentSupplier, Document, MakeBuy,
 };
 
+use super::base::ServiceBase;
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
 };
@@ -229,12 +230,17 @@ pub struct UpdateComponent {
 pub struct ComponentService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> ComponentService<'a> {
     /// Create a new component service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing components
@@ -365,9 +371,7 @@ impl<'a> ComponentService<'a> {
 
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, Some("CMP"))?;
 
         Ok(component)
     }
@@ -436,9 +440,7 @@ impl<'a> ComponentService<'a> {
         component.entity_revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }
@@ -473,9 +475,7 @@ impl<'a> ComponentService<'a> {
         component.suppliers.push(supplier);
         component.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }
@@ -487,9 +487,7 @@ impl<'a> ComponentService<'a> {
         component.documents.push(document);
         component.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }
@@ -501,9 +499,7 @@ impl<'a> ComponentService<'a> {
         component.selected_quote = Some(quote_id.to_string());
         component.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }
@@ -515,9 +511,7 @@ impl<'a> ComponentService<'a> {
         component.selected_quote = None;
         component.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }
@@ -541,9 +535,7 @@ impl<'a> ComponentService<'a> {
         manufacturing.routing = routing;
         component.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }
@@ -565,9 +557,7 @@ impl<'a> ComponentService<'a> {
         manufacturing.routing.push(process_id.to_string());
         component.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }
@@ -596,9 +586,7 @@ impl<'a> ComponentService<'a> {
 
         component.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&component).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&component, &path, None)?;
 
         Ok(component)
     }

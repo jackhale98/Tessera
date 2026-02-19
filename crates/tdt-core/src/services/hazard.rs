@@ -380,7 +380,7 @@ impl<'a> HazardService<'a> {
 
         // Save
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, Some("HAZ"))?;
 
         Ok(hazard)
     }
@@ -416,7 +416,7 @@ impl<'a> HazardService<'a> {
 
         // Save
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, None)?;
 
         Ok(hazard)
     }
@@ -449,7 +449,7 @@ impl<'a> HazardService<'a> {
         hazard.revision += 1;
 
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, None)?;
 
         Ok(hazard)
     }
@@ -462,7 +462,7 @@ impl<'a> HazardService<'a> {
         hazard.revision += 1;
 
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, None)?;
 
         Ok(hazard)
     }
@@ -480,7 +480,7 @@ impl<'a> HazardService<'a> {
         hazard.revision += 1;
 
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, None)?;
 
         Ok(hazard)
     }
@@ -495,7 +495,7 @@ impl<'a> HazardService<'a> {
         hazard.revision += 1;
 
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, None)?;
 
         Ok(hazard)
     }
@@ -510,7 +510,7 @@ impl<'a> HazardService<'a> {
         hazard.revision += 1;
 
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, None)?;
 
         Ok(hazard)
     }
@@ -523,7 +523,7 @@ impl<'a> HazardService<'a> {
         hazard.revision += 1;
 
         let file_path = self.get_file_path(&hazard.id);
-        self.base.save(&hazard, &file_path)?;
+        self.base.save(&hazard, &file_path, None)?;
 
         Ok(hazard)
     }

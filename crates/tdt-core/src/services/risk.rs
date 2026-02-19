@@ -14,6 +14,7 @@ use crate::entities::risk::{
     InitialRisk, Mitigation, MitigationStatus, Risk, RiskLevel, RiskLinks, RiskType,
 };
 
+use super::base::ServiceBase;
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
 };
@@ -227,12 +228,17 @@ pub struct UpdateRisk {
 pub struct RiskService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> RiskService<'a> {
     /// Create a new risk service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing risks
@@ -376,14 +382,9 @@ impl<'a> RiskService<'a> {
             revision: 1,
         };
 
-        // Ensure directory exists
-        let dir = self.get_directory();
-        fs::create_dir_all(&dir)?;
-
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&risk, &path, Some("RISK"))?;
 
         Ok(risk)
     }
@@ -479,8 +480,7 @@ impl<'a> RiskService<'a> {
         risk.revision += 1;
 
         // Write back
-        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&risk, &path, None)?;
 
         Ok(risk)
     }
@@ -522,8 +522,7 @@ impl<'a> RiskService<'a> {
         risk.mitigations.push(mitigation);
         risk.revision += 1;
 
-        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&risk, &path, None)?;
 
         Ok(risk)
     }
@@ -549,8 +548,7 @@ impl<'a> RiskService<'a> {
         risk.mitigations[mitigation_index].status = Some(status);
         risk.revision += 1;
 
-        let yaml = serde_yml::to_string(&risk).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&risk, &path, None)?;
 
         Ok(risk)
     }

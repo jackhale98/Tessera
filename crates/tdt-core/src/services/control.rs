@@ -17,6 +17,7 @@ use crate::entities::control::{
     Measurement, Sampling,
 };
 
+use super::base::ServiceBase;
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
 };
@@ -239,12 +240,17 @@ pub struct StatusCounts {
 pub struct ControlService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> ControlService<'a> {
     /// Create a new control service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing controls
@@ -368,14 +374,9 @@ impl<'a> ControlService<'a> {
             entity_revision: 1,
         };
 
-        // Ensure directory exists
-        let dir = self.get_directory();
-        fs::create_dir_all(&dir)?;
-
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, Some("CTRL"))?;
 
         Ok(control)
     }
@@ -433,8 +434,7 @@ impl<'a> ControlService<'a> {
         control.entity_revision += 1;
 
         // Write back
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, None)?;
 
         Ok(control)
     }
@@ -465,8 +465,7 @@ impl<'a> ControlService<'a> {
         control.characteristic = characteristic;
         control.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, None)?;
 
         Ok(control)
     }
@@ -478,8 +477,7 @@ impl<'a> ControlService<'a> {
         control.measurement = Some(measurement);
         control.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, None)?;
 
         Ok(control)
     }
@@ -491,8 +489,7 @@ impl<'a> ControlService<'a> {
         control.sampling = Some(sampling);
         control.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, None)?;
 
         Ok(control)
     }
@@ -504,8 +501,7 @@ impl<'a> ControlService<'a> {
         control.control_limits = Some(limits);
         control.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, None)?;
 
         Ok(control)
     }
@@ -517,8 +513,7 @@ impl<'a> ControlService<'a> {
         control.reaction_plan = Some(reaction_plan.to_string());
         control.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, None)?;
 
         Ok(control)
     }
@@ -530,8 +525,7 @@ impl<'a> ControlService<'a> {
         control.characteristic.critical = critical;
         control.entity_revision += 1;
 
-        let yaml = serde_yml::to_string(&control).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&control, &path, None)?;
 
         Ok(control)
     }

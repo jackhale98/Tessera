@@ -377,7 +377,7 @@ impl<'a> LotService<'a> {
 
         // Save
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, Some("LOT"))?;
 
         Ok(lot)
     }
@@ -416,7 +416,7 @@ impl<'a> LotService<'a> {
 
         // Save
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -442,7 +442,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -455,7 +455,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -473,7 +473,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -486,7 +486,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -547,7 +547,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -568,7 +568,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -592,7 +592,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -611,7 +611,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -652,7 +652,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -677,7 +677,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -696,7 +696,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -711,7 +711,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -724,7 +724,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -739,7 +739,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -752,7 +752,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }
@@ -765,7 +765,7 @@ impl<'a> LotService<'a> {
         lot.entity_revision += 1;
 
         let file_path = self.get_file_path(&lot.id);
-        self.base.save(&lot, &file_path)?;
+        self.base.save(&lot, &file_path, None)?;
 
         Ok(lot)
     }

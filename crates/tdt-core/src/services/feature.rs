@@ -404,7 +404,7 @@ impl<'a> FeatureService<'a> {
 
         // Save
         let file_path = self.get_file_path(&id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, Some("FEAT"))?;
 
         Ok(feature)
     }
@@ -446,7 +446,7 @@ impl<'a> FeatureService<'a> {
 
         // Save
         let file_path = self.get_file_path(&feature.id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, None)?;
 
         Ok(feature)
     }
@@ -511,7 +511,7 @@ impl<'a> FeatureService<'a> {
         feature.entity_revision += 1;
 
         let file_path = self.get_file_path(&feature.id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, None)?;
 
         Ok(feature)
     }
@@ -560,7 +560,7 @@ impl<'a> FeatureService<'a> {
         feature.entity_revision += 1;
 
         let file_path = self.get_file_path(&feature.id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, None)?;
 
         Ok(feature)
     }
@@ -582,7 +582,7 @@ impl<'a> FeatureService<'a> {
         feature.entity_revision += 1;
 
         let file_path = self.get_file_path(&feature.id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, None)?;
 
         Ok(feature)
     }
@@ -595,7 +595,7 @@ impl<'a> FeatureService<'a> {
         feature.entity_revision += 1;
 
         let file_path = self.get_file_path(&feature.id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, None)?;
 
         Ok(feature)
     }
@@ -616,7 +616,7 @@ impl<'a> FeatureService<'a> {
         feature.entity_revision += 1;
 
         let file_path = self.get_file_path(&feature.id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, None)?;
 
         Ok(feature)
     }
@@ -708,7 +708,7 @@ impl<'a> FeatureService<'a> {
         feature.entity_revision += 1;
 
         let file_path = self.get_file_path(&feature.id);
-        self.base.save(&feature, &file_path)?;
+        self.base.save(&feature, &file_path, None)?;
 
         Ok(feature)
     }
@@ -733,7 +733,7 @@ impl<'a> FeatureService<'a> {
             feature.entity_revision += 1;
 
             let file_path = self.get_file_path(&feature.id);
-            self.base.save(&feature, &file_path)?;
+            self.base.save(&feature, &file_path, None)?;
         }
 
         Ok((feature, result.bounds))

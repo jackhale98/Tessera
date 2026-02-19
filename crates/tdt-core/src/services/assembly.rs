@@ -17,6 +17,7 @@ use crate::entities::assembly::{Assembly, AssemblyLinks, BomItem, Document, Manu
 use crate::entities::component::Component;
 use crate::entities::quote::Quote;
 
+use super::base::ServiceBase;
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
 };
@@ -252,12 +253,17 @@ pub struct StatusCounts {
 pub struct AssemblyService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> AssemblyService<'a> {
     /// Create a new assembly service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing assemblies
@@ -389,9 +395,7 @@ impl<'a> AssemblyService<'a> {
 
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, Some("ASM"))?;
 
         Ok(assembly)
     }
@@ -450,9 +454,7 @@ impl<'a> AssemblyService<'a> {
         assembly.entity_revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -519,9 +521,7 @@ impl<'a> AssemblyService<'a> {
         });
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -548,9 +548,7 @@ impl<'a> AssemblyService<'a> {
 
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -581,9 +579,7 @@ impl<'a> AssemblyService<'a> {
         item.quantity = quantity;
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -629,9 +625,7 @@ impl<'a> AssemblyService<'a> {
         assembly.subassemblies.push(subassembly_id.to_string());
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -656,9 +650,7 @@ impl<'a> AssemblyService<'a> {
 
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -734,9 +726,7 @@ impl<'a> AssemblyService<'a> {
         manufacturing.routing = routing;
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -757,9 +747,7 @@ impl<'a> AssemblyService<'a> {
         manufacturing.routing.push(process_id.to_string());
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }
@@ -787,9 +775,7 @@ impl<'a> AssemblyService<'a> {
 
         assembly.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&assembly).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&assembly, &path, None)?;
 
         Ok(assembly)
     }

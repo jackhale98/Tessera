@@ -12,6 +12,7 @@ use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
+use crate::services::base::ServiceBase;
 use crate::entities::supplier::{
     Address, Capability, Certification, Contact, Currency, Supplier, SupplierLinks,
 };
@@ -208,12 +209,17 @@ pub struct CapabilityCounts {
 pub struct SupplierService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> SupplierService<'a> {
     /// Create a new supplier service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing suppliers
@@ -314,15 +320,9 @@ impl<'a> SupplierService<'a> {
             entity_revision: 1,
         };
 
-        // Ensure directory exists
-        let dir = self.get_directory();
-        fs::create_dir_all(&dir)?;
-
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, Some("SUP"))?;
 
         Ok(supplier)
     }
@@ -364,9 +364,7 @@ impl<'a> SupplierService<'a> {
         supplier.entity_revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -393,9 +391,7 @@ impl<'a> SupplierService<'a> {
         supplier.contacts.push(contact);
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -416,9 +412,7 @@ impl<'a> SupplierService<'a> {
 
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -446,9 +440,7 @@ impl<'a> SupplierService<'a> {
 
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -460,9 +452,7 @@ impl<'a> SupplierService<'a> {
         supplier.addresses.push(address);
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -489,9 +479,7 @@ impl<'a> SupplierService<'a> {
 
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -503,9 +491,7 @@ impl<'a> SupplierService<'a> {
         supplier.certifications.push(cert);
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -526,9 +512,7 @@ impl<'a> SupplierService<'a> {
 
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }
@@ -541,9 +525,7 @@ impl<'a> SupplierService<'a> {
             supplier.capabilities.push(capability);
             supplier.entity_revision += 1;
 
-            let yaml =
-                serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-            fs::write(&path, yaml)?;
+            self.base.save(&supplier, &path, None)?;
         }
 
         Ok(supplier)
@@ -565,9 +547,7 @@ impl<'a> SupplierService<'a> {
 
         supplier.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&supplier).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&supplier, &path, None)?;
 
         Ok(supplier)
     }

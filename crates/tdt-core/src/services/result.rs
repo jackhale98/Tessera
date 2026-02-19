@@ -470,7 +470,7 @@ impl<'a> ResultService<'a> {
             fs::create_dir_all(parent)?;
         }
 
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, Some("RSLT"))?;
 
         Ok(result)
     }
@@ -540,7 +540,7 @@ impl<'a> ResultService<'a> {
 
         // Save to file
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -596,7 +596,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -636,7 +636,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -657,7 +657,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -683,7 +683,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -704,7 +704,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -727,7 +727,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -748,7 +748,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -781,7 +781,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -802,7 +802,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -835,7 +835,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }
@@ -856,7 +856,7 @@ impl<'a> ResultService<'a> {
 
         result.revision += 1;
         let file_path = self.get_file_path(&result);
-        self.base.save(&result, &file_path)?;
+        self.base.save(&result, &file_path, None)?;
 
         Ok(result)
     }

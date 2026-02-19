@@ -139,7 +139,15 @@ impl<'a> ServiceBase<'a> {
     ///
     /// Writes the entity as YAML to the specified path, ensuring
     /// the parent directory exists.
-    pub fn save<T>(&self, entity: &T, path: &Path) -> ServiceResult<()>
+    ///
+    /// When `prefix` is `Some("REQ")` (or any entity prefix), this is a
+    /// **creation** save: the YAML is enhanced with inline enum hints,
+    /// TODO placeholders, and commented-out optional fields.
+    ///
+    /// When `prefix` is `None`, this is an **update** save: the entity is
+    /// written as plain YAML without any template modifications, preserving
+    /// user data exactly as-is.
+    pub fn save<T>(&self, entity: &T, path: &Path, prefix: Option<&str>) -> ServiceResult<()>
     where
         T: Serialize,
     {
@@ -148,8 +156,15 @@ impl<'a> ServiceBase<'a> {
             fs::create_dir_all(parent)?;
         }
 
-        // Serialize and write
+        // Serialize to YAML
         let yaml = serde_yml::to_string(entity).map_err(|e| ServiceError::Yaml(e.to_string()))?;
+
+        // For creation saves, enhance with template comments; for updates, write as-is
+        let yaml = match prefix {
+            Some(p) => crate::yaml::template::enhance_new_entity_yaml(&yaml, p),
+            None => yaml,
+        };
+
         fs::write(path, yaml)?;
 
         Ok(())
@@ -299,7 +314,7 @@ mod tests {
         // Save it
         let dir = tmp.path().join("requirements/inputs");
         let path = dir.join(format!("{}.tdt.yaml", id));
-        base.save(&req, &path).unwrap();
+        base.save(&req, &path, None).unwrap();
 
         // Verify file exists
         assert!(path.exists());
@@ -337,7 +352,7 @@ mod tests {
 
         let dir = tmp.path().join("requirements/inputs");
         let path = dir.join(format!("{}.tdt.yaml", id));
-        base.save(&req, &path).unwrap();
+        base.save(&req, &path, None).unwrap();
 
         // Delete it
         base.delete(&id.to_string(), &path, false).unwrap();
@@ -368,7 +383,7 @@ mod tests {
             let id = EntityId::new(EntityPrefix::Req);
             let req = create_test_requirement(&id.to_string(), &format!("Req {}", i));
             let path = dir.join(format!("{}.tdt.yaml", id));
-            base.save(&req, &path).unwrap();
+            base.save(&req, &path, None).unwrap();
         }
 
         // Load all
@@ -388,7 +403,7 @@ mod tests {
         let id = EntityId::new(EntityPrefix::Req);
         let req = create_test_requirement(&id.to_string(), "Output Req");
         let path = outputs_dir.join(format!("{}.tdt.yaml", id));
-        base.save(&req, &path).unwrap();
+        base.save(&req, &path, None).unwrap();
 
         // Find it by searching both directories
         let dirs = vec![inputs_dir, outputs_dir];

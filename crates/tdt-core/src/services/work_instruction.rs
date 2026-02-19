@@ -12,6 +12,7 @@ use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
+use crate::services::base::ServiceBase;
 use crate::entities::work_instruction::{
     Material, ProcedureStep, QualityCheck, Tool, WorkInstruction, WorkInstructionLinks, WorkSafety,
 };
@@ -173,12 +174,17 @@ pub struct WorkInstructionStatusCounts {
 pub struct WorkInstructionService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> WorkInstructionService<'a> {
     /// Create a new work instruction service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing work instructions
@@ -301,15 +307,9 @@ impl<'a> WorkInstructionService<'a> {
             entity_revision: 1,
         };
 
-        // Ensure directory exists
-        let dir = self.get_directory();
-        fs::create_dir_all(&dir)?;
-
         // Write to file
         let path = self.get_file_path(&id);
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, Some("WORK"))?;
 
         Ok(instruction)
     }
@@ -345,9 +345,7 @@ impl<'a> WorkInstructionService<'a> {
         instruction.entity_revision += 1;
 
         // Write back
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -380,9 +378,7 @@ impl<'a> WorkInstructionService<'a> {
 
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -408,9 +404,7 @@ impl<'a> WorkInstructionService<'a> {
 
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -422,9 +416,7 @@ impl<'a> WorkInstructionService<'a> {
         instruction.tools_required.push(tool);
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -445,9 +437,7 @@ impl<'a> WorkInstructionService<'a> {
 
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -459,9 +449,7 @@ impl<'a> WorkInstructionService<'a> {
         instruction.materials_required.push(material);
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -484,9 +472,7 @@ impl<'a> WorkInstructionService<'a> {
 
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -502,9 +488,7 @@ impl<'a> WorkInstructionService<'a> {
         instruction.quality_checks.push(check);
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -527,9 +511,7 @@ impl<'a> WorkInstructionService<'a> {
 
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -541,9 +523,7 @@ impl<'a> WorkInstructionService<'a> {
         instruction.safety = Some(safety);
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }
@@ -555,9 +535,7 @@ impl<'a> WorkInstructionService<'a> {
         instruction.safety = None;
         instruction.entity_revision += 1;
 
-        let yaml =
-            serde_yml::to_string(&instruction).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&instruction, &path, None)?;
 
         Ok(instruction)
     }

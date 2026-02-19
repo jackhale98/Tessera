@@ -18,6 +18,7 @@ use crate::entities::test::{
     TestType,
 };
 
+use super::base::ServiceBase;
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
 };
@@ -284,12 +285,17 @@ pub struct RunTestInput {
 pub struct TestService<'a> {
     project: &'a Project,
     cache: &'a EntityCache,
+    base: ServiceBase<'a>,
 }
 
 impl<'a> TestService<'a> {
     /// Create a new test service
     pub fn new(project: &'a Project, cache: &'a EntityCache) -> Self {
-        Self { project, cache }
+        Self {
+            project,
+            cache,
+            base: ServiceBase::new(project, cache),
+        }
     }
 
     /// Get the directory for storing tests based on type
@@ -529,14 +535,9 @@ impl<'a> TestService<'a> {
             revision: 1,
         };
 
-        // Ensure directory exists
-        let dir = self.get_directory(input.test_type);
-        fs::create_dir_all(&dir)?;
-
         // Write to file
         let path = self.get_file_path(&id, input.test_type);
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, Some("TEST"))?;
 
         Ok(test)
     }
@@ -584,8 +585,7 @@ impl<'a> TestService<'a> {
         test.revision += 1;
 
         // Write back
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -618,8 +618,7 @@ impl<'a> TestService<'a> {
 
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -645,8 +644,7 @@ impl<'a> TestService<'a> {
 
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -658,8 +656,7 @@ impl<'a> TestService<'a> {
         test.equipment.push(equipment);
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -680,8 +677,7 @@ impl<'a> TestService<'a> {
 
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -693,8 +689,7 @@ impl<'a> TestService<'a> {
         test.preconditions.push(precondition);
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -706,8 +701,7 @@ impl<'a> TestService<'a> {
         test.acceptance_criteria.push(criterion);
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -719,8 +713,7 @@ impl<'a> TestService<'a> {
         test.sample_size = Some(sample_size);
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -732,8 +725,7 @@ impl<'a> TestService<'a> {
         test.environment = Some(environment);
         test.revision += 1;
 
-        let yaml = serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&test, &path, None)?;
 
         Ok(test)
     }
@@ -746,9 +738,7 @@ impl<'a> TestService<'a> {
             test.links.verifies.push(req_id);
             test.revision += 1;
 
-            let yaml =
-                serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-            fs::write(&path, yaml)?;
+            self.base.save(&test, &path, None)?;
         }
 
         Ok(test)
@@ -762,9 +752,7 @@ impl<'a> TestService<'a> {
             test.links.mitigates.push(risk_id);
             test.revision += 1;
 
-            let yaml =
-                serde_yml::to_string(&test).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-            fs::write(&path, yaml)?;
+            self.base.save(&test, &path, None)?;
         }
 
         Ok(test)
@@ -828,14 +816,10 @@ impl<'a> TestService<'a> {
             revision: 1,
         };
 
-        // Ensure results directory exists
-        let results_dir = self.get_results_directory(test.test_type);
-        fs::create_dir_all(&results_dir)?;
-
         // Write result to file
+        let results_dir = self.get_results_directory(test.test_type);
         let path = results_dir.join(format!("{}.tdt.yaml", result_id));
-        let yaml = serde_yml::to_string(&result).map_err(|e| ServiceError::Yaml(e.to_string()))?;
-        fs::write(&path, yaml)?;
+        self.base.save(&result, &path, Some("RSLT"))?;
 
         Ok(result)
     }
