@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TDT – Tessera Design Toolkit</title>
+  <title>Tessera – Tessera Design Toolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1389,9 +1389,9 @@
     <div class="container">
       <a href="#" class="logo">
         <div class="logo-icon">
-          <img src="logo.svg" alt="TDT Logo" width="40" height="40">
+          <img src="logo.svg" alt="Tessera Logo" width="40" height="40">
         </div>
-        <span class="logo-text">TDT</span>
+        <span class="logo-text">Tessera</span>
       </a>
       <div class="nav-links">
         <a href="#features">Features</a>
@@ -1399,6 +1399,7 @@
         <a href="#install">Install</a>
         <a href="why-plain-text.html">Why Plain Text?</a>
         <a href="tolerance.html">Tolerance</a>
+        <a href="3d-tolerance-analysis.html">3D Analysis</a>
         <a href="reports.html">Reports</a>
         <a href="collaboration.html">Collaboration</a>
         <a href="integrations.html">Integrations</a>
@@ -1426,6 +1427,7 @@
     <a href="#install" onclick="closeMobileMenu()">Install</a>
     <a href="why-plain-text.html" onclick="closeMobileMenu()">Why Plain Text?</a>
     <a href="tolerance.html" onclick="closeMobileMenu()">Tolerance</a>
+    <a href="3d-tolerance-analysis.html" onclick="closeMobileMenu()">3D Analysis</a>
     <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
     <a href="collaboration.html" onclick="closeMobileMenu()">Collaboration</a>
     <a href="integrations.html" onclick="closeMobileMenu()">Integrations</a>
@@ -1464,10 +1466,10 @@
           <span class="hero-code-title">Quick Start</span>
         </div>
         <div class="hero-demo">
-          <img src="quickstart.gif" alt="TDT Quick Start Demo" class="demo-gif" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-          <pre style="display:none;"><span class="comment"># Initialize a new TDT project</span>
+          <img src="quickstart.gif" alt="Tessera Quick Start Demo" class="demo-gif" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+          <pre style="display:none;"><span class="comment"># Initialize a new Tessera project</span>
 <span class="symbol">$</span> <span class="cmd">tdt init</span>
-<span class="output">✓ Initialized TDT project</span>
+<span class="output">✓ Initialized Tessera project</span>
 
 <span class="comment"># Create your first requirement</span>
 <span class="symbol">$</span> <span class="cmd">tdt req new -t input --title "Temp"</span>
@@ -1582,7 +1584,7 @@
       <div class="section-header">
         <div class="section-tag">// Live Demo</div>
         <h2 class="section-title">See It in Action</h2>
-        <p class="section-desc">Watch TDT's powerful command-line workflows in action.</p>
+        <p class="section-desc">Watch Tessera's powerful command-line workflows in action.</p>
       </div>
 
       <div class="demo-tabs">
@@ -2047,7 +2049,7 @@ Coverage: <span style="color: var(--info)">67%</span> (4/6)</pre>
       <div class="section-header">
         <div class="section-tag">// Power User</div>
         <h2 class="section-title">Built for the Command Line</h2>
-        <p class="section-desc">TDT follows Unix philosophy. Compose commands, pipe outputs, and integrate with your existing tools.</p>
+        <p class="section-desc">Tessera follows Unix philosophy. Compose commands, pipe outputs, and integrate with your existing tools.</p>
       </div>
 
       <div class="workflow-showcase">
@@ -2168,13 +2170,13 @@ REQ-01KCA9X3JQFT8BHK2VCN5M9B
         <div class="install-content">
           <div class="section-tag">// Getting Started</div>
           <h2>Up and Running in Minutes</h2>
-          <p>Install TDT with a single command and initialize your first project. Works on macOS, Linux, and Windows.</p>
+          <p>Install Tessera with a single command and initialize your first project. Works on macOS, Linux, and Windows.</p>
 
           <div class="install-steps">
             <div class="install-step">
               <div class="step-number">1</div>
               <div class="step-content">
-                <h4>Install TDT</h4>
+                <h4>Install Tessera</h4>
                 <p>Download a <a href="https://github.com/jackhale98/tdt/releases" style="color: var(--accent)">pre-built binary</a> or use Cargo</p>
               </div>
             </div>
@@ -2205,7 +2207,7 @@ REQ-01KCA9X3JQFT8BHK2VCN5M9B
 
 <span style="color: var(--text-muted)"># Initialize your project</span>
 <span style="color: var(--accent)">$</span> tdt init
-<span style="color: var(--success)">✓</span> Initialized TDT project
+<span style="color: var(--success)">✓</span> Initialized Tessera project
 
 <span style="color: var(--text-muted)"># Create requirement</span>
 <span style="color: var(--accent)">$</span> tdt req new -t input --title "Temp"
@@ -2227,7 +2229,7 @@ REQ-01KCA9X3JQFT8BHK2VCN5M9B
       <div class="section-header">
         <div class="section-tag">// Performance</div>
         <h2 class="section-title">Built for Speed</h2>
-        <p class="section-desc">Native Rust performance with SQLite caching means TDT handles large projects effortlessly.</p>
+        <p class="section-desc">Native Rust performance with SQLite caching means Tessera handles large projects effortlessly.</p>
       </div>
 
       <div class="features-grid">
@@ -2343,7 +2345,7 @@ REQ-01KCA9X3JQFT8BHK2VCN5M9B
               <polygon points="35,55 55,55 45,70 25,70 15,55" fill="#059669"/>
             </svg>
           </div>
-          <span class="footer-text">TDT – Tessera Design Toolkit</span>
+          <span class="footer-text">Tessera Design Toolkit</span>
         </div>
         <div class="footer-links">
           <a href="https://github.com/jackhale98/TDT">GitHub</a>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tolerance Analysis - TDT Tessera Design Toolkit</title>
+  <title>Tolerance Analysis - Tessera Design Toolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -572,15 +572,16 @@
     <div class="nav-container">
       <a href="index.html" class="logo">
         <div class="logo-icon">
-          <img src="logo.svg" alt="TDT Logo" width="40" height="40">
+          <img src="logo.svg" alt="Tessera Logo" width="40" height="40">
         </div>
-        <span class="logo-text">TDT</span>
+        <span class="logo-text">Tessera</span>
       </a>
       <div class="nav-links">
         <a href="index.html#features">Features</a>
         <a href="index.html#install">Install</a>
         <a href="why-plain-text.html">Why Plain Text?</a>
         <a href="tolerance.html" class="active">Tolerance</a>
+        <a href="3d-tolerance-analysis.html">3D Analysis</a>
         <a href="reports.html">Reports</a>
         <a href="collaboration.html">Collaboration</a>
         <a href="integrations.html">Integrations</a>
@@ -607,6 +608,7 @@
     <a href="index.html#install" onclick="closeMobileMenu()">Install</a>
     <a href="why-plain-text.html" onclick="closeMobileMenu()">Why Plain Text?</a>
     <a href="tolerance.html" onclick="closeMobileMenu()">Tolerance</a>
+    <a href="3d-tolerance-analysis.html" onclick="closeMobileMenu()">3D Analysis</a>
     <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
     <a href="collaboration.html" onclick="closeMobileMenu()">Collaboration</a>
     <a href="integrations.html" onclick="closeMobileMenu()">Integrations</a>
@@ -629,7 +631,7 @@
       <section>
         <h2 class="section-title">Tolerance Workflow</h2>
         <p class="section-desc">
-          TDT models tolerances using three entity types. Features define dimensions on components.
+          Tessera models tolerances using three entity types. Features define dimensions on components.
           Both Mates and Stackups use features for different analyses: Mates calculate fit between
           two mating features, while Stackups analyze cumulative tolerance chains.
         </p>
@@ -680,7 +682,7 @@
       <section>
         <h2 class="section-title">Analysis Methods</h2>
         <p class="section-desc">
-          TDT calculates three different analyses, each providing unique insights
+          Tessera calculates three different analyses, each providing unique insights
           into your tolerance chain's behavior.
         </p>
 
@@ -851,7 +853,7 @@ Std: 0.0207</span></pre>
       <section>
         <h2 class="section-title">3D SDT Analysis</h2>
         <p class="section-desc">
-          TDT supports full 3D tolerance analysis using Small Displacement Torsor (SDT) theory.
+          Tessera supports full 3D tolerance analysis using Small Displacement Torsor (SDT) theory.
           Propagate 6-DOF geometric deviations through kinematic chains with Jacobian matrices.
           Integrates with ASME Y14.5 GD&T controls for familiar datum-based analysis.
         </p>
@@ -947,9 +949,9 @@ Std: 0.0207</span></pre>
       <section>
         <h2 class="section-title">GD&T Integration (ASME Y14.5)</h2>
         <p class="section-desc">
-          TDT's 3D analysis integrates seamlessly with ASME Y14.5 GD&T controls.
+          Tessera's 3D analysis integrates seamlessly with ASME Y14.5 GD&T controls.
           Define features with standard callouts - position, perpendicularity, parallelism -
-          and TDT automatically converts them to torsor bounds for chain analysis.
+          and Tessera automatically converts them to torsor bounds for chain analysis.
           Supports MMC/LMC bonus tolerance calculation.
         </p>
 
@@ -1053,7 +1055,7 @@ tdt tol show TOL@1</pre>
         <a href="why-plain-text.html">Philosophy</a>
         <a href="https://github.com/tessera/tdt">GitHub</a>
       </div>
-      <p class="footer-text">TDT - Tessera Design Toolkit. Plain-text product development.</p>
+      <p class="footer-text">Tessera Design Toolkit. Plain-text product development.</p>
     </div>
   </footer>
 

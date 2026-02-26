@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Integrations - TDT Tessera Design Toolkit</title>
+  <title>Integrations - Tessera Design Toolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -486,15 +486,16 @@
     <div class="nav-container">
       <a href="index.html" class="logo">
         <div class="logo-icon">
-          <img src="logo.svg" alt="TDT Logo" width="40" height="40">
+          <img src="logo.svg" alt="Tessera Logo" width="40" height="40">
         </div>
-        <span class="logo-text">TDT</span>
+        <span class="logo-text">Tessera</span>
       </a>
       <div class="nav-links">
         <a href="index.html#features">Features</a>
         <a href="index.html#install">Install</a>
         <a href="why-plain-text.html">Why Plain Text?</a>
         <a href="tolerance.html">Tolerance</a>
+        <a href="3d-tolerance-analysis.html">3D Analysis</a>
         <a href="reports.html">Reports</a>
         <a href="collaboration.html">Collaboration</a>
         <a href="integrations.html" class="active">Integrations</a>
@@ -521,6 +522,7 @@
     <a href="index.html#install" onclick="closeMobileMenu()">Install</a>
     <a href="why-plain-text.html" onclick="closeMobileMenu()">Why Plain Text?</a>
     <a href="tolerance.html" onclick="closeMobileMenu()">Tolerance</a>
+    <a href="3d-tolerance-analysis.html" onclick="closeMobileMenu()">3D Analysis</a>
     <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
     <a href="collaboration.html" onclick="closeMobileMenu()">Collaboration</a>
     <a href="integrations.html" onclick="closeMobileMenu()">Integrations</a>
@@ -534,7 +536,7 @@
         <div class="page-tag">// CI/CD & Automation</div>
         <h1 class="page-title">Integrations</h1>
         <p class="page-desc">
-          Integrate TDT into your development workflow. GitHub Actions, pre-commit hooks,
+          Integrate Tessera into your development workflow. GitHub Actions, pre-commit hooks,
           automated validation, and seamless tool integration.
         </p>
       </header>
@@ -579,7 +581,7 @@
       <section>
         <h2 class="section-title">GitHub Actions</h2>
         <p class="section-desc">
-          Add validation to your CI/CD pipeline. This workflow validates all TDT files,
+          Add validation to your CI/CD pipeline. This workflow validates all Tessera files,
           checks traceability, and generates reports on every push.
         </p>
 
@@ -588,7 +590,7 @@
             <span class="code-filename">.github/workflows/tdt-validate.yml</span>
             <span class="code-lang">YAML</span>
           </div>
-          <pre><span class="key">name:</span> <span class="string">TDT Validation</span>
+          <pre><span class="key">name:</span> <span class="string">Tessera Validation</span>
 
 <span class="key">on:</span>
   <span class="key">push:</span>
@@ -605,7 +607,7 @@
       - <span class="key">name:</span> <span class="string">Install Rust</span>
         <span class="key">uses:</span> <span class="string">dtolnay/rust-action@stable</span>
 
-      - <span class="key">name:</span> <span class="string">Install TDT</span>
+      - <span class="key">name:</span> <span class="string">Install Tessera</span>
         <span class="key">run:</span> <span class="string">cargo install tessera-design-toolkit</span>
 
       - <span class="key">name:</span> <span class="string">Validate all entities</span>
@@ -647,7 +649,7 @@
       - <span class="key">name:</span> <span class="string">Install Rust</span>
         <span class="key">uses:</span> <span class="string">dtolnay/rust-action@stable</span>
 
-      - <span class="key">name:</span> <span class="string">Install TDT</span>
+      - <span class="key">name:</span> <span class="string">Install Tessera</span>
         <span class="key">run:</span> <span class="string">cargo install tessera-design-toolkit</span>
 
       - <span class="key">name:</span> <span class="string">Generate all reports</span>
@@ -670,7 +672,7 @@
       <section>
         <h2 class="section-title">Pre-commit Hooks</h2>
         <p class="section-desc">
-          Catch issues before they're committed. These hooks validate TDT files
+          Catch issues before they're committed. These hooks validate Tessera files
           locally, ensuring only valid data enters your repository.
         </p>
 
@@ -683,7 +685,7 @@
   - <span class="key">repo:</span> <span class="string">local</span>
     <span class="key">hooks:</span>
       - <span class="key">id:</span> <span class="string">tdt-validate</span>
-        <span class="key">name:</span> <span class="string">Validate TDT files</span>
+        <span class="key">name:</span> <span class="string">Validate Tessera files</span>
         <span class="key">entry:</span> <span class="string">tdt validate</span>
         <span class="key">language:</span> <span class="string">system</span>
         <span class="key">files:</span> <span class="string">'\.tdt\.yaml$'</span>
@@ -712,7 +714,7 @@
 
 <span class="comment"># Now validation runs automatically on commit</span>
 <span class="cmd">$</span> git commit -m "Update motor requirements"
-<span class="output">Validate TDT files....................................................<span class="success">Passed</span>
+<span class="output">Validate Tessera files..................................................<span class="success">Passed</span>
 Check entity links....................................................<span class="success">Passed</span>
 [main 3a5bc12] Update motor requirements</span></pre>
         </div>
@@ -731,12 +733,12 @@ Check entity links....................................................<span clas
             <span class="code-lang">Bash</span>
           </div>
           <pre><span class="comment">#!/bin/bash</span>
-<span class="comment"># TDT validation pre-commit hook</span>
+<span class="comment"># Tessera validation pre-commit hook</span>
 
-<span class="keyword">echo</span> <span class="string">"Validating TDT files..."</span>
+<span class="keyword">echo</span> <span class="string">"Validating Tessera files..."</span>
 
 <span class="keyword">if</span> ! tdt validate; <span class="keyword">then</span>
-    <span class="keyword">echo</span> <span class="string">"TDT validation failed. Fix errors before committing."</span>
+    <span class="keyword">echo</span> <span class="string">"Tessera validation failed. Fix errors before committing."</span>
     <span class="keyword">exit</span> 1
 <span class="keyword">fi</span>
 
@@ -835,7 +837,7 @@ orphans=$(tdt trace orphans --count)
       <section>
         <h2 class="section-title">External Tool Integration</h2>
         <p class="section-desc">
-          TDT's JSON and CSV exports integrate with any tool in your workflow.
+          Tessera's JSON and CSV exports integrate with any tool in your workflow.
         </p>
 
         <div class="integration-grid">
@@ -955,7 +957,7 @@ Summary: +3 added, 1 modified, 0 deleted</span></pre>
         <a href="why-plain-text.html">Philosophy</a>
         <a href="https://github.com/tessera/tdt">GitHub</a>
       </div>
-      <p class="footer-text">TDT - Tessera Design Toolkit. Plain-text product development.</p>
+      <p class="footer-text">Tessera Design Toolkit. Plain-text product development.</p>
     </div>
   </footer>
 

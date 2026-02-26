@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Team Collaboration - TDT Tessera Design Toolkit</title>
+  <title>Team Collaboration - Tessera Design Toolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -666,15 +666,16 @@
     <div class="container">
       <a href="index.html" class="logo">
         <div class="logo-icon">
-          <img src="logo.svg" alt="TDT Logo" width="40" height="40">
+          <img src="logo.svg" alt="Tessera Logo" width="40" height="40">
         </div>
-        <span class="logo-text">TDT</span>
+        <span class="logo-text">Tessera</span>
       </a>
       <div class="nav-links">
         <a href="index.html#features">Features</a>
         <a href="index.html#install">Install</a>
         <a href="why-plain-text.html">Why Plain Text?</a>
         <a href="tolerance.html">Tolerance</a>
+        <a href="3d-tolerance-analysis.html">3D Analysis</a>
         <a href="reports.html">Reports</a>
         <a href="collaboration.html" class="active">Collaboration</a>
         <a href="integrations.html">Integrations</a>
@@ -698,10 +699,12 @@
 
   <!-- Mobile Menu -->
   <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html" onclick="closeMobileMenu()">Home</a>
     <a href="index.html#features" onclick="closeMobileMenu()">Features</a>
     <a href="index.html#install" onclick="closeMobileMenu()">Install</a>
     <a href="why-plain-text.html" onclick="closeMobileMenu()">Why Plain Text?</a>
     <a href="tolerance.html" onclick="closeMobileMenu()">Tolerance</a>
+    <a href="3d-tolerance-analysis.html" onclick="closeMobileMenu()">3D Analysis</a>
     <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
     <a href="collaboration.html" onclick="closeMobileMenu()">Collaboration</a>
     <a href="integrations.html" onclick="closeMobileMenu()">Integrations</a>
@@ -720,7 +723,7 @@
       <div class="section-header">
         <h2 class="section-title">Collaboration Made Simple</h2>
         <p class="section-desc">
-          TDT includes optional workflow commands that let your team review and approve design changes
+          Tessera includes optional workflow commands that let your team review and approve design changes
           using simple commands. You don't need to be a git expert.
         </p>
       </div>
@@ -762,12 +765,12 @@
         <div class="concept-card">
           <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
           <h4>Submit</h4>
-          <p>When you're ready for review, submit your work. TDT creates a branch, updates the status, and opens a pull request for you.</p>
+          <p>When you're ready for review, submit your work. Tessera creates a branch, updates the status, and opens a pull request for you.</p>
         </div>
         <div class="concept-card">
           <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div>
           <h4>Approve</h4>
-          <p>Reviewers check the changes and approve. TDT records who approved, updates the status, and can merge the pull request automatically.</p>
+          <p>Reviewers check the changes and approve. Tessera records who approved, updates the status, and can merge the pull request automatically.</p>
         </div>
       </div>
     </section>
@@ -910,7 +913,7 @@ tdt approve REQ@1</code></pre>
       </div>
 
       <p>
-        TDT provides a flexible role system. You define what roles exist and which entity types they can approve.
+        Tessera provides a flexible role system. You define what roles exist and which entity types they can approve.
         This is entirely customizable to fit your organization's needs.
       </p>
 
@@ -939,7 +942,7 @@ tdt approve REQ@1</code></pre>
 
       <p style="margin-top: 24px;">
         Team members can have multiple roles. The approval matrix in your team file determines which roles
-        can approve which entity types. <strong>You define these rules</strong>&mdash;TDT just enforces them.
+        can approve which entity types. <strong>You define these rules</strong>&mdash;Tessera just enforces them.
       </p>
 
       <div class="callout">
@@ -1061,7 +1064,7 @@ tdt review list --target main
 # Show PRs that need your role's approval
 tdt review list --needs-role
 
-# Show all open PRs with TDT entities
+# Show all open PRs with Tessera entities
 tdt review list --all-open
 
 # Combine with entity type filter
@@ -1230,7 +1233,7 @@ Run `tdt approve <id> --pr <number>` to approve.</code></pre>
       </div>
 
       <p>
-        TDT automatically creates git tags for workflow events, providing an immutable audit trail
+        Tessera automatically creates git tags for workflow events, providing an immutable audit trail
         that's easy to query and filter. This supports regulatory compliance requirements like
         21 CFR Part 11 and ISO 13485.
       </p>
@@ -1277,7 +1280,7 @@ tdt log --approver jsmith</code></pre>
       <div class="callout success">
         <div class="callout-title">Cryptographic Signing for Compliance</div>
         <p>
-          For 21 CFR Part 11 compliance, configure git to sign all commits and tags. TDT supports three signing methods:
+          For 21 CFR Part 11 compliance, configure git to sign all commits and tags. Tessera supports three signing methods:
         </p>
         <ul style="margin: 12px 0; padding-left: 24px;">
           <li><strong>GPG</strong> - Traditional, broad tooling support: <code class="inline-code">tdt team setup-signing --method gpg</code></li>
@@ -1308,7 +1311,7 @@ brew install gh
 # Login to GitHub
 gh auth login</code></pre>
 
-      <p>Then configure TDT to use GitHub:</p>
+      <p>Then configure Tessera to use GitHub:</p>
       <pre><code>workflow:
   enabled: true
   provider: github
@@ -1325,7 +1328,7 @@ glab auth login</code></pre>
       <h3 style="margin: 32px 0 16px 0; font-size: 18px;">No Provider (Manual Mode)</h3>
       <p>
         If you're using a different git host, set provider to <code class="inline-code">none</code>.
-        TDT will create branches and commits, but you'll create pull requests yourself.
+        Tessera will create branches and commits, but you'll create pull requests yourself.
       </p>
     </section>
 
@@ -1354,7 +1357,7 @@ glab auth login</code></pre>
         <code class="inline-code">glab</code> directly.
       </p>
 
-      <h3 style="margin: 24px 0 8px 0; font-size: 18px;">How do I see the git commands TDT runs?</h3>
+      <h3 style="margin: 24px 0 8px 0; font-size: 18px;">How do I see the git commands Tessera runs?</h3>
       <p>
         Use <code class="inline-code">--verbose</code> on any command to see each git command as it runs,
         or use <code class="inline-code">--dry-run</code> to preview without executing.
@@ -1383,7 +1386,7 @@ glab auth login</code></pre>
 
   <footer>
     <div class="container">
-      <p>TDT &ndash; Tessera Design Toolkit</p>
+      <p>Tessera Design Toolkit</p>
       <p style="margin-top: 8px;">
         <a href="https://github.com/jackhale98/TDT">GitHub</a> &middot;
         <a href="tutorial.html">Tutorial</a> &middot;

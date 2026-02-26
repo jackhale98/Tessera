@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Tolerance Analysis Guide - TDT Tessera Design Toolkit</title>
+  <title>3D Tolerance Analysis Guide - Tessera Design Toolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -469,14 +469,19 @@
   <nav>
     <div class="nav-container">
       <a href="index.html" class="logo">
-        <div class="logo-icon"><img src="logo.svg" alt="TDT Logo"></div>
-        <span class="logo-text">TDT</span>
+        <div class="logo-icon"><img src="logo.svg" alt="Tessera Logo"></div>
+        <span class="logo-text">Tessera</span>
       </a>
       <div class="nav-links">
-        <a href="index.html">Home</a>
-        <a href="tutorial.html">Tutorial</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#install">Install</a>
+        <a href="why-plain-text.html">Why Plain Text?</a>
         <a href="tolerance.html">Tolerance</a>
         <a href="3d-tolerance-analysis.html" class="active">3D Analysis</a>
+        <a href="reports.html">Reports</a>
+        <a href="collaboration.html">Collaboration</a>
+        <a href="integrations.html">Integrations</a>
+        <a href="tutorial.html">Tutorial</a>
         <a href="https://github.com/jackhale98/TDT" class="nav-btn">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
           GitHub
@@ -490,16 +495,22 @@
 
   <div class="mobile-menu" id="mobileMenu">
     <a href="index.html" onclick="closeMobileMenu()">Home</a>
-    <a href="tutorial.html" onclick="closeMobileMenu()">Tutorial</a>
+    <a href="index.html#features" onclick="closeMobileMenu()">Features</a>
+    <a href="index.html#install" onclick="closeMobileMenu()">Install</a>
+    <a href="why-plain-text.html" onclick="closeMobileMenu()">Why Plain Text?</a>
     <a href="tolerance.html" onclick="closeMobileMenu()">Tolerance</a>
     <a href="3d-tolerance-analysis.html" onclick="closeMobileMenu()">3D Analysis</a>
+    <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
+    <a href="collaboration.html" onclick="closeMobileMenu()">Collaboration</a>
+    <a href="integrations.html" onclick="closeMobileMenu()">Integrations</a>
+    <a href="tutorial.html" onclick="closeMobileMenu()">Tutorial</a>
     <a href="https://github.com/jackhale98/TDT" onclick="closeMobileMenu()">GitHub</a>
   </div>
 
   <header class="tutorial-header">
     <div class="container">
       <h1>3D Tolerance Analysis with <span>GD&T</span></h1>
-      <p class="description">Enter your GD&T callouts and let TDT compute 6-DOF tolerance stackups automatically.</p>
+      <p class="description">Enter your GD&T callouts and let Tessera compute 6-DOF tolerance stackups automatically.</p>
     </div>
   </header>
 
@@ -524,11 +535,11 @@
 
           <section id="overview" class="tutorial-section">
             <h2>Overview</h2>
-            <p>TDT's 3D tolerance analysis lets you work with familiar GD&T symbols from your drawings. Enter your position, perpendicularity, runout, and other callouts, and TDT automatically converts them to a 6-DOF analysis.</p>
+            <p>Tessera's 3D tolerance analysis lets you work with familiar GD&T symbols from your drawings. Enter your position, perpendicularity, runout, and other callouts, and Tessera automatically converts them to a 6-DOF analysis.</p>
 
             <div class="info-box">
               <strong>The GD&T-First Approach</strong>
-              <p>Most tolerance tools require you to understand torsor theory before specifying tolerances. TDT works the other way: enter your GD&T as it appears on the drawing, and we handle the math.</p>
+              <p>Most tolerance tools require you to understand torsor theory before specifying tolerances. Tessera works the other way: enter your GD&T as it appears on the drawing, and we handle the math.</p>
             </div>
 
             <h3>What You Get</h3>
@@ -536,13 +547,13 @@
               <li><strong>Automatic DOF mapping</strong> - GD&T symbols map to the correct degrees of freedom based on geometry</li>
               <li><strong>Material condition bonuses</strong> - MMC/LMC bonus calculations are automatic</li>
               <li><strong>Datum reference frames</strong> - ASME Y14.5 3-2-1 rule is applied automatically</li>
-              <li><strong>Validation</strong> - TDT warns if your GD&T changes but torsor bounds are stale</li>
+              <li><strong>Validation</strong> - Tessera warns if your GD&T changes but torsor bounds are stale</li>
             </ul>
           </section>
 
           <section id="gdt-reference" class="tutorial-section">
             <h2>GD&T Symbol Reference</h2>
-            <p>TDT supports these GD&T symbols. The table shows which degrees of freedom each symbol affects based on your geometry type.</p>
+            <p>Tessera supports these GD&T symbols. The table shows which degrees of freedom each symbol affects based on your geometry type.</p>
 
             <h3>Position and Location</h3>
             <table class="info-table">
@@ -790,7 +801,7 @@ gdt:
               <div class="step-num">2</div>
               <div class="step-content">
                 <strong>Compute Torsor Bounds</strong>
-                <p>Let TDT convert your GD&T to torsor bounds automatically.</p>
+                <p>Let Tessera convert your GD&T to torsor bounds automatically.</p>
               </div>
             </div>
 
@@ -847,7 +858,7 @@ gdt:
               <div class="step-num">4</div>
               <div class="step-content">
                 <strong>Keep Bounds Current</strong>
-                <p>TDT validates that your torsor bounds match your GD&T.</p>
+                <p>Tessera validates that your torsor bounds match your GD&T.</p>
               </div>
             </div>
 
@@ -868,7 +879,7 @@ gdt:
 
           <section id="features" class="tutorial-section">
             <h2>Feature Setup</h2>
-            <p>Features need geometry information for 3D analysis. This tells TDT what type of geometry and where it is in your assembly.</p>
+            <p>Features need geometry information for 3D analysis. This tells Tessera what type of geometry and where it is in your assembly.</p>
 
             <h3>Required Fields</h3>
             <table class="info-table">
@@ -970,14 +981,14 @@ geometry_class: plane
 datum_label: A</code></pre>
             </div>
 
-            <p>TDT applies the ASME Y14.5 3-2-1 rule automatically:</p>
+            <p>Tessera applies the ASME Y14.5 3-2-1 rule automatically:</p>
             <ul>
               <li><strong>Primary datum (A)</strong> - Constrains 3 DOF</li>
               <li><strong>Secondary datum (B)</strong> - Constrains 2 additional DOF</li>
               <li><strong>Tertiary datum (C)</strong> - Constrains final 1 DOF</li>
             </ul>
 
-            <p>When you specify <code>datum_refs: [A, B]</code> in your GD&T, TDT only applies tolerances to DOFs not already constrained by those datums.</p>
+            <p>When you specify <code>datum_refs: [A, B]</code> in your GD&T, Tessera only applies tolerances to DOFs not already constrained by those datums.</p>
           </section>
 
           <section id="analysis" class="tutorial-section">
@@ -1060,7 +1071,7 @@ datum_label: A</code></pre>
 
           <section id="theory" class="tutorial-section">
             <h2>Theory Deep Dive</h2>
-            <p>This section explains the underlying math for those who want to understand how TDT works internally.</p>
+            <p>This section explains the underlying math for those who want to understand how Tessera works internally.</p>
 
             <h3>Small Displacement Torsor (SDT)</h3>
             <p>A torsor represents the small deviation of a feature from its nominal position using 6 parameters:</p>
@@ -1097,7 +1108,7 @@ datum_label: A</code></pre>
             </table>
 
             <h3>Jacobian Propagation</h3>
-            <p>TDT uses Jacobian matrices to propagate deviations through the tolerance chain. For each contributor, the deviation at position <strong>P</strong> is:</p>
+            <p>Tessera uses Jacobian matrices to propagate deviations through the tolerance chain. For each contributor, the deviation at position <strong>P</strong> is:</p>
             <div class="output-block">
 δP = δT + δR × (P - O)
 
@@ -1167,8 +1178,8 @@ where:
     <div class="container">
       <div class="footer-content">
         <div class="footer-brand">
-          <img src="logo.svg" alt="TDT" width="32" height="32">
-          <span class="footer-text">TDT - Tessera Design Toolkit</span>
+          <img src="logo.svg" alt="Tessera" width="32" height="32">
+          <span class="footer-text">Tessera Design Toolkit</span>
         </div>
         <div class="footer-links">
           <a href="https://github.com/jackhale98/TDT">GitHub</a>

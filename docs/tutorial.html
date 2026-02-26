@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tutorial - TDT Tessera Design Toolkit</title>
+  <title>Tutorial - Tessera Design Toolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -712,15 +712,16 @@
     <div class="nav-container">
       <a href="index.html" class="logo">
         <div class="logo-icon">
-          <img src="logo.svg" alt="TDT Logo" width="40" height="40">
+          <img src="logo.svg" alt="Tessera Logo" width="40" height="40">
         </div>
-        <span class="logo-text">TDT</span>
+        <span class="logo-text">Tessera</span>
       </a>
       <div class="nav-links">
         <a href="index.html#features">Features</a>
         <a href="index.html#install">Install</a>
         <a href="why-plain-text.html">Why Plain Text?</a>
         <a href="tolerance.html">Tolerance</a>
+        <a href="3d-tolerance-analysis.html">3D Analysis</a>
         <a href="reports.html">Reports</a>
         <a href="collaboration.html">Collaboration</a>
         <a href="integrations.html">Integrations</a>
@@ -742,11 +743,14 @@
 
   <!-- Mobile Menu -->
   <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html" onclick="closeMobileMenu()">Home</a>
     <a href="index.html#features" onclick="closeMobileMenu()">Features</a>
     <a href="index.html#install" onclick="closeMobileMenu()">Install</a>
     <a href="why-plain-text.html" onclick="closeMobileMenu()">Why Plain Text?</a>
     <a href="tolerance.html" onclick="closeMobileMenu()">Tolerance</a>
+    <a href="3d-tolerance-analysis.html" onclick="closeMobileMenu()">3D Analysis</a>
     <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
+    <a href="collaboration.html" onclick="closeMobileMenu()">Collaboration</a>
     <a href="integrations.html" onclick="closeMobileMenu()">Integrations</a>
     <a href="tutorial.html" onclick="closeMobileMenu()">Tutorial</a>
     <a href="https://github.com/jackhale98/TDT" onclick="closeMobileMenu()">GitHub</a>
@@ -755,7 +759,7 @@
   <!-- Tutorial Header -->
   <header class="tutorial-header">
     <div class="container">
-      <h1>TDT <span>Tutorial</span></h1>
+      <h1>Tessera <span>Tutorial</span></h1>
       <p class="description">Build a complete product development project from scratch. This tutorial walks you through creating an LED Flashlight, covering all entity types and showing how they connect for full traceability.</p>
     </div>
   </header>
@@ -797,7 +801,7 @@
             <h2>1. Project Setup</h2>
 
             <h3>Initialize Your Project</h3>
-            <p>Create a new directory and initialize TDT:</p>
+            <p>Create a new directory and initialize Tessera:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
@@ -836,10 +840,10 @@
 <span class="cmd">tdt config set</span> editor <span class="string">"code --wait"</span> --global</code></pre>
             </div>
 
-            <p>Configuration priority: environment variables > project config > global config. TDT will also fall back to your git user name if no author is configured.</p>
+            <p>Configuration priority: environment variables > project config > global config. Tessera will also fall back to your git user name if no author is configured.</p>
 
             <h3>CLI Tips</h3>
-            <p>TDT commands support both long flags (readable) and short flags (efficient):</p>
+            <p>Tessera commands support both long flags (readable) and short flags (efficient):</p>
             <table class="info-table">
               <thead>
                 <tr><th>Long Form</th><th>Short</th><th>Description</th></tr>
@@ -865,7 +869,7 @@
           <section id="requirements" class="tutorial-section">
             <h2>2. Requirements</h2>
 
-            <p>Requirements define what your product must do. TDT supports <strong>input requirements</strong> (from customers/stakeholders) and <strong>output requirements</strong> (derived/allocated).</p>
+            <p>Requirements define what your product must do. Tessera supports <strong>input requirements</strong> (from customers/stakeholders) and <strong>output requirements</strong> (derived/allocated).</p>
 
             <h3>Create Input Requirements</h3>
 
@@ -1950,7 +1954,7 @@ Coverage: <span class="success">80%</span> (4/5)</div>
           <section id="traceability" class="tutorial-section">
             <h2>16. Traceability</h2>
 
-            <p>TDT maintains full traceability across all entities.</p>
+            <p>Tessera maintains full traceability across all entities.</p>
 
             <h3>View Traceability Matrix</h3>
 
@@ -2000,7 +2004,7 @@ Coverage: <span class="success">80%</span> (4/5)</div>
           <section id="reports" class="tutorial-section">
             <h2>17. Reports</h2>
 
-            <p>TDT generates engineering reports that consolidate data across entities for reviews and documentation.</p>
+            <p>Tessera generates engineering reports that consolidate data across entities for reviews and documentation.</p>
 
             <h3>Requirements Verification Matrix (RVM)</h3>
             <p>Shows which requirements have been verified by tests:</p>
@@ -2096,7 +2100,7 @@ Coverage: <span class="success">80%</span> (4/5)</div>
           <section id="summary" class="tutorial-section">
             <h2>Summary</h2>
 
-            <p>You've now created a complete TDT project with:</p>
+            <p>You've now created a complete Tessera project with:</p>
 
             <div class="table-wrapper">
               <table>
@@ -2216,7 +2220,7 @@ Coverage: <span class="success">80%</span> (4/5)</div>
 
             <div class="info-box">
               <h4>Get Help</h4>
-              <p>For more information, visit the <a href="https://github.com/jackhale98/TDT" style="color: var(--accent);">TDT GitHub repository</a> or run <code>tdt --help</code> for command-line help.</p>
+              <p>For more information, visit the <a href="https://github.com/jackhale98/TDT" style="color: var(--accent);">Tessera GitHub repository</a> or run <code>tdt --help</code> for command-line help.</p>
             </div>
           </section>
 
@@ -2260,7 +2264,7 @@ Coverage: <span class="success">80%</span> (4/5)</div>
               <polygon points="35,55 55,55 45,70 25,70 15,55" fill="#059669"/>
             </svg>
           </div>
-          <span class="footer-text">TDT – Tessera Design Toolkit</span>
+          <span class="footer-text">Tessera Design Toolkit</span>
         </div>
         <div class="footer-links">
           <a href="https://github.com/jackhale98/TDT">GitHub</a>
