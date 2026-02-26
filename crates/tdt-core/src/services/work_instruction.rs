@@ -12,10 +12,10 @@ use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
-use crate::services::base::ServiceBase;
 use crate::entities::work_instruction::{
     Material, ProcedureStep, QualityCheck, Tool, WorkInstruction, WorkInstructionLinks, WorkSafety,
 };
+use crate::services::base::ServiceBase;
 
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,

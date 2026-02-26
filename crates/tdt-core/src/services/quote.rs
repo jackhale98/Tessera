@@ -12,8 +12,8 @@ use crate::core::entity::Status;
 use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
-use crate::services::base::ServiceBase;
 use crate::entities::quote::{Currency, NreCost, PriceBreak, Quote, QuoteLinks, QuoteStatus};
+use crate::services::base::ServiceBase;
 
 use super::common::{
     apply_pagination, CommonFilter, ListResult, ServiceError, ServiceResult, SortDirection,
