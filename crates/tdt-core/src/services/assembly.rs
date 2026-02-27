@@ -881,6 +881,7 @@ impl<'a> AssemblyService<'a> {
         }
         visited.insert(asm_id);
 
+        // Check subassemblies field
         for sub_id in &assembly.subassemblies {
             if sub_id == target_id {
                 return Ok(true);
@@ -891,6 +892,21 @@ impl<'a> AssemblyService<'a> {
                 }
             }
         }
+
+        // Also check ASM- items in the bom field
+        for item in &assembly.bom {
+            if item.component_id.starts_with("ASM-") {
+                if item.component_id == target_id {
+                    return Ok(true);
+                }
+                if let Some(sub) = self.get(&item.component_id)? {
+                    if self.has_descendant(&sub, target_id, visited)? {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+
         Ok(false)
     }
 
@@ -1008,10 +1024,24 @@ impl<'a> AssemblyService<'a> {
 
         let mut children = Vec::new();
 
-        // Add component children
+        // Add component and assembly children from BOM
         let cmp_dir = self.components_dir();
         for item in &assembly.bom {
-            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
+            if item.component_id.starts_with("ASM-") {
+                // BOM item is a subassembly — recurse into it with its quantity
+                if let Some(sub) = self.get(&item.component_id)? {
+                    let sub_node = self.build_bom_tree(
+                        &sub,
+                        item.quantity,
+                        assembly_qty,
+                        quotes,
+                        quote_map,
+                        visited,
+                    )?;
+                    children.push(sub_node);
+                }
+            } else if let Some((_, cmp)) =
+                loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
             {
                 // Calculate effective quantity for price break lookup
                 let effective_qty = item.quantity * assembly_qty;
@@ -1048,7 +1078,7 @@ impl<'a> AssemblyService<'a> {
             }
         }
 
-        // Add subassembly children
+        // Add subassembly children from subassemblies field
         for sub_id in &assembly.subassemblies {
             if let Some(sub) = self.get(sub_id)? {
                 // Subassemblies are quantity 1 unless specified otherwise
@@ -1057,6 +1087,10 @@ impl<'a> AssemblyService<'a> {
                 children.push(sub_node);
             }
         }
+
+        // Remove from visited to allow diamond dependencies (same subassembly
+        // referenced by multiple parents) to be fully expanded in each branch
+        visited.remove(&asm_id);
 
         // Calculate totals for this level
         let total_cost: f64 = children.iter().filter_map(|c| c.extended_cost).sum();
@@ -1104,7 +1138,7 @@ impl<'a> AssemblyService<'a> {
         if visited.contains(&asm_id) {
             return Ok(());
         }
-        visited.insert(asm_id);
+        visited.insert(asm_id.clone());
 
         let cmp_dir = self.components_dir();
         let quotes_dir = self.quotes_dir();
@@ -1120,9 +1154,15 @@ impl<'a> AssemblyService<'a> {
             .filter_map(|q| q.component.as_ref().map(|c| (c.clone(), q)))
             .collect();
 
-        // Process components
+        // Process BOM items (components and assembly references)
         for item in &assembly.bom {
-            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
+            if item.component_id.starts_with("ASM-") {
+                // BOM item is a subassembly — recurse with multiplied quantity
+                if let Some(sub) = self.get(&item.component_id)? {
+                    self.calculate_cost_recursive(&sub, item.quantity * quantity, result, visited)?;
+                }
+            } else if let Some((_, cmp)) =
+                loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
             {
                 // Try quote price first, then unit_cost
                 let price = if let Some(quote_id) = &cmp.selected_quote {
@@ -1146,12 +1186,15 @@ impl<'a> AssemblyService<'a> {
             }
         }
 
-        // Process subassemblies
+        // Process subassemblies field
         for sub_id in &assembly.subassemblies {
             if let Some(sub) = self.get(sub_id)? {
                 self.calculate_cost_recursive(&sub, quantity, result, visited)?;
             }
         }
+
+        // Remove from visited to allow diamond dependencies
+        visited.remove(&asm_id);
 
         Ok(())
     }
@@ -1168,13 +1211,19 @@ impl<'a> AssemblyService<'a> {
         if visited.contains(&asm_id) {
             return Ok(());
         }
-        visited.insert(asm_id);
+        visited.insert(asm_id.clone());
 
         let cmp_dir = self.components_dir();
 
-        // Process components
+        // Process BOM items (components and assembly references)
         for item in &assembly.bom {
-            if let Some((_, cmp)) = loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
+            if item.component_id.starts_with("ASM-") {
+                // BOM item is a subassembly — recurse with multiplied quantity
+                if let Some(sub) = self.get(&item.component_id)? {
+                    self.calculate_mass_recursive(&sub, item.quantity * quantity, result, visited)?;
+                }
+            } else if let Some((_, cmp)) =
+                loader::load_entity::<Component>(&cmp_dir, &item.component_id)?
             {
                 if let Some(mass) = cmp.mass_kg {
                     result.total_mass_kg += mass * (item.quantity * quantity) as f64;
@@ -1186,12 +1235,15 @@ impl<'a> AssemblyService<'a> {
             }
         }
 
-        // Process subassemblies
+        // Process subassemblies field
         for sub_id in &assembly.subassemblies {
             if let Some(sub) = self.get(sub_id)? {
                 self.calculate_mass_recursive(&sub, quantity, result, visited)?;
             }
         }
+
+        // Remove from visited to allow diamond dependencies
+        visited.remove(&asm_id);
 
         Ok(())
     }

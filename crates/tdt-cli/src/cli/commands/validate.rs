@@ -191,6 +191,63 @@ pub fn run(args: ValidateArgs) -> Result<()> {
         .as_ref()
         .and_then(|t| t.to_uppercase().parse().ok());
 
+    // Check for duplicate entity IDs (same ULID in multiple files)
+    let mut id_to_paths: std::collections::HashMap<String, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+    for path in &files_to_validate {
+        if !path.to_string_lossy().ends_with(".tdt.yaml") {
+            continue;
+        }
+        // Extract ID from filename (e.g., RISK-01KCF6P2EQ...tdt.yaml -> RISK-01KCF6P2EQ...)
+        if let Some(fname) = path.file_name().and_then(|f| f.to_str()) {
+            if let Some(id) = fname
+                .strip_suffix(".tdt.yaml")
+                .or_else(|| fname.strip_suffix(".pdt.yaml"))
+            {
+                id_to_paths
+                    .entry(id.to_string())
+                    .or_default()
+                    .push(path.clone());
+            }
+        }
+    }
+
+    let mut duplicate_count = 0;
+    for (id, paths) in &id_to_paths {
+        if paths.len() > 1 {
+            duplicate_count += 1;
+            if !args.summary {
+                let relative_paths: Vec<String> = paths
+                    .iter()
+                    .map(|p| {
+                        p.strip_prefix(project.root())
+                            .unwrap_or(p)
+                            .display()
+                            .to_string()
+                    })
+                    .collect();
+                eprintln!(
+                    "{} Duplicate entity ID '{}' found in {} files:",
+                    console::style("✗").red(),
+                    id,
+                    paths.len(),
+                );
+                for rp in &relative_paths {
+                    eprintln!("    → {}", rp);
+                }
+                eprintln!(
+                    "    {}",
+                    console::style("Remove duplicate files or rename entity IDs").dim()
+                );
+            }
+        }
+    }
+    if duplicate_count > 0 {
+        stats.total_errors += duplicate_count;
+        had_error = true;
+        eprintln!();
+    }
+
     println!(
         "{} Validating {} file(s)...\n",
         style("→").blue(),
@@ -848,7 +905,7 @@ fn check_stackup_values(
                             any_synced = true;
                         } else {
                             issues.push(format!(
-                                "Contributor '{}' has stale cached component_id '{}' (feature belongs to '{}')",
+                                "Contributor '{}' has stale component_id '{}' in YAML (feature belongs to '{}') — run `tdt validate --fix` to update",
                                 contributor.name, cached_cmp_id, feature.component
                             ));
                         }

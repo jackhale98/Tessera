@@ -9,48 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::entity::{Entity, Status};
 use crate::core::identity::{EntityId, EntityPrefix};
+use crate::core::stats::{box_muller, normal_cdf};
 use crate::entities::feature::Feature;
-
-/// Standard normal cumulative distribution function (CDF)
-/// Φ(z) = probability that a standard normal random variable is ≤ z
-/// Uses Hastings approximation (error < 7.5e-8)
-fn normal_cdf(z: f64) -> f64 {
-    if z.is_nan() {
-        return 0.5;
-    }
-    if z >= 8.0 {
-        return 1.0;
-    }
-    if z <= -8.0 {
-        return 0.0;
-    }
-
-    // Handle negative z by symmetry: Φ(-z) = 1 - Φ(z)
-    let (z_abs, negate) = if z < 0.0 { (-z, true) } else { (z, false) };
-
-    // Hastings approximation constants (A&S 26.2.17)
-    const B0: f64 = 0.2316419;
-    const B1: f64 = 0.319381530;
-    const B2: f64 = -0.356563782;
-    const B3: f64 = 1.781477937;
-    const B4: f64 = -1.821255978;
-    const B5: f64 = 1.330274429;
-
-    let t = 1.0 / (1.0 + B0 * z_abs);
-    let t2 = t * t;
-    let t3 = t2 * t;
-    let t4 = t3 * t;
-    let t5 = t4 * t;
-
-    let pdf = (-0.5 * z_abs * z_abs).exp() / (2.0 * std::f64::consts::PI).sqrt();
-    let cdf = 1.0 - pdf * (B1 * t + B2 * t2 + B3 * t3 + B4 * t4 + B5 * t5);
-
-    if negate {
-        1.0 - cdf
-    } else {
-        cdf
-    }
-}
 
 /// Target/gap specification
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1030,10 +990,7 @@ impl Stackup {
                         let mean_offset = (contrib.plus_tol - contrib.minus_tol) / 2.0;
                         let mean = contrib.nominal + mean_offset;
                         let sigma = tol_band / self.sigma_level;
-                        let u1: f64 = rng.random();
-                        let u2: f64 = rng.random();
-                        let z = (-2.0_f64 * u1.ln()).sqrt()
-                            * (2.0_f64 * std::f64::consts::PI * u2).cos();
+                        let z = box_muller(&mut rng);
                         mean + sigma * z
                     }
                     Distribution::Uniform => {
@@ -1043,19 +1000,21 @@ impl Stackup {
                         rng.random_range((center - half_band)..=(center + half_band))
                     }
                     Distribution::Triangular => {
-                        // For triangular, use the full tolerance band
                         let half_band = tol_band / 2.0;
                         let center = contrib.nominal + (contrib.plus_tol - contrib.minus_tol) / 2.0;
                         let min = center - half_band;
                         let max = center + half_band;
-                        let mode = center;
-                        // Triangular distribution using inverse transform
-                        let u: f64 = rng.random();
-                        let fc = (mode - min) / (max - min);
-                        if u < fc {
-                            min + (u * (max - min) * (mode - min)).sqrt()
+                        if (max - min).abs() < f64::EPSILON {
+                            center
                         } else {
-                            max - ((1.0 - u) * (max - min) * (max - mode)).sqrt()
+                            let mode = center;
+                            let u: f64 = rng.random();
+                            let fc = (mode - min) / (max - min);
+                            if u < fc {
+                                min + (u * (max - min) * (mode - min)).sqrt()
+                            } else {
+                                max - ((1.0 - u) * (max - min) * (max - mode)).sqrt()
+                            }
                         }
                     }
                 };
@@ -1073,11 +1032,11 @@ impl Stackup {
         let raw_samples = results.clone();
 
         // Calculate statistics
-        results.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        results.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let n = results.len() as f64;
         let mean: f64 = results.iter().sum::<f64>() / n;
-        let variance: f64 = results.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+        let variance: f64 = results.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
         let std_dev = variance.sqrt();
 
         let min = results.first().copied().unwrap_or(0.0);

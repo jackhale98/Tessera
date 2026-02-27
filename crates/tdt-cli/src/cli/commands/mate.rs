@@ -13,9 +13,11 @@ use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
 use tdt_core::core::entity::Entity;
 use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::loader;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::Config;
+use tdt_core::entities::assembly::Assembly;
 use tdt_core::entities::feature::Feature;
 use tdt_core::entities::mate::{FitAnalysis, Mate, MateType, StatisticalFit};
 use tdt_core::schema::wizard::SchemaWizard;
@@ -179,6 +181,14 @@ pub struct ListArgs {
     /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
     #[arg(long, requires = "linked_to")]
     pub via: Option<String>,
+
+    /// Filter by component (show mates involving this component's features)
+    #[arg(long, short = 'c')]
+    pub component: Option<String>,
+
+    /// Filter by assembly (show mates involving features of components in this assembly)
+    #[arg(long, short = 'A')]
+    pub assembly: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -338,6 +348,49 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         mates.retain(|e| ids.contains(&e.id.to_string()));
     }
 
+    // Apply component filter
+    if let Some(ref cmp_arg) = args.component {
+        let cmp_id = short_ids
+            .resolve(cmp_arg)
+            .unwrap_or_else(|| cmp_arg.clone());
+        mates.retain(|m| {
+            m.feature_a.component_id.as_deref() == Some(cmp_id.as_str())
+                || m.feature_b.component_id.as_deref() == Some(cmp_id.as_str())
+        });
+    }
+
+    // Apply assembly filter
+    if let Some(ref asm_arg) = args.assembly {
+        let asm_id = short_ids
+            .resolve(asm_arg)
+            .unwrap_or_else(|| asm_arg.clone());
+        // Load assembly to get its BOM component IDs
+        let asm_cmp_ids: std::collections::HashSet<String> = {
+            let asm_dir = project.root().join("bom/assemblies");
+            if let Ok(Some((_path, asm))) = loader::load_entity::<Assembly>(&asm_dir, &asm_id) {
+                asm.bom
+                    .iter()
+                    .map(|item| item.component_id.clone())
+                    .collect()
+            } else {
+                eprintln!("{} Assembly '{}' not found", style("⚠").yellow(), asm_arg);
+                mates.clear();
+                std::collections::HashSet::new()
+            }
+        };
+        if !asm_cmp_ids.is_empty() {
+            mates.retain(|m| {
+                m.feature_a
+                    .component_id
+                    .as_ref()
+                    .is_some_and(|c| asm_cmp_ids.contains(c))
+                    || m.feature_b
+                        .component_id
+                        .as_ref()
+                        .is_some_and(|c| asm_cmp_ids.contains(c))
+            });
+        }
+    }
     // Post-sort for columns not in service (Match, FeatureA, FeatureB)
     if let Some(ref sort_col) = args.sort {
         match sort_col {

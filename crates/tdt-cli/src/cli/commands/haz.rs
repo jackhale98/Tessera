@@ -538,7 +538,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     // Get file path for the created hazard
     let file_path = project
         .root()
-        .join("risks/hazards")
+        .join("safety/hazards")
         .join(format!("{}.tdt.yaml", hazard.id));
 
     // Handle --source flag by updating the hazard to add link
@@ -793,7 +793,7 @@ fn run_archive(args: ArchiveArgs, _global: &GlobalOpts) -> Result<()> {
 }
 
 fn find_hazard_file(project: &Project, id: &str) -> Result<std::path::PathBuf> {
-    let hazards_dir = project.root().join("risks/hazards");
+    let hazards_dir = project.root().join("safety/hazards");
 
     if hazards_dir.exists() {
         for entry in walkdir::WalkDir::new(&hazards_dir)

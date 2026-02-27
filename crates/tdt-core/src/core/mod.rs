@@ -13,6 +13,7 @@ pub mod project;
 pub mod provider;
 pub mod sdt;
 pub mod shortid;
+pub mod stats;
 pub mod suspect;
 pub mod team;
 pub mod workflow;

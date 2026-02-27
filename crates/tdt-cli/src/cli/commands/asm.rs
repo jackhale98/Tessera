@@ -2540,6 +2540,7 @@ fn run_mass(args: MassArgs) -> Result<()> {
 
     fn calculate_bom_mass(
         bom: &[tdt_core::entities::assembly::BomItem],
+        subassemblies: &[String],
         component_map: &std::collections::HashMap<String, &Component>,
         assembly_map: &std::collections::HashMap<String, &Assembly>,
         breakdown: &mut Vec<(String, String, u32, f64)>,
@@ -2557,6 +2558,7 @@ fn run_mass(args: MassArgs) -> Result<()> {
                     visited.insert(item_id.clone());
                     let sub_mass = calculate_bom_mass(
                         &sub_asm.bom,
+                        &sub_asm.subassemblies,
                         component_map,
                         assembly_map,
                         breakdown,
@@ -2574,11 +2576,31 @@ fn run_mass(args: MassArgs) -> Result<()> {
                 }
             }
         }
+        // Process subassemblies field (quantity 1 each)
+        for sub_id in subassemblies {
+            if let Some(sub_asm) = assembly_map.get(sub_id.as_str()) {
+                if !visited.contains(sub_id) {
+                    visited.insert(sub_id.clone());
+                    let sub_mass = calculate_bom_mass(
+                        &sub_asm.bom,
+                        &sub_asm.subassemblies,
+                        component_map,
+                        assembly_map,
+                        breakdown,
+                        visited,
+                    );
+                    total += sub_mass;
+                    breakdown.push((sub_id.clone(), sub_asm.title.clone(), 1, sub_mass));
+                    visited.remove(sub_id);
+                }
+            }
+        }
         total
     }
 
     let total_mass = calculate_bom_mass(
         &assembly.bom,
+        &assembly.subassemblies,
         &component_map,
         &assembly_map,
         &mut breakdown,

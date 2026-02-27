@@ -632,18 +632,43 @@ impl EntityCache {
     }
 
     pub(super) fn cache_risk_data(&self, id: &str, value: &serde_yml::Value) -> Result<()> {
+        let severity = value["severity"].as_i64().map(|v| v as i32);
+        let occurrence = value["occurrence"].as_i64().map(|v| v as i32);
+
+        let risk_level: Option<String> = value["risk_level"]
+            .as_str()
+            .map(|s| s.to_string())
+            .or_else(|| match (severity, occurrence) {
+                (Some(s), Some(o)) => {
+                    let product = s * o;
+                    Some(
+                        if product >= 64 {
+                            "critical"
+                        } else if product >= 36 {
+                            "high"
+                        } else if product >= 16 {
+                            "medium"
+                        } else {
+                            "low"
+                        }
+                        .to_string(),
+                    )
+                }
+                _ => None,
+            });
+
         self.conn
             .execute(
                 r#"INSERT OR REPLACE INTO risks (id, risk_type, severity, occurrence, detection, rpn, risk_level)
                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
                 params![
                     id,
-                    value["risk_type"].as_str(),
-                    value["severity"].as_i64().map(|v| v as i32),
-                    value["occurrence"].as_i64().map(|v| v as i32),
+                    value["type"].as_str(),
+                    severity,
+                    occurrence,
                     value["detection"].as_i64().map(|v| v as i32),
                     value["rpn"].as_i64().map(|v| v as i32),
-                    value["risk_level"].as_str()
+                    risk_level
                 ],
             )
             .into_diagnostic()?;

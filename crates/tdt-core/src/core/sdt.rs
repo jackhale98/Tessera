@@ -667,9 +667,7 @@ fn sample_torsor<R: Rng>(
             Distribution::Normal => {
                 // Box-Muller transform
                 let sigma = range / sigma_level;
-                let u1: f64 = rng.random();
-                let u2: f64 = rng.random();
-                let z = (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
+                let z = super::stats::box_muller(rng);
                 center + sigma * z
             }
             Distribution::Uniform => {
@@ -679,12 +677,16 @@ fn sample_torsor<R: Rng>(
             Distribution::Triangular => {
                 let min = *b_min;
                 let max = *b_max;
-                let u: f64 = rng.random();
-                let fc = (center - min) / (max - min);
-                if u < fc {
-                    min + (u * (max - min) * (center - min)).sqrt()
+                if (max - min).abs() < f64::EPSILON {
+                    center
                 } else {
-                    max - ((1.0 - u) * (max - min) * (max - center)).sqrt()
+                    let u: f64 = rng.random();
+                    let fc = (center - min) / (max - min);
+                    if u < fc {
+                        min + (u * (max - min) * (center - min)).sqrt()
+                    } else {
+                        max - ((1.0 - u) * (max - min) * (max - center)).sqrt()
+                    }
                 }
             }
         };
@@ -728,7 +730,7 @@ pub fn monte_carlo_3d(contributors: &[ChainContributor3D], iterations: u32) -> R
     fn calc_stats(samples: &[f64]) -> (f64, f64) {
         let n = samples.len() as f64;
         let mean: f64 = samples.iter().sum::<f64>() / n;
-        let variance: f64 = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+        let variance: f64 = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
         (mean, variance.sqrt())
     }
 

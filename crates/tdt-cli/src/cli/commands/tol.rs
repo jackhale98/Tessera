@@ -1096,12 +1096,10 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
         stackup.mean_shift_k = mean_shift;
     }
 
-    // GD&T is included by default; --no-gdt disables it
+    // Only override GD&T setting when --no-gdt is explicitly passed;
+    // otherwise respect the YAML file's setting
     if args.no_gdt {
         stackup.include_gdt = false;
-    } else {
-        // Auto-include GD&T when position tolerances are present
-        stackup.include_gdt = true;
     }
 
     // Debug mode - trace the RSS calculation step by step
@@ -2306,12 +2304,20 @@ fn run_3d_analysis(
     for feat in features.values() {
         if let Some(ref label) = feat.datum_label {
             let geom_class = feat.geometry_class.unwrap_or(GeometryClass::Complex);
+            let has_geometry = feat.geometry_3d.is_some();
             let position = feat
                 .geometry_3d
                 .as_ref()
                 .map(|g| g.origin)
                 .unwrap_or([0.0, 0.0, 0.0]);
             let axis = feat.geometry_3d.as_ref().map(|g| g.axis);
+            if !has_geometry {
+                eprintln!(
+                    "{} Datum {} has no geometry_3d; defaulting to origin [0,0,0]",
+                    style("⚠").yellow(),
+                    label,
+                );
+            }
             datum_features.insert(
                 label.clone(),
                 DatumFeature {
@@ -2394,6 +2400,11 @@ fn run_3d_analysis(
         // Check if we have geometry_3d data
         if feat_opt.is_some() && feat_opt.unwrap().geometry_3d.is_none() {
             missing_geometry_3d.push(contrib.name.clone());
+            eprintln!(
+                "{} Contributor {} has no geometry_3d; defaulting to origin [0,0,0]",
+                style("⚠").yellow(),
+                contrib.name,
+            );
         }
 
         // Get GD&T datum references if available
@@ -2624,8 +2635,16 @@ fn calculate_functional_projection(
 
     // Project torsor onto functional direction (translations only for now)
     // Scalar deviation = dx*u + dy*v + dz*w
-    let wc_min = dx * torsor.u.wc_min + dy * torsor.v.wc_min + dz * torsor.w.wc_min;
-    let wc_max = dx * torsor.u.wc_max + dy * torsor.v.wc_max + dz * torsor.w.wc_max;
+    let u_contrib_1 = dx * torsor.u.wc_min;
+    let u_contrib_2 = dx * torsor.u.wc_max;
+    let v_contrib_1 = dy * torsor.v.wc_min;
+    let v_contrib_2 = dy * torsor.v.wc_max;
+    let w_contrib_1 = dz * torsor.w.wc_min;
+    let w_contrib_2 = dz * torsor.w.wc_max;
+    let wc_min =
+        u_contrib_1.min(u_contrib_2) + v_contrib_1.min(v_contrib_2) + w_contrib_1.min(w_contrib_2);
+    let wc_max =
+        u_contrib_1.max(u_contrib_2) + v_contrib_1.max(v_contrib_2) + w_contrib_1.max(w_contrib_2);
 
     let rss_mean = dx * torsor.u.rss_mean + dy * torsor.v.rss_mean + dz * torsor.w.rss_mean;
 
@@ -2701,8 +2720,8 @@ fn calculate_functional_projection(
         (2.0 * phi(z) - 1.0) * 100.0
     });
 
-    // Worst-case pass/fail
-    let wc_result = if wc_min >= lsl && wc_max <= usl {
+    // Worst-case pass/fail (compare deviations against deviation limits)
+    let wc_result = if wc_min >= dev_lsl && wc_max <= dev_usl {
         Some("pass".to_string())
     } else {
         Some("fail".to_string())

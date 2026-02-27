@@ -594,7 +594,7 @@ fn build_risk_sort(args: &ListArgs) -> (RiskSortField, SortDirection) {
             ListColumn::Occurrence => RiskSortField::Occurrence,
             ListColumn::Detection => RiskSortField::Detection,
             ListColumn::Rpn => RiskSortField::Rpn,
-            ListColumn::Category => RiskSortField::Title, // Category sort not in service, fallback to Title
+            ListColumn::Category => RiskSortField::Category,
             ListColumn::Author => RiskSortField::Author,
             ListColumn::Created => RiskSortField::Created,
         }
@@ -682,6 +682,8 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
             .get_string("type")
             .map(|s| match s {
                 "process" => RiskType::Process,
+                "use" => RiskType::Use,
+                "software" => RiskType::Software,
                 _ => RiskType::Design,
             })
             .unwrap_or(RiskType::Design);
@@ -1131,6 +1133,8 @@ fn run_summary(args: SummaryArgs, global: &GlobalOpts) -> Result<()> {
     let mut by_type: std::collections::HashMap<RiskType, usize> = std::collections::HashMap::new();
     by_type.insert(RiskType::Design, stats.by_type.design);
     by_type.insert(RiskType::Process, stats.by_type.process);
+    by_type.insert(RiskType::Use, stats.by_type.r#use);
+    by_type.insert(RiskType::Software, stats.by_type.software);
 
     // Count with open mitigations (not all verified)
     let open_mitigations = risks
@@ -1165,6 +1169,8 @@ fn run_summary(args: SummaryArgs, global: &GlobalOpts) -> Result<()> {
                 "by_type": {
                     "design": by_type.get(&RiskType::Design).unwrap_or(&0),
                     "process": by_type.get(&RiskType::Process).unwrap_or(&0),
+                    "use": by_type.get(&RiskType::Use).unwrap_or(&0),
+                    "software": by_type.get(&RiskType::Software).unwrap_or(&0),
                 },
                 "rpn": {
                     "average": avg_rpn,
@@ -1235,6 +1241,16 @@ fn run_summary(args: SummaryArgs, global: &GlobalOpts) -> Result<()> {
                 "  {:<12} {}",
                 "Process:",
                 by_type.get(&RiskType::Process).unwrap_or(&0)
+            );
+            println!(
+                "  {:<12} {}",
+                "Use:",
+                by_type.get(&RiskType::Use).unwrap_or(&0)
+            );
+            println!(
+                "  {:<12} {}",
+                "Software:",
+                by_type.get(&RiskType::Software).unwrap_or(&0)
             );
             println!();
 
@@ -1383,9 +1399,16 @@ fn run_matrix(args: MatrixArgs, global: &GlobalOpts) -> Result<()> {
     let mut matrix: Vec<Vec<Vec<(String, String)>>> = vec![vec![Vec::new(); size + 1]; size + 1];
 
     // Populate matrix from cached risks
+    let mut skipped_count = 0;
     for risk in &cached_risks {
-        let sev = risk.severity.unwrap_or(0) as usize;
-        let occ = risk.occurrence.unwrap_or(0) as usize;
+        // Skip risks without both severity and occurrence ratings
+        let (sev, occ) = match (risk.severity, risk.occurrence) {
+            (Some(s), Some(o)) => (s as usize, o as usize),
+            _ => {
+                skipped_count += 1;
+                continue;
+            }
+        };
 
         // Map to matrix indices (1-10 or 1-5 for compact)
         let sev_idx = if args.compact {
@@ -1404,6 +1427,14 @@ fn run_matrix(args: MatrixArgs, global: &GlobalOpts) -> Result<()> {
             .get_short_id(&risk.id)
             .unwrap_or_else(|| truncate_str(&risk.id, 6));
         matrix[sev_idx][occ_idx].push((risk.id.clone(), short_id));
+    }
+
+    if skipped_count > 0 {
+        eprintln!(
+            "{} {} risk(s) without severity/occurrence ratings excluded from matrix",
+            console::style("⚠").yellow(),
+            skipped_count,
+        );
     }
 
     // JSON/YAML output

@@ -109,6 +109,7 @@ pub enum RiskSortField {
     Status,
     Author,
     Created,
+    Category,
 }
 
 /// Input for creating a new risk
@@ -578,9 +579,16 @@ impl<'a> RiskService<'a> {
     }
 
     /// Find entities that reference this risk
-    fn find_references(&self, _id: &EntityId) -> ServiceResult<Vec<EntityId>> {
-        // TODO: Implement reference checking via cache or file scan
-        Ok(Vec::new())
+    fn find_references(&self, id: &EntityId) -> ServiceResult<Vec<EntityId>> {
+        let id_str = id.to_string();
+        let links = self.cache.get_links_to(&id_str);
+        let mut refs = Vec::new();
+        for link in links {
+            if let Ok(entity_id) = EntityId::parse(&link.source_id) {
+                refs.push(entity_id);
+            }
+        }
+        Ok(refs)
     }
 
     /// Check if a risk matches the given filter
@@ -717,6 +725,7 @@ impl<'a> RiskService<'a> {
                 RiskSortField::Status => format!("{:?}", a.status).cmp(&format!("{:?}", b.status)),
                 RiskSortField::Author => a.author.cmp(&b.author),
                 RiskSortField::Created => a.created.cmp(&b.created),
+                RiskSortField::Category => a.category.cmp(&b.category),
             };
 
             match sort_dir {

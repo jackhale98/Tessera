@@ -274,7 +274,18 @@ fn error_to_violation(content: &str, error: &JsonSchemaError) -> SchemaViolation
     let help = generate_help_message(error);
 
     // Try to find the span in the YAML where this error occurred
-    let span = find_path_span(content, &path);
+    // For AdditionalProperties errors at root, point at the first unknown field
+    let span = if let jsonschema::error::ValidationErrorKind::AdditionalProperties { unexpected } =
+        &error.kind
+    {
+        if !unexpected.is_empty() {
+            find_key_span(content, &unexpected[0]).unwrap_or_else(|| find_path_span(content, &path))
+        } else {
+            find_path_span(content, &path)
+        }
+    } else {
+        find_path_span(content, &path)
+    };
 
     SchemaViolation::new(message, hint, span, help)
 }

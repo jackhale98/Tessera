@@ -616,9 +616,16 @@ impl<'a> ComponentService<'a> {
     }
 
     /// Find entities that reference this component
-    fn find_references(&self, _id: &EntityId) -> ServiceResult<Vec<EntityId>> {
-        // TODO: Implement reference checking via cache or file scan
-        Ok(Vec::new())
+    fn find_references(&self, id: &EntityId) -> ServiceResult<Vec<EntityId>> {
+        let id_str = id.to_string();
+        let links = self.cache.get_links_to(&id_str);
+        let mut refs = Vec::new();
+        for link in links {
+            if let Ok(entity_id) = EntityId::parse(&link.source_id) {
+                refs.push(entity_id);
+            }
+        }
+        Ok(refs)
     }
 
     /// Check if a component matches the given filter
