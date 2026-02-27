@@ -126,6 +126,14 @@ pub struct ListArgs {
     /// Wrap text in columns (mobile-friendly output with specified width)
     #[arg(long, short = 'w')]
     pub wrap: Option<usize>,
+
+    /// Only show entities linked to these IDs (use - for stdin pipe)
+    #[arg(long, value_delimiter = ',')]
+    pub linked_to: Vec<String>,
+
+    /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
+    #[arg(long, requires = "linked_to")]
+    pub via: Option<String>,
 }
 
 /// Columns to display in list output
@@ -526,6 +534,14 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let service = QuoteService::new(&project, &cache);
     let mut short_ids = ShortIdIndex::load(&project);
 
+    // Resolve linked-to filter via cache
+    let allowed_ids = crate::cli::helpers::resolve_linked_to(
+        &args.linked_to,
+        args.via.as_deref(),
+        &short_ids,
+        &cache,
+    );
+
     // Determine output format
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
@@ -587,6 +603,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             quotes.retain(|q| q.title.to_lowercase().contains(&search_lower));
         }
 
+        // Apply linked-to filter
+        if let Some(ref ids) = allowed_ids {
+            quotes.retain(|e| ids.contains(&e.id));
+        }
+
         // Sort
         sort_cached_quotes(&mut quotes, args.sort, args.reverse);
 
@@ -605,7 +626,12 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let result = service
         .list(&filter, sort_field, sort_dir)
         .map_err(|e| miette::miette!("{}", e))?;
-    let quotes = result.items;
+    let mut quotes = result.items;
+
+    // Apply linked-to filter
+    if let Some(ref ids) = allowed_ids {
+        quotes.retain(|e| ids.contains(&e.id.to_string()));
+    }
 
     // Count only
     if args.count {

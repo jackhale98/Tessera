@@ -192,6 +192,14 @@ pub struct ListArgs {
     /// Wrap text in columns (mobile-friendly output with specified width)
     #[arg(long, short = 'w')]
     pub wrap: Option<usize>,
+
+    /// Only show entities linked to these IDs (use - for stdin pipe)
+    #[arg(long, value_delimiter = ',')]
+    pub linked_to: Vec<String>,
+
+    /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
+    #[arg(long, requires = "linked_to")]
+    pub via: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -413,6 +421,14 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let service = StackupService::new(&project, &cache);
     let mut short_ids = ShortIdIndex::load(&project);
 
+    // Resolve linked-to filter via cache
+    let allowed_ids = crate::cli::helpers::resolve_linked_to(
+        &args.linked_to,
+        args.via.as_deref(),
+        &short_ids,
+        &cache,
+    );
+
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
@@ -422,6 +438,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let mut stackups = service
         .list(&filter)
         .map_err(|e| miette::miette!("{}", e))?;
+
+    // Apply linked-to filter
+    if let Some(ref ids) = allowed_ids {
+        stackups.retain(|e| ids.contains(&e.id.to_string()));
+    }
 
     // Post-sort for Critical column (not in service sort fields)
     if let Some(ListColumn::Critical) = args.sort {

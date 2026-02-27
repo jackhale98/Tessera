@@ -220,6 +220,14 @@ pub struct ListArgs {
     /// Wrap output for mobile/narrow terminals (specify width, e.g., -w 60)
     #[arg(short = 'w', long)]
     pub wrap: Option<usize>,
+
+    /// Only show entities linked to these IDs (use - for stdin pipe)
+    #[arg(long, value_delimiter = ',')]
+    pub linked_to: Vec<String>,
+
+    /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
+    #[arg(long, requires = "linked_to")]
+    pub via: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -436,6 +444,15 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let service = AssemblyService::new(&project, &cache);
 
+    // Resolve linked-to filter via cache
+    let short_ids = ShortIdIndex::load(&project);
+    let allowed_ids = crate::cli::helpers::resolve_linked_to(
+        &args.linked_to,
+        args.via.as_deref(),
+        &short_ids,
+        &cache,
+    );
+
     // Build filter and sort from CLI args
     let filter = build_asm_filter(&args);
     let (sort_field, sort_dir) = build_asm_sort(&args);
@@ -446,6 +463,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         .map_err(|e| miette::miette!("{}", e))?;
 
     let mut assemblies = result.items;
+
+    // Apply linked-to filter
+    if let Some(ref ids) = allowed_ids {
+        assemblies.retain(|e| ids.contains(&e.id.to_string()));
+    }
 
     // Filter by parent assembly (sub-assemblies only) - post-filter
     if let Some(ref parent_asm) = args.assembly {

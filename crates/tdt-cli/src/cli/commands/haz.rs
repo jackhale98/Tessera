@@ -185,6 +185,14 @@ pub struct ListArgs {
     /// Maximum number of results
     #[arg(long, short = 'n')]
     pub limit: Option<usize>,
+
+    /// Only show entities linked to these IDs (use - for stdin pipe)
+    #[arg(long, value_delimiter = ',')]
+    pub linked_to: Vec<String>,
+
+    /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
+    #[arg(long, requires = "linked_to")]
+    pub via: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -279,6 +287,14 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let service = HazardService::new(&project, &cache);
     let mut short_ids = ShortIdIndex::load(&project);
 
+    // Resolve linked-to filter via cache
+    let allowed_ids = crate::cli::helpers::resolve_linked_to(
+        &args.linked_to,
+        args.via.as_deref(),
+        &short_ids,
+        &cache,
+    );
+
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Table,
         f => f,
@@ -292,6 +308,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     // Post-filter: no_risks (not supported by service filter)
     if args.no_risks {
         hazards.retain(|h| h.links.causes.is_empty());
+    }
+
+    // Apply linked-to filter
+    if let Some(ref ids) = allowed_ids {
+        hazards.retain(|e| ids.contains(&e.id.to_string()));
     }
 
     if let Some(limit) = args.limit {

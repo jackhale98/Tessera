@@ -175,6 +175,14 @@ pub struct ListArgs {
     /// Show full entity ID column (hidden by default, SHORT ID always shown)
     #[arg(long)]
     pub show_id: bool,
+
+    /// Only show entities linked to these IDs (use - for stdin pipe)
+    #[arg(long, value_delimiter = ',')]
+    pub linked_to: Vec<String>,
+
+    /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
+    #[arg(long, requires = "linked_to")]
+    pub via: Option<String>,
 }
 
 /// Column selection for list output
@@ -342,6 +350,14 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let service = ProcessService::new(&project, &cache);
     let mut short_ids = ShortIdIndex::load(&project);
 
+    // Resolve linked-to filter via cache
+    let allowed_ids = crate::cli::helpers::resolve_linked_to(
+        &args.linked_to,
+        args.via.as_deref(),
+        &short_ids,
+        &cache,
+    );
+
     let format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
         f => f,
@@ -358,6 +374,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     if can_use_cache {
         let mut entities = service.list_cached();
         sort_cached_processes(&mut entities, &args);
+
+        // Apply linked-to filter
+        if let Some(ref ids) = allowed_ids {
+            entities.retain(|e| ids.contains(&e.id));
+        }
 
         if args.reverse {
             entities.reverse();
@@ -379,6 +400,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
         .list(&filter, sort_field, sort_dir)
         .map_err(|e| miette::miette!("{}", e))?;
     let mut processes = result.items;
+
+    // Apply linked-to filter
+    if let Some(ref ids) = allowed_ids {
+        processes.retain(|e| ids.contains(&e.id.to_string()));
+    }
 
     // Post-sort for Operation column (not in service sort for cached path)
     if matches!(args.sort, ListColumn::Operation) {

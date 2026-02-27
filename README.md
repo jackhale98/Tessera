@@ -412,6 +412,7 @@ tdt req list --priority high          # Filter by priority
 tdt req list --type input             # Filter by type
 tdt req list --search "temperature"   # Search in title/text
 tdt req list --orphans                # Show unlinked requirements
+tdt req list --linked-to CMP@1       # Requirements linked to a component
 tdt req show REQ-01HC2                # Show details (partial ID match)
 tdt req edit REQ-01HC2                # Open in editor
 tdt req delete REQ@1                  # Permanently delete (checks for links)
@@ -432,6 +433,7 @@ tdt risk list --level high             # Filter by risk level
 tdt risk list --by-rpn                 # Sort by RPN (highest first)
 tdt risk list --min-rpn 100            # Filter by minimum RPN
 tdt risk list --unmitigated            # Show risks without mitigations
+tdt risk list --linked-to CMP@1       # Risks affecting a component
 tdt risk show RISK-01HC2               # Show details
 tdt risk edit RISK-01HC2               # Open in editor
 tdt risk delete RISK@1                 # Permanently delete
@@ -453,6 +455,7 @@ tdt test list --type verification             # Filter by test type
 tdt test list --level unit                    # Filter by test level
 tdt test list --method inspection             # Filter by IADT method
 tdt test list --orphans                       # Show tests without linked requirements
+tdt test list --linked-to REQ@1 --via verified_by  # Tests verifying a requirement
 tdt test show TEST-01HC2                      # Show details
 tdt test edit TEST-01HC2                      # Open in editor
 tdt test delete TEST@1                        # Permanently delete
@@ -650,6 +653,8 @@ tdt ncr list                                  # List all NCRs
 tdt ncr list --type internal                  # Filter by NCR type
 tdt ncr list --severity critical              # Filter by severity
 tdt ncr list --ncr-status open                # Filter by workflow status
+tdt ncr list --linked-to CMP@1               # NCRs linked to a component
+tdt cmp list -f short-id | tdt ncr list --linked-to -  # NCRs for piped components
 tdt ncr show NCR@1                            # Show details
 tdt ncr edit NCR@1                            # Open in editor
 tdt ncr delete NCR@1                          # Permanently delete
@@ -671,6 +676,7 @@ tdt capa list                                 # List all CAPAs
 tdt capa list --type corrective               # Filter by CAPA type
 tdt capa list --capa-status implementation    # Filter by workflow status
 tdt capa list --overdue                       # Show overdue CAPAs
+tdt capa list --linked-to NCR@1              # CAPAs linked to an NCR
 tdt capa show CAPA@1                          # Show details
 tdt capa edit CAPA@1                          # Open in editor
 tdt capa delete CAPA@1                        # Permanently delete
@@ -698,6 +704,8 @@ tdt trace matrix                  # Show traceability matrix
 tdt trace matrix -o csv           # Export as CSV
 tdt trace matrix -o dot           # Export as GraphViz DOT
 tdt trace from REQ@1              # What depends on this?
+tdt trace from REQ@1 REQ@2        # Trace from multiple entities
+tdt req list -f short-id | tdt trace from -  # Trace from piped IDs
 tdt trace to REQ@1                # What does this depend on?
 tdt trace orphans                 # Find unlinked entities
 tdt trace coverage                # Verification coverage report
@@ -809,6 +817,34 @@ tdt req list --status draft --output id | tdt bulk set-status review
 ```
 
 This works with all entity types and all bulk commands (`set-status`, `add-tag`, `remove-tag`, `set-author`).
+
+#### Cross-Entity Filtering (`--linked-to`)
+
+Every `list` command supports `--linked-to` to filter entities by their links to other entities. Combine with `-` to read IDs from stdin for powerful pipe composition:
+
+```bash
+# Show all NCRs linked to a specific component
+tdt ncr list --linked-to CMP@1
+
+# Pipe component IDs to find all linked NCRs
+tdt cmp list -f short-id | tdt ncr list --linked-to -
+
+# Find tests linked to approved requirements
+tdt req list --status approved -f short-id | tdt test list --linked-to -
+
+# Show risks linked to components in an assembly's BOM
+tdt asm bom ASM@1 -f short-id | tdt risk list --linked-to -
+
+# Filter by link type with --via
+tdt test list --linked-to REQ@1 --via verified_by
+tdt req list --linked-to CMP@1 --via satisfied_by
+
+# Pipe multiple IDs to trace commands
+echo -e "REQ@1\nREQ@2" | tdt trace from -
+tdt req list -f short-id | tdt trace from -
+```
+
+The `--linked-to` flag accepts comma-separated IDs, short IDs, or `-` for stdin. The optional `--via` flag filters by a specific link type (e.g., `verified_by`, `satisfied_by`, `mitigated_by`).
 
 ### SysML v2 Interchange
 

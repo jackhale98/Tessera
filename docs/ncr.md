@@ -267,6 +267,15 @@ tdt ncr list --ncr-status closed
 # Search in title/description
 tdt ncr list --search "bore"
 
+# Filter by linked entities
+tdt ncr list --linked-to CMP@1               # NCRs linked to a component
+tdt ncr list --linked-to PROC@1              # NCRs linked to a process
+tdt ncr list --linked-to CMP@1 --via component  # Filter by link type
+
+# Cross-entity piping
+tdt cmp list -f short-id | tdt ncr list --linked-to -   # NCRs for all components
+tdt proc list -f short-id | tdt ncr list --linked-to -  # NCRs for all processes
+
 # Output formats
 tdt ncr list -f json
 tdt ncr list -f csv

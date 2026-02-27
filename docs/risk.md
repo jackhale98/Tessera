@@ -222,6 +222,11 @@ tdt risk list --search "thermal"
 # Combine filters
 tdt risk list --type design --level high --by-rpn
 
+# Filter by linked entities
+tdt risk list --linked-to CMP@1              # Risks affecting a component
+tdt risk list --linked-to PROC@1             # Risks affecting a process
+tdt cmp list -f short-id | tdt risk list --linked-to -  # Risks for all components
+
 # Output formats
 tdt risk list -f json
 tdt risk list -f csv

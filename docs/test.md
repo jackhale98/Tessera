@@ -304,6 +304,11 @@ tdt test list --limit 10
 
 # Count only
 tdt test list --count
+
+# Filter by linked entities
+tdt test list --linked-to REQ@1              # Tests linked to a requirement
+tdt test list --linked-to REQ@1 --via verified_by  # Tests verifying a requirement
+tdt req list -f short-id | tdt test list --linked-to -  # Tests for all requirements
 ```
 
 ### Show test details

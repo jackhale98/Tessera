@@ -241,6 +241,11 @@ tdt cmp list --limit 10
 # Count only
 tdt cmp list --count
 
+# Filter by linked entities
+tdt cmp list --linked-to REQ@1               # Components linked to a requirement
+tdt cmp list --linked-to RISK@1              # Components linked to a risk
+tdt risk list -f short-id | tdt cmp list --linked-to -  # Components for all risks
+
 # Output formats
 tdt cmp list -f json
 tdt cmp list -f csv

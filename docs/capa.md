@@ -294,6 +294,10 @@ tdt capa list --overdue
 # Search in title/description
 tdt capa list --search "tool"
 
+# Filter by linked entities
+tdt capa list --linked-to NCR@1              # CAPAs linked to an NCR
+tdt ncr list --ncr-status open -f short-id | tdt capa list --linked-to -  # CAPAs for open NCRs
+
 # Output formats
 tdt capa list -f json
 tdt capa list -f csv

@@ -4,7 +4,7 @@ use console::style;
 use miette::{IntoDiagnostic, Result};
 use std::collections::{HashMap, HashSet};
 
-use crate::cli::helpers::{escape_csv, format_short_id_str, truncate_str};
+use crate::cli::helpers::{escape_csv, format_short_id_str, read_ids_from_stdin, truncate_str};
 use crate::cli::{GlobalOpts, OutputFormat};
 use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::EntityPrefix;
@@ -56,8 +56,8 @@ pub struct MatrixArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct FromArgs {
-    /// Entity ID to trace from
-    pub id: String,
+    /// Entity IDs to trace from (use - for stdin)
+    pub ids_arg: Vec<String>,
 
     /// Maximum depth to trace (default: unlimited)
     #[arg(long, short = 'd')]
@@ -70,8 +70,8 @@ pub struct FromArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct ToArgs {
-    /// Entity ID to trace to
-    pub id: String,
+    /// Entity IDs to trace to (use - for stdin)
+    pub ids_arg: Vec<String>,
 
     /// Maximum depth to trace (default: unlimited)
     #[arg(long, short = 'd')]
@@ -431,9 +431,31 @@ fn run_rvm(
     Ok(())
 }
 
+/// Resolve trace ID args: supports multiple positional IDs and "-" for stdin.
+fn resolve_trace_ids(ids_arg: &[String]) -> Result<Vec<String>> {
+    if ids_arg.is_empty() {
+        // No positional args - try stdin
+        if let Some(ids) = read_ids_from_stdin() {
+            return Ok(ids);
+        }
+        return Err(miette::miette!(
+            "No entity ID provided. Use: tdt trace from <ID> or pipe IDs"
+        ));
+    }
+    if ids_arg.len() == 1 && ids_arg[0] == "-" {
+        // Explicit stdin
+        read_ids_from_stdin().ok_or_else(|| miette::miette!("No IDs provided on stdin"))
+    } else {
+        Ok(ids_arg.to_vec())
+    }
+}
+
 fn run_from(args: FromArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let use_dot = matches!(global.output, OutputFormat::Dot);
+
+    // Resolve IDs from args or stdin
+    let raw_ids = resolve_trace_ids(&args.ids_arg)?;
 
     // Load all entities first
     let entities = load_all_entities(&project)?;
@@ -445,18 +467,20 @@ fn run_from(args: FromArgs, global: &GlobalOpts) -> Result<()> {
         super::utils::save_short_ids(&mut short_ids, &project);
     }
 
-    let resolved_id = short_ids
-        .resolve(&args.id)
-        .unwrap_or_else(|| args.id.clone());
+    // Resolve all input IDs
+    let mut sources = Vec::new();
+    for raw_id in &raw_ids {
+        let resolved_id = short_ids.resolve(raw_id).unwrap_or_else(|| raw_id.clone());
 
-    // Find the starting entity
-    let source = entities
-        .iter()
-        .find(|e| {
-            e.id.starts_with(&resolved_id)
-                || e.title.to_lowercase().contains(&resolved_id.to_lowercase())
-        })
-        .ok_or_else(|| miette::miette!("Entity '{}' not found", args.id))?;
+        let source = entities
+            .iter()
+            .find(|e| {
+                e.id.starts_with(&resolved_id)
+                    || e.title.to_lowercase().contains(&resolved_id.to_lowercase())
+            })
+            .ok_or_else(|| miette::miette!("Entity '{}' not found", raw_id))?;
+        sources.push(source);
+    }
 
     // Build ID to title map for display
     let id_to_title: HashMap<String, String> = entities
@@ -475,10 +499,11 @@ fn run_from(args: FromArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
-    // BFS to find what depends on this entity
+    // BFS to find what depends on these entities (union of all sources)
     let mut visited = HashSet::new();
     let mut edges: Vec<(String, String, String)> = Vec::new(); // (from, to, link_type)
-    let mut queue: Vec<(String, usize)> = vec![(source.id.clone(), 0)];
+    let source_ids: HashSet<String> = sources.iter().map(|s| s.id.clone()).collect();
+    let mut queue: Vec<(String, usize)> = sources.iter().map(|s| (s.id.clone(), 0)).collect();
     let max_depth = args.depth.unwrap_or(usize::MAX);
 
     while let Some((id, depth)) = queue.pop() {
@@ -515,7 +540,7 @@ fn run_from(args: FromArgs, global: &GlobalOpts) -> Result<()> {
                 .map(|t| truncate_str(t, 20))
                 .unwrap_or_default();
             let label = format!("{}\\n{}", short_id, title);
-            let style_attr = if id == &source.id {
+            let style_attr = if source_ids.contains(id) {
                 ", style=filled, fillcolor=lightblue"
             } else {
                 ""
@@ -531,26 +556,29 @@ fn run_from(args: FromArgs, global: &GlobalOpts) -> Result<()> {
         println!("}}");
     } else {
         // Tree format (default)
-        let source_display = if !args.ids {
-            short_ids
-                .get_short_id(&source.id)
-                .unwrap_or_else(|| source.id.clone())
-        } else {
-            source.id.clone()
-        };
+        for source in &sources {
+            let source_display = if !args.ids {
+                short_ids
+                    .get_short_id(&source.id)
+                    .unwrap_or_else(|| source.id.clone())
+            } else {
+                source.id.clone()
+            };
 
-        println!(
-            "{} Tracing from: {} - {}",
-            style("→").blue(),
-            style(&source_display).cyan(),
-            source.title
-        );
+            println!(
+                "{} Tracing from: {} - {}",
+                style("→").blue(),
+                style(&source_display).cyan(),
+                source.title
+            );
+        }
         println!();
         println!("{}", style("Entities that depend on this:").bold());
 
         // Re-traverse for tree output with depth
         let mut visited_tree = HashSet::new();
-        let mut queue_tree: Vec<(String, usize)> = vec![(source.id.clone(), 0)];
+        let mut queue_tree: Vec<(String, usize)> =
+            sources.iter().map(|s| (s.id.clone(), 0)).collect();
 
         while let Some((id, depth)) = queue_tree.pop() {
             if depth > max_depth {
@@ -586,7 +614,7 @@ fn run_from(args: FromArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
 
-        if visited.len() == 1 {
+        if visited.len() <= sources.len() {
             println!("  {}", style("(none)").dim());
         }
     }
@@ -598,6 +626,9 @@ fn run_to(args: ToArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let use_dot = matches!(global.output, OutputFormat::Dot);
 
+    // Resolve IDs from args or stdin
+    let raw_ids = resolve_trace_ids(&args.ids_arg)?;
+
     // Load all entities first
     let entities = load_all_entities(&project)?;
 
@@ -608,18 +639,20 @@ fn run_to(args: ToArgs, global: &GlobalOpts) -> Result<()> {
         super::utils::save_short_ids(&mut short_ids, &project);
     }
 
-    let resolved_id = short_ids
-        .resolve(&args.id)
-        .unwrap_or_else(|| args.id.clone());
+    // Resolve all input IDs
+    let mut targets = Vec::new();
+    for raw_id in &raw_ids {
+        let resolved_id = short_ids.resolve(raw_id).unwrap_or_else(|| raw_id.clone());
 
-    // Find the target entity
-    let target = entities
-        .iter()
-        .find(|e| {
-            e.id.starts_with(&resolved_id)
-                || e.title.to_lowercase().contains(&resolved_id.to_lowercase())
-        })
-        .ok_or_else(|| miette::miette!("Entity '{}' not found", args.id))?;
+        let target = entities
+            .iter()
+            .find(|e| {
+                e.id.starts_with(&resolved_id)
+                    || e.title.to_lowercase().contains(&resolved_id.to_lowercase())
+            })
+            .ok_or_else(|| miette::miette!("Entity '{}' not found", raw_id))?;
+        targets.push(target);
+    }
 
     // Build ID to title map for display
     let id_to_title: HashMap<String, String> = entities
@@ -635,10 +668,11 @@ fn run_to(args: ToArgs, global: &GlobalOpts) -> Result<()> {
         }
     }
 
-    // BFS to find what this entity depends on
+    // BFS to find what these entities depend on (union of all targets)
     let mut visited = HashSet::new();
     let mut edges: Vec<(String, String, String)> = Vec::new(); // (from, to, link_type)
-    let mut queue: Vec<(String, usize)> = vec![(target.id.clone(), 0)];
+    let target_ids: HashSet<String> = targets.iter().map(|t| t.id.clone()).collect();
+    let mut queue: Vec<(String, usize)> = targets.iter().map(|t| (t.id.clone(), 0)).collect();
     let max_depth = args.depth.unwrap_or(usize::MAX);
 
     while let Some((id, depth)) = queue.pop() {
@@ -675,7 +709,7 @@ fn run_to(args: ToArgs, global: &GlobalOpts) -> Result<()> {
                 .map(|t| truncate_str(t, 20))
                 .unwrap_or_default();
             let label = format!("{}\\n{}", short_id, title);
-            let style_attr = if id == &target.id {
+            let style_attr = if target_ids.contains(id) {
                 ", style=filled, fillcolor=lightblue"
             } else {
                 ""
@@ -691,26 +725,29 @@ fn run_to(args: ToArgs, global: &GlobalOpts) -> Result<()> {
         println!("}}");
     } else {
         // Tree format (default)
-        let target_display = if !args.ids {
-            short_ids
-                .get_short_id(&target.id)
-                .unwrap_or_else(|| target.id.clone())
-        } else {
-            target.id.clone()
-        };
+        for target in &targets {
+            let target_display = if !args.ids {
+                short_ids
+                    .get_short_id(&target.id)
+                    .unwrap_or_else(|| target.id.clone())
+            } else {
+                target.id.clone()
+            };
 
-        println!(
-            "{} Tracing to: {} - {}",
-            style("→").blue(),
-            style(&target_display).cyan(),
-            target.title
-        );
+            println!(
+                "{} Tracing to: {} - {}",
+                style("→").blue(),
+                style(&target_display).cyan(),
+                target.title
+            );
+        }
         println!();
         println!("{}", style("Dependencies:").bold());
 
         // Re-traverse for tree output with depth
         let mut visited_tree = HashSet::new();
-        let mut queue_tree: Vec<(String, usize)> = vec![(target.id.clone(), 0)];
+        let mut queue_tree: Vec<(String, usize)> =
+            targets.iter().map(|t| (t.id.clone(), 0)).collect();
 
         while let Some((id, depth)) = queue_tree.pop() {
             if depth > max_depth {
@@ -746,7 +783,7 @@ fn run_to(args: ToArgs, global: &GlobalOpts) -> Result<()> {
             }
         }
 
-        if visited.len() == 1 {
+        if visited.len() <= targets.len() {
             println!("  {}", style("(none)").dim());
         }
     }

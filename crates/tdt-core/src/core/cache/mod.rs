@@ -18,7 +18,7 @@ mod types;
 // Re-export all types
 pub use types::*;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -696,6 +696,33 @@ impl EntityCache {
         };
 
         rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Get all entity IDs that have any link (incoming or outgoing) with the given targets.
+    /// Optionally filters by a specific link type.
+    pub fn get_ids_linked_to(
+        &self,
+        target_ids: &[String],
+        link_type: Option<&str>,
+    ) -> HashSet<String> {
+        let mut result = HashSet::new();
+        for target in target_ids {
+            match link_type {
+                Some(lt) => {
+                    result.extend(self.get_links_from_of_type(target, lt));
+                    result.extend(self.get_links_to_of_type(target, lt));
+                }
+                None => {
+                    for link in self.get_links_from(target) {
+                        result.insert(link.target_id);
+                    }
+                    for link in self.get_links_to(target) {
+                        result.insert(link.source_id);
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// Get assembly-specific info (part_number, revision) for an assembly ID

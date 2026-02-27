@@ -154,6 +154,11 @@ tdt req list --search "temperature"
 
 # Custom columns
 tdt req list --columns id,title,status
+
+# Filter by linked entities
+tdt req list --linked-to CMP@1               # Requirements linked to a component
+tdt req list --linked-to TEST@1              # Requirements linked to a test
+tdt cmp list -f short-id | tdt req list --linked-to -  # Requirements for all components
 ```
 
 ### Show requirement details

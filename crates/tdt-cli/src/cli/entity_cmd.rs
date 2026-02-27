@@ -11,6 +11,7 @@
 use console::style;
 use miette::{IntoDiagnostic, Result};
 use serde::{de::DeserializeOwned, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -356,6 +357,7 @@ pub struct CommonListArgs {
 /// * `global` - Global CLI options (output format)
 /// * `project` - Project reference
 /// * `needs_full_for_filter` - True if post-filtering requires full entities
+/// * `allowed_ids` - If Some, only include entities whose ID is in this set (for --linked-to)
 pub fn run_list_generic<E, C, F, S, Svc>(
     config: &ListConfig<E, C, S>,
     service: &Svc,
@@ -366,6 +368,7 @@ pub fn run_list_generic<E, C, F, S, Svc>(
     global: &GlobalOpts,
     project: &Project,
     needs_full_for_filter: bool,
+    allowed_ids: Option<&HashSet<String>>,
 ) -> Result<()>
 where
     E: Entity + Serialize + Clone,
@@ -388,6 +391,11 @@ where
             .map_err(|e| miette::miette!("{}", e))?;
 
         let mut items = result.items;
+
+        // Apply linked-to filter
+        if let Some(ids) = allowed_ids {
+            items.retain(|e| ids.contains(&e.id().to_string()));
+        }
 
         // Apply reverse and limit
         if args.reverse {
@@ -424,6 +432,15 @@ where
         // Sort cached entities if a sort function is provided
         if let Some(sort_fn) = config.cached_sort {
             sort_fn(&mut items, sort_field, sort_dir);
+        }
+
+        // Apply linked-to filter
+        if let Some(ids) = allowed_ids {
+            let short_ids_temp = ShortIdIndex::load(project);
+            items.retain(|e| {
+                let row = (config.cached_to_row)(e, &short_ids_temp);
+                ids.contains(&row.full_id)
+            });
         }
 
         // Apply reverse and limit

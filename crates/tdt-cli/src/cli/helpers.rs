@@ -6,8 +6,11 @@
 #![allow(dead_code)]
 
 use chrono::{DateTime, Local, NaiveDate, Utc};
+use std::collections::HashSet;
 use std::io::{self, BufRead, IsTerminal};
+use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::EntityId;
+use tdt_core::core::shortid::ShortIdIndex;
 
 /// Format an EntityId for display, truncating if too long
 ///
@@ -153,6 +156,34 @@ pub fn resolve_id_arg(arg: &Option<String>) -> Result<String, &'static str> {
                 .ok_or("No ID provided. Use: tdt <cmd> show <ID> or pipe an ID")
         }
     }
+}
+
+/// Resolve --linked-to args: comma-separated IDs, "-" for stdin, or auto-detect piped stdin.
+/// Queries cache for all linked entity IDs and returns the allowed set.
+pub fn resolve_linked_to(
+    linked_to: &[String],
+    via: Option<&str>,
+    short_ids: &ShortIdIndex,
+    cache: &EntityCache,
+) -> Option<HashSet<String>> {
+    if linked_to.is_empty() {
+        return None;
+    }
+
+    // Handle "-" → read from stdin
+    let raw_ids = if linked_to.len() == 1 && linked_to[0] == "-" {
+        read_ids_from_stdin()?
+    } else {
+        linked_to.to_vec()
+    };
+
+    // Resolve short IDs to full IDs
+    let resolved: Vec<String> = raw_ids
+        .iter()
+        .map(|id| short_ids.resolve(id).unwrap_or_else(|| id.clone()))
+        .collect();
+
+    Some(cache.get_ids_linked_to(&resolved, via))
 }
 
 /// Format a UTC datetime as local time with date and time

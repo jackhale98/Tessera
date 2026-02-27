@@ -369,6 +369,37 @@ Validation Summary
 - Risk → Component (what's affected)
 - NCR → CAPA (escalation)
 
+## Cross-Entity Filtering
+
+Every `list` command supports `--linked-to` to filter entities by their relationships. This enables powerful cross-entity queries using Unix pipes:
+
+```bash
+# Find all NCRs linked to a specific component
+tdt ncr list --linked-to CMP@1
+
+# Find tests that verify a requirement (filter by link type with --via)
+tdt test list --linked-to REQ@1 --via verified_by
+
+# Pipe component IDs to find all linked risks
+tdt cmp list -f short-id | tdt risk list --linked-to -
+
+# Find NCRs for all components in an assembly's BOM
+tdt asm bom ASM@1 -f short-id | tdt ncr list --linked-to -
+
+# Find CAPAs linked to open NCRs
+tdt ncr list --ncr-status open -f short-id | tdt capa list --linked-to -
+
+# Trace from multiple piped IDs
+tdt req list --status approved -f short-id | tdt trace from -
+```
+
+The `--linked-to` flag accepts:
+- Direct IDs: `--linked-to CMP@1` or `--linked-to CMP@1,CMP@2`
+- Stdin pipe: `--linked-to -` (reads IDs from piped input)
+- Short IDs and full IDs are both supported
+
+The optional `--via` flag filters by a specific link type (e.g., `verified_by`, `satisfied_by`, `component`).
+
 ## Traceability
 
 Links enable traceability analysis:

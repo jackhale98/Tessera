@@ -316,6 +316,14 @@ pub struct ListArgs {
     /// Show full ID column (hidden by default since SHORT is always shown)
     #[arg(long)]
     pub show_id: bool,
+
+    /// Only show entities linked to these IDs (use - for stdin pipe)
+    #[arg(long, value_delimiter = ',')]
+    pub linked_to: Vec<String>,
+
+    /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
+    #[arg(long, requires = "linked_to")]
+    pub via: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -456,13 +464,30 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let filter = build_req_filter(&args);
     let (sort_field, sort_dir) = build_req_sort(&args);
 
+    // Resolve linked-to filter via cache
+    let short_ids = ShortIdIndex::load(&project);
+    let allowed_ids = crate::cli::helpers::resolve_linked_to(
+        &args.linked_to,
+        args.via.as_deref(),
+        &short_ids,
+        &cache,
+    );
+
     // Check if we need special post-filtering (test-result based filters)
     let needs_test_result_filters = args.untested || args.failed || args.passing;
 
     if needs_test_result_filters {
         // Special case: test-result filters require loading full entities and post-filtering
         run_list_with_test_filters(
-            &args, &service, &filter, sort_field, sort_dir, global, &project, &cache,
+            &args,
+            &service,
+            &filter,
+            sort_field,
+            sort_dir,
+            global,
+            &project,
+            &cache,
+            allowed_ids.as_ref(),
         )
     } else {
         // Standard case: use generic list infrastructure
@@ -492,7 +517,8 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             &common_args,
             global,
             &project,
-            false, // no extra full-entity requirements
+            false,
+            allowed_ids.as_ref(),
         )
     }
 }
@@ -507,6 +533,7 @@ fn run_list_with_test_filters(
     global: &GlobalOpts,
     project: &Project,
     cache: &EntityCache,
+    allowed_ids: Option<&std::collections::HashSet<String>>,
 ) -> Result<()> {
     let output_format = match global.output {
         OutputFormat::Auto => OutputFormat::Tsv,
@@ -519,6 +546,11 @@ fn run_list_with_test_filters(
         .map_err(|e| miette::miette!("{}", e))?;
 
     let mut reqs = result.items;
+
+    // Apply linked-to filter
+    if let Some(ids) = allowed_ids {
+        reqs.retain(|r| ids.contains(&r.id.to_string()));
+    }
 
     // Apply test-result based filters (require cross-entity queries)
     // Use cache for fast lookups instead of walking directories

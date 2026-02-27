@@ -2138,6 +2138,27 @@ REQ-01KCA9X3JQFT8BHK2VCN5M9B
           </div>
         </div>
 
+        <!-- Cross-Entity Piping -->
+        <div class="workflow-item">
+          <div class="workflow-header">
+            <div class="workflow-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </div>
+            <h3>Cross-Entity Piping</h3>
+          </div>
+          <p class="workflow-desc">Filter any entity type by its links to another. Pipe IDs between commands for powerful cross-entity queries.</p>
+          <div class="workflow-code">
+            <pre><span class="comment"># Find NCRs linked to a specific component</span>
+<span class="symbol">$</span> <span class="cmd">tdt ncr list --linked-to CMP@1</span>
+
+<span class="comment"># Pipe assembly BOM to find linked risks</span>
+<span class="symbol">$</span> <span class="cmd">tdt asm bom ASM@1 -f short-id | tdt risk list --linked-to -</span>
+
+<span class="comment"># Filter by link type with --via</span>
+<span class="symbol">$</span> <span class="cmd">tdt test list --linked-to REQ@1 --via verified_by</span></pre>
+          </div>
+        </div>
+
         <!-- Bulk Operations -->
         <div class="workflow-item">
           <div class="workflow-header">
@@ -2152,7 +2173,7 @@ REQ-01KCA9X3JQFT8BHK2VCN5M9B
 <span class="symbol">$</span> <span class="cmd">tdt import req requirements.csv</span>
 
 <span class="comment"># Bulk status update via pipeline</span>
-<span class="symbol">$</span> <span class="cmd">tdt req list --status draft -f id | xargs -I{} tdt req edit {} --status approved</span>
+<span class="symbol">$</span> <span class="cmd">tdt req list --status draft -f id | tdt bulk set-status approved</span>
 
 <span class="comment"># Generate all RPN values</span>
 <span class="symbol">$</span> <span class="cmd">tdt validate --fix</span></pre>

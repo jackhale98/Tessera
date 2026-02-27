@@ -328,6 +328,14 @@ pub struct ListArgs {
     /// Show the full ID column (hidden by default since SHORT is always shown)
     #[arg(long)]
     pub show_id: bool,
+
+    /// Only show entities linked to these IDs (use - for stdin pipe)
+    #[arg(long, value_delimiter = ',')]
+    pub linked_to: Vec<String>,
+
+    /// Filter by link type when using --linked-to (e.g., verified_by, satisfied_by)
+    #[arg(long, requires = "linked_to")]
+    pub via: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -492,6 +500,15 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
     let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
     let service = TestService::new(&project, &cache);
 
+    // Resolve linked-to filter via cache
+    let short_ids = ShortIdIndex::load(&project);
+    let allowed_ids = crate::cli::helpers::resolve_linked_to(
+        &args.linked_to,
+        args.via.as_deref(),
+        &short_ids,
+        &cache,
+    );
+
     // Build filter and sort from CLI args
     let filter = build_test_filter(&args);
     let (sort_field, sort_dir) = build_test_sort(&args);
@@ -514,6 +531,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             .map_err(|e| miette::miette!("{}", e))?;
 
         let mut tests = result.items;
+
+        // Apply linked-to filter
+        if let Some(ref ids) = allowed_ids {
+            tests.retain(|e| ids.contains(&e.id.to_string()));
+        }
 
         // Apply result-based filters (require cross-entity queries)
         // Use cache for fast lookups instead of walking directories
@@ -601,6 +623,11 @@ fn run_list(args: ListArgs, global: &GlobalOpts) -> Result<()> {
             .map_err(|e| miette::miette!("{}", e))?;
 
         let mut tests = result.items;
+
+        // Apply linked-to filter
+        if let Some(ref ids) = allowed_ids {
+            tests.retain(|e| ids.contains(&e.id));
+        }
 
         // Sort cached results
         sort_cached_tests(&mut tests, &args);
