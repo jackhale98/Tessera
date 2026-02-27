@@ -444,8 +444,17 @@ impl<'a> ControlService<'a> {
         let (path, control) = self.find_control(id)?;
 
         // Check for references unless force is true
-        if !force && !control.links.verifies.is_empty() {
-            return Err(ServiceError::HasReferences);
+        if !force {
+            if !control.links.verifies.is_empty() {
+                return Err(ServiceError::HasReferences);
+            }
+
+            // Check for incoming references from other entities
+            let id_str = control.id.to_string();
+            let links_to = self.cache.get_links_to(&id_str);
+            if !links_to.is_empty() {
+                return Err(ServiceError::HasReferences);
+            }
         }
 
         // Delete the file

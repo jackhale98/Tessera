@@ -786,7 +786,7 @@ impl EntityCache {
                     value["control_type"].as_str(),
                     value["inspection_method"].as_str(),
                     value["frequency"].as_str(),
-                    value["process"].as_str()
+                    value["links"]["process"].as_str()
                 ],
             )
             .into_diagnostic()?;
@@ -797,7 +797,7 @@ impl EntityCache {
         self.conn
             .execute(
                 r#"INSERT OR REPLACE INTO works (id, process_id) VALUES (?1, ?2)"#,
-                params![id, value["process"].as_str()],
+                params![id, value["links"]["process"].as_str()],
             )
             .into_diagnostic()?;
         Ok(())
@@ -816,8 +816,8 @@ impl EntityCache {
                     value["ncr_status"].as_str(),
                     value["category"].as_str(),
                     value["disposition"]["decision"].as_str(),
-                    value["component"].as_str(),
-                    value["process"].as_str()
+                    value["links"]["component"].as_str(),
+                    value["links"]["process"].as_str()
                 ],
             )
             .into_diagnostic()?;

@@ -1,0 +1,1699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manufacturing - Tessera Design Toolkit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0e14;
+      --bg-secondary: #0d1117;
+      --bg-elevated: #151b23;
+      --bg-card: #1a2029;
+      --accent: #00d4aa;
+      --accent-glow: rgba(0, 212, 170, 0.15);
+      --accent-dim: #00a085;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #4a5568;
+      --border: #21262d;
+      --border-accent: #00d4aa33;
+      --grid-line: rgba(0, 212, 170, 0.04);
+      --code-bg: #0d1117;
+      --success: #3fb950;
+      --warning: #d29922;
+      --info: #58a6ff;
+      --error: #f85149;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+
+    /* Blueprint Grid Background */
+    .grid-bg {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .grid-bg::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 50% at 50% 0%, var(--accent-glow), transparent);
+    }
+
+    /* Typography */
+    h1, h2, h3, h4 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    code, pre, .mono {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    /* Layout */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(10, 14, 20, 0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    nav .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+    }
+
+    .logo-icon svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .logo-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: -0.03em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover,
+    .nav-links a.active {
+      color: var(--accent);
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .nav-btn:hover {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+      color: var(--accent);
+    }
+
+    .nav-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Mobile Menu */
+    .mobile-menu-btn {
+      display: none;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .mobile-menu-btn svg {
+      width: 20px;
+      height: 20px;
+      display: block;
+    }
+
+    .mobile-menu {
+      display: none;
+      position: fixed;
+      top: 64px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(10, 14, 20, 0.98);
+      backdrop-filter: blur(12px);
+      z-index: 99;
+      padding: 24px;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mobile-menu.active {
+      display: flex;
+    }
+
+    .mobile-menu a {
+      display: block;
+      padding: 16px 20px;
+      color: var(--text-primary);
+      text-decoration: none;
+      font-size: 18px;
+      font-weight: 500;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .mobile-menu a:hover {
+      background: var(--bg-elevated);
+      color: var(--accent);
+    }
+
+    /* Tutorial Header */
+    .tutorial-header {
+      padding: 120px 0 60px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+
+    .tutorial-header h1 {
+      font-size: clamp(32px, 5vw, 48px);
+      margin-bottom: 16px;
+    }
+
+    .tutorial-header h1 span {
+      color: var(--accent);
+    }
+
+    .tutorial-header .description {
+      font-size: 18px;
+      color: var(--text-secondary);
+      max-width: 700px;
+    }
+
+    /* Main Content Area */
+    .tutorial-layout {
+      display: flex;
+      gap: 40px;
+      padding: 40px 0 100px;
+    }
+
+    /* Sidebar TOC */
+    .toc-sidebar {
+      position: sticky;
+      top: 84px;
+      width: 260px;
+      max-height: calc(100vh - 104px);
+      overflow-y: auto;
+      flex-shrink: 0;
+      padding-right: 20px;
+    }
+
+    .toc-sidebar h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .toc-sidebar ul {
+      list-style: none;
+    }
+
+    .toc-sidebar li {
+      margin-bottom: 6px;
+    }
+
+    .toc-sidebar a {
+      display: block;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border-left: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .toc-sidebar a:hover {
+      color: var(--accent);
+      background: var(--bg-elevated);
+      border-left-color: var(--accent);
+    }
+
+    .toc-sidebar a.active {
+      color: var(--accent);
+      background: var(--accent-glow);
+      border-left-color: var(--accent);
+    }
+
+    /* Tutorial Content */
+    .tutorial-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .tutorial-section {
+      margin-bottom: 60px;
+      scroll-margin-top: 84px;
+    }
+
+    .tutorial-section h2 {
+      font-size: 28px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--accent);
+    }
+
+    .tutorial-section h3 {
+      font-size: 20px;
+      margin-top: 32px;
+      margin-bottom: 16px;
+      color: var(--text-primary);
+    }
+
+    .tutorial-section h4 {
+      font-size: 16px;
+      margin-top: 24px;
+      margin-bottom: 12px;
+      color: var(--text-secondary);
+    }
+
+    .tutorial-section p {
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+    }
+
+    .tutorial-section ul, .tutorial-section ol {
+      margin-bottom: 16px;
+      padding-left: 24px;
+      color: var(--text-secondary);
+    }
+
+    .tutorial-section li {
+      margin-bottom: 8px;
+    }
+
+    .tutorial-section strong {
+      color: var(--text-primary);
+    }
+
+    /* Code Blocks */
+    .code-block {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .code-lang {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .code-block pre {
+      padding: 16px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    .code-block code {
+      color: var(--text-primary);
+    }
+
+    /* Inline Code */
+    code:not(pre code) {
+      background: var(--bg-elevated);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--accent);
+      border: 1px solid var(--border);
+    }
+
+    /* Syntax Highlighting */
+    .comment { color: var(--text-muted); }
+    .cmd { color: var(--accent); }
+    .output { color: var(--text-secondary); }
+    .symbol { color: var(--warning); }
+    .value { color: var(--info); }
+    .key { color: var(--accent); }
+    .string { color: var(--success); }
+    .number { color: var(--info); }
+
+    /* Terminal Output */
+    .terminal-output {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .terminal-output .header {
+      color: var(--text-muted);
+    }
+
+    .terminal-output .highlight {
+      color: var(--accent);
+    }
+
+    .terminal-output .success { color: var(--success); }
+    .terminal-output .warning { color: var(--warning); }
+    .terminal-output .error { color: var(--error); }
+
+    /* Info Boxes */
+    .info-box {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+
+    .info-box.tip {
+      border-left-color: var(--success);
+    }
+
+    .info-box.warning {
+      border-left-color: var(--warning);
+    }
+
+    .info-box h4 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+      font-size: 14px;
+    }
+
+    .info-box p {
+      margin-bottom: 0;
+      font-size: 14px;
+    }
+
+    /* Tables */
+    .table-wrapper {
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font-weight: 600;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    td {
+      color: var(--text-secondary);
+    }
+
+    td code {
+      font-size: 12px;
+    }
+
+    /* Info Tables */
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    .info-table th,
+    .info-table td {
+      padding: 10px 16px;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+
+    .info-table th {
+      background: var(--bg-elevated);
+      color: var(--accent);
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 500;
+    }
+
+    .info-table td {
+      background: var(--bg-card);
+    }
+
+    .info-table code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+
+    /* Tip Boxes */
+    .tip-box {
+      background: var(--bg-elevated);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+      font-size: 14px;
+    }
+
+    .tip-box code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+
+    /* Flow Diagram */
+    .flow-diagram {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 32px 24px;
+      margin-bottom: 20px;
+      text-align: center;
+      overflow-x: auto;
+    }
+
+    .flow-diagram svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    /* Section Divider */
+    .section-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 40px 0;
+    }
+
+    /* Footer */
+    footer {
+      padding: 60px 0;
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .footer-text {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 32px;
+    }
+
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--accent);
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .toc-sidebar {
+        display: none;
+      }
+
+      .tutorial-layout {
+        padding: 30px 0 60px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+      }
+
+      .mobile-menu-btn {
+        display: block;
+      }
+
+      .tutorial-header {
+        padding: 100px 0 40px;
+      }
+
+      .tutorial-header h1 {
+        font-size: 28px;
+      }
+
+      .tutorial-header .description {
+        font-size: 16px;
+      }
+
+      .tutorial-section h2 {
+        font-size: 24px;
+      }
+
+      .tutorial-section h3 {
+        font-size: 18px;
+      }
+
+      .code-block pre {
+        font-size: 11px;
+        padding: 12px;
+      }
+
+      .terminal-output {
+        font-size: 10px;
+        padding: 12px;
+      }
+
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .footer-links {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 16px 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="nav-container">
+      <a href="index.html" class="logo">
+        <div class="logo-icon">
+          <img src="logo.svg" alt="Tessera Logo" width="40" height="40">
+        </div>
+        <span class="logo-text">Tessera</span>
+      </a>
+      <div class="nav-links">
+        <a href="index.html#features">Features</a>
+        <a href="index.html#install">Install</a>
+        <a href="why-plain-text.html">Why Plain Text?</a>
+        <a href="tolerance.html">Tolerance</a>
+        <a href="3d-tolerance-analysis.html">3D Analysis</a>
+        <a href="reports.html">Reports</a>
+        <a href="collaboration.html">Collaboration</a>
+        <a href="integrations.html">Integrations</a>
+        <a href="manufacturing.html" class="active">Manufacturing</a>
+        <a href="tutorial.html">Tutorial</a>
+        <a href="https://github.com/jackhale98/TDT" class="nav-btn">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          GitHub
+        </a>
+      </div>
+      <button class="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Toggle menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Mobile Menu -->
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html" onclick="closeMobileMenu()">Home</a>
+    <a href="index.html#features" onclick="closeMobileMenu()">Features</a>
+    <a href="index.html#install" onclick="closeMobileMenu()">Install</a>
+    <a href="why-plain-text.html" onclick="closeMobileMenu()">Why Plain Text?</a>
+    <a href="tolerance.html" onclick="closeMobileMenu()">Tolerance</a>
+    <a href="3d-tolerance-analysis.html" onclick="closeMobileMenu()">3D Analysis</a>
+    <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
+    <a href="collaboration.html" onclick="closeMobileMenu()">Collaboration</a>
+    <a href="integrations.html" onclick="closeMobileMenu()">Integrations</a>
+    <a href="manufacturing.html" onclick="closeMobileMenu()">Manufacturing</a>
+    <a href="tutorial.html" onclick="closeMobileMenu()">Tutorial</a>
+    <a href="https://github.com/jackhale98/TDT" onclick="closeMobileMenu()">GitHub</a>
+  </div>
+
+  <!-- Page Header -->
+  <header class="tutorial-header">
+    <div class="container">
+      <h1>Manufacturing <span>Control Loop</span></h1>
+      <p class="description">A closed-loop quality system connecting process definitions, controls, work instructions, production lots, and corrective actions &mdash; all as traceable plain-text YAML under git version control.</p>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main>
+    <div class="container">
+      <div class="tutorial-layout">
+        <!-- Table of Contents Sidebar -->
+        <aside class="toc-sidebar">
+          <h3>Contents</h3>
+          <ul>
+            <li><a href="#control-loop">1. The Control Loop</a></li>
+            <li><a href="#processes">2. Process Definition</a></li>
+            <li><a href="#controls">3. Control Plans</a></li>
+            <li><a href="#work-instructions">4. Work Instructions</a></li>
+            <li><a href="#lots">5. Production Lots / DHR</a></li>
+            <li><a href="#deviations">6. Deviations</a></li>
+            <li><a href="#ncrs">7. Non-Conformance Reports</a></li>
+            <li><a href="#capas">8. CAPAs</a></li>
+            <li><a href="#traceability">9. Traceability</a></li>
+            <li><a href="#process-flow">10. Process Flow</a></li>
+          </ul>
+        </aside>
+
+        <!-- Content -->
+        <article class="tutorial-content">
+
+          <!-- Section 1: The Control Loop -->
+          <section id="control-loop" class="tutorial-section">
+            <h2>1. The Control Loop</h2>
+
+            <p>Tessera's manufacturing module implements a <strong>closed-loop quality system</strong>. Every process is controlled, every lot is traceable, and every non-conformance feeds back into the system as corrective action.</p>
+
+            <div class="flow-diagram">
+              <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+                <!-- Nodes -->
+                <rect x="10" y="70" width="90" height="50" rx="8" fill="#151b23" stroke="#00d4aa" stroke-width="1.5"/>
+                <text x="55" y="100" text-anchor="middle" fill="#00d4aa" font-family="'Space Grotesk', sans-serif" font-size="13" font-weight="600">PROC</text>
+
+                <rect x="140" y="70" width="90" height="50" rx="8" fill="#151b23" stroke="#00d4aa" stroke-width="1.5"/>
+                <text x="185" y="100" text-anchor="middle" fill="#00d4aa" font-family="'Space Grotesk', sans-serif" font-size="13" font-weight="600">CTRL</text>
+
+                <rect x="270" y="70" width="90" height="50" rx="8" fill="#151b23" stroke="#00d4aa" stroke-width="1.5"/>
+                <text x="315" y="100" text-anchor="middle" fill="#00d4aa" font-family="'Space Grotesk', sans-serif" font-size="13" font-weight="600">WORK</text>
+
+                <rect x="400" y="70" width="90" height="50" rx="8" fill="#151b23" stroke="#00d4aa" stroke-width="1.5"/>
+                <text x="445" y="100" text-anchor="middle" fill="#00d4aa" font-family="'Space Grotesk', sans-serif" font-size="13" font-weight="600">LOT</text>
+
+                <rect x="530" y="70" width="90" height="50" rx="8" fill="#151b23" stroke="#f85149" stroke-width="1.5"/>
+                <text x="575" y="100" text-anchor="middle" fill="#f85149" font-family="'Space Grotesk', sans-serif" font-size="13" font-weight="600">NCR</text>
+
+                <rect x="620" y="150" width="90" height="50" rx="8" fill="#151b23" stroke="#d29922" stroke-width="1.5"/>
+                <text x="665" y="180" text-anchor="middle" fill="#d29922" font-family="'Space Grotesk', sans-serif" font-size="13" font-weight="600">CAPA</text>
+
+                <!-- Forward arrows -->
+                <line x1="100" y1="95" x2="136" y2="95" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+                <line x1="230" y1="95" x2="266" y2="95" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+                <line x1="360" y1="95" x2="396" y2="95" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+                <line x1="490" y1="95" x2="526" y2="95" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+                <!-- NCR to CAPA -->
+                <path d="M 610 120 Q 640 140 636 150" fill="none" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+                <!-- CAPA feedback to PROC -->
+                <path d="M 620 175 Q 350 220 55 125" fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arrowWarn)"/>
+
+                <!-- Labels -->
+                <text x="55" y="60" text-anchor="middle" fill="#4a5568" font-family="'JetBrains Mono', monospace" font-size="10">Process</text>
+                <text x="185" y="60" text-anchor="middle" fill="#4a5568" font-family="'JetBrains Mono', monospace" font-size="10">Control</text>
+                <text x="315" y="60" text-anchor="middle" fill="#4a5568" font-family="'JetBrains Mono', monospace" font-size="10">Work Instr.</text>
+                <text x="445" y="60" text-anchor="middle" fill="#4a5568" font-family="'JetBrains Mono', monospace" font-size="10">Lot / DHR</text>
+                <text x="575" y="60" text-anchor="middle" fill="#4a5568" font-family="'JetBrains Mono', monospace" font-size="10">Non-Conf.</text>
+                <text x="665" y="145" text-anchor="middle" fill="#4a5568" font-family="'JetBrains Mono', monospace" font-size="10">Corrective</text>
+
+                <!-- Feedback label -->
+                <text x="340" y="210" text-anchor="middle" fill="#d29922" font-family="'JetBrains Mono', monospace" font-size="10" font-style="italic">feedback loop</text>
+
+                <defs>
+                  <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#4a5568"/>
+                  </marker>
+                  <marker id="arrowWarn" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#d29922"/>
+                  </marker>
+                </defs>
+              </svg>
+            </div>
+
+            <p>The six entity types form the manufacturing backbone:</p>
+
+            <div class="table-wrapper">
+              <table class="info-table">
+                <thead>
+                  <tr><th>Entity</th><th>Prefix</th><th>Role</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><strong>Process</strong></td><td><code>PROC</code></td><td>Defines how something is made &mdash; steps, equipment, parameters</td></tr>
+                  <tr><td><strong>Control</strong></td><td><code>CTRL</code></td><td>Inspection/measurement checkpoints within a process</td></tr>
+                  <tr><td><strong>Work Instruction</strong></td><td><code>WORK</code></td><td>Step-by-step operator instructions with safety and tooling</td></tr>
+                  <tr><td><strong>Lot</strong></td><td><code>LOT</code></td><td>Production batch with Device History Record (DHR) traceability</td></tr>
+                  <tr><td><strong>Non-Conformance</strong></td><td><code>NCR</code></td><td>Documents when product/process doesn't meet spec</td></tr>
+                  <tr><td><strong>CAPA</strong></td><td><code>CAPA</code></td><td>Root cause analysis and corrective/preventive actions</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p>Additionally, <strong>Deviations</strong> (<code>DEV</code>) allow authorized temporary departures from established processes without triggering a non-conformance.</p>
+
+            <div class="info-box">
+              <h4>Closed-Loop Quality</h4>
+              <p>When a lot fails inspection (NCR), the resulting CAPA feeds changes back into the process definition or control plan. Every link is tracked in YAML and versioned in git &mdash; giving you a complete audit trail from root cause to resolution.</p>
+            </div>
+          </section>
+
+          <!-- Section 2: Process Definition -->
+          <section id="processes" class="tutorial-section">
+            <h2>2. Process Definition</h2>
+
+            <p>A <strong>Process</strong> (<code>PROC</code>) defines a manufacturing operation: its steps, equipment, parameters, and operation sequencing. Processes are the foundation of your control loop.</p>
+
+            <h3>Create a Process</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Create a CNC machining process</span>
+<span class="cmd">tdt proc new</span> --title <span class="string">"CNC Housing Machining"</span> \
+  --process-type machining \
+  --operation-number <span class="number">10</span> \
+  --no-edit
+
+<span class="comment"># Create an assembly process</span>
+<span class="cmd">tdt proc new</span> --title <span class="string">"Final Assembly"</span> \
+  --process-type assembly \
+  --operation-number <span class="number">20</span> \
+  --no-edit
+
+<span class="comment"># Create an inspection process</span>
+<span class="cmd">tdt proc new</span> --title <span class="string">"Final Inspection"</span> \
+  --process-type inspection \
+  --operation-number <span class="number">30</span> \
+  --no-edit</code></pre>
+            </div>
+
+            <h3>Add Equipment and Parameters</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Add equipment to the machining process</span>
+<span class="cmd">tdt proc add-equipment</span> PROC@1 \
+  --name <span class="string">"Haas VF-2SS"</span> \
+  --equipment-type <span class="string">"CNC Mill"</span> \
+  --calibration-required
+
+<span class="comment"># Add process parameters</span>
+<span class="cmd">tdt proc add-param</span> PROC@1 \
+  --name <span class="string">"Spindle Speed"</span> \
+  --target <span class="number">8000</span> \
+  --unit <span class="string">"RPM"</span> \
+  --min <span class="number">7500</span> \
+  --max <span class="number">8500</span></code></pre>
+            </div>
+
+            <h3>Process YAML Structure</h3>
+
+            <p>Here's what a complete process file looks like:</p>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">yaml</span></div>
+              <pre><code><span class="key">id</span>: <span class="value">PROC-01KC8FF2X3Y4Z5A6B7C8D9E0</span>
+<span class="key">title</span>: <span class="string">"CNC Housing Machining"</span>
+<span class="key">status</span>: <span class="value">active</span>
+<span class="key">process_type</span>: <span class="value">machining</span>
+<span class="key">operation_number</span>: <span class="number">10</span>
+<span class="key">equipment</span>:
+  - <span class="key">name</span>: <span class="string">"Haas VF-2SS"</span>
+    <span class="key">equipment_type</span>: <span class="string">"CNC Mill"</span>
+    <span class="key">calibration_required</span>: <span class="value">true</span>
+<span class="key">parameters</span>:
+  - <span class="key">name</span>: <span class="string">"Spindle Speed"</span>
+    <span class="key">target</span>: <span class="number">8000</span>
+    <span class="key">unit</span>: <span class="string">"RPM"</span>
+    <span class="key">min</span>: <span class="number">7500</span>
+    <span class="key">max</span>: <span class="number">8500</span>
+<span class="key">links</span>:
+  <span class="key">produces</span>:
+    - <span class="value">CMP-01KC8FF...</span>
+  <span class="key">controls</span>:
+    - <span class="value">CTRL-01KC8FF...</span>
+  <span class="key">work_instructions</span>:
+    - <span class="value">WORK-01KC8FF...</span></code></pre>
+            </div>
+
+            <h3>Process Types</h3>
+
+            <div class="table-wrapper">
+              <table class="info-table">
+                <thead>
+                  <tr><th>Type</th><th>Description</th><th>Examples</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>machining</code></td><td>Material removal operations</td><td>CNC milling, turning, drilling</td></tr>
+                  <tr><td><code>assembly</code></td><td>Joining components together</td><td>Mechanical assembly, soldering</td></tr>
+                  <tr><td><code>inspection</code></td><td>Measurement and verification</td><td>CMM, visual inspection, testing</td></tr>
+                  <tr><td><code>finishing</code></td><td>Surface treatment operations</td><td>Anodizing, painting, plating</td></tr>
+                  <tr><td><code>molding</code></td><td>Forming operations</td><td>Injection molding, casting</td></tr>
+                  <tr><td><code>testing</code></td><td>Functional/performance testing</td><td>Burn-in, environmental testing</td></tr>
+                  <tr><td><code>packaging</code></td><td>Final packaging and labeling</td><td>Clean room packaging, labeling</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="tip-box">
+              <strong>Tip:</strong> Use <code>operation_number</code> to define the manufacturing sequence. Processes are ordered by operation number when generating process flow diagrams with <code>tdt proc flow</code>.
+            </div>
+          </section>
+
+          <!-- Section 3: Control Plans -->
+          <section id="controls" class="tutorial-section">
+            <h2>3. Control Plans</h2>
+
+            <p>A <strong>Control</strong> (<code>CTRL</code>) defines an inspection or measurement checkpoint within a process. Controls link a process to a feature and specify how, when, and how often to measure.</p>
+
+            <h3>Create a Control</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># SPC control on a critical dimension</span>
+<span class="cmd">tdt ctrl new</span> --title <span class="string">"Housing Bore Diameter SPC"</span> \
+  --control-type spc \
+  --process PROC@1 \
+  --feature FEAT@1 \
+  --no-edit
+
+<span class="comment"># 100% inspection on a safety-critical feature</span>
+<span class="cmd">tdt ctrl new</span> --title <span class="string">"Thread Depth Inspection"</span> \
+  --control-type inspection \
+  --process PROC@1 \
+  --no-edit
+
+<span class="comment"># Poka-yoke (error-proofing) control</span>
+<span class="cmd">tdt ctrl new</span> --title <span class="string">"Orientation Pin Check"</span> \
+  --control-type poka_yoke \
+  --process PROC@2 \
+  --no-edit</code></pre>
+            </div>
+
+            <h3>Set Characteristic and Measurement Details</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Define what is being measured</span>
+<span class="cmd">tdt ctrl set-characteristic</span> CTRL@1 \
+  --name <span class="string">"Bore Diameter"</span> \
+  --nominal <span class="number">25.000</span> \
+  --upper-tolerance <span class="number">0.013</span> \
+  --lower-tolerance <span class="number">-0.013</span> \
+  --unit <span class="string">"mm"</span> \
+  --classification critical
+
+<span class="comment"># Set measurement method and sampling</span>
+<span class="cmd">tdt ctrl set-measurement</span> CTRL@1 \
+  --method <span class="string">"Bore Gauge"</span> \
+  --gauge-id <span class="string">"BG-2024-001"</span> \
+  --gage-rr <span class="number">12.5</span>
+
+<span class="cmd">tdt ctrl set-sampling</span> CTRL@1 \
+  --frequency <span class="string">"Every 25 parts"</span> \
+  --size <span class="number">5</span>
+
+<span class="comment"># Define what happens when out of spec</span>
+<span class="cmd">tdt ctrl set-reaction</span> CTRL@1 \
+  --plan <span class="string">"Stop production. Quarantine suspect parts. Notify quality engineer. Perform 100% sort of last 25 parts."</span></code></pre>
+            </div>
+
+            <h3>Control Types</h3>
+
+            <div class="table-wrapper">
+              <table class="info-table">
+                <thead>
+                  <tr><th>Type</th><th>Description</th><th>When to Use</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>spc</code></td><td>Statistical Process Control</td><td>High-volume, critical dimensions with natural variation</td></tr>
+                  <tr><td><code>inspection</code></td><td>Direct measurement / go-no-go</td><td>Lower volume or simpler checks</td></tr>
+                  <tr><td><code>poka_yoke</code></td><td>Error-proofing mechanism</td><td>Prevent assembly errors (fixtures, sensors, guides)</td></tr>
+                  <tr><td><code>visual</code></td><td>Visual inspection</td><td>Surface defects, cosmetic criteria, labeling</td></tr>
+                  <tr><td><code>functional_test</code></td><td>Functional verification</td><td>Go/no-go functional tests</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Control Plan YAML Structure</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">yaml</span></div>
+              <pre><code><span class="key">id</span>: <span class="value">CTRL-01KC8FF2X3Y4Z5A6B7C8D9E0</span>
+<span class="key">title</span>: <span class="string">"Housing Bore Diameter SPC"</span>
+<span class="key">status</span>: <span class="value">active</span>
+<span class="key">control_type</span>: <span class="value">spc</span>
+<span class="key">characteristic</span>:
+  <span class="key">name</span>: <span class="string">"Bore Diameter"</span>
+  <span class="key">nominal</span>: <span class="number">25.000</span>
+  <span class="key">upper_tolerance</span>: <span class="number">0.013</span>
+  <span class="key">lower_tolerance</span>: <span class="number">-0.013</span>
+  <span class="key">unit</span>: <span class="string">"mm"</span>
+  <span class="key">classification</span>: <span class="value">critical</span>
+<span class="key">measurement</span>:
+  <span class="key">method</span>: <span class="string">"Bore Gauge"</span>
+  <span class="key">gauge_id</span>: <span class="string">"BG-2024-001"</span>
+  <span class="key">gage_rr</span>: <span class="number">12.5</span>
+<span class="key">sampling</span>:
+  <span class="key">frequency</span>: <span class="string">"Every 25 parts"</span>
+  <span class="key">size</span>: <span class="number">5</span>
+<span class="key">reaction_plan</span>: <span class="string">"Stop production. Quarantine suspect parts..."</span>
+<span class="key">links</span>:
+  <span class="key">process</span>: <span class="value">PROC-01KC8FF...</span>
+  <span class="key">feature</span>: <span class="value">FEAT-01KC8FF...</span></code></pre>
+            </div>
+
+            <div class="info-box">
+              <h4>Control Plans and PFMEA</h4>
+              <p>Controls are the bridge between your risk analysis (FMEA) and the shop floor. Link controls to risks with <code>tdt link add CTRL@1 --type mitigates RISK@1</code> to show which failure modes each control addresses.</p>
+            </div>
+          </section>
+
+          <!-- Section 4: Work Instructions -->
+          <section id="work-instructions" class="tutorial-section">
+            <h2>4. Work Instructions</h2>
+
+            <p><strong>Work Instructions</strong> (<code>WORK</code>) provide step-by-step operator guidance for executing a process. Each instruction links to its parent process and includes safety notes, required tools, and materials.</p>
+
+            <h3>Create a Work Instruction</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Create work instruction for the machining process</span>
+<span class="cmd">tdt work new</span> --title <span class="string">"CNC Housing Machining Procedure"</span> \
+  --process PROC@1 \
+  --no-edit</code></pre>
+            </div>
+
+            <h3>Add Steps</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Add sequential steps with safety and tooling</span>
+<span class="cmd">tdt work add-step</span> WORK@1 \
+  --instruction <span class="string">"Load raw stock into vise. Verify material cert matches traveler."</span> \
+  --safety <span class="string">"Wear safety glasses. Verify vise is tight before cycle start."</span>
+
+<span class="cmd">tdt work add-step</span> WORK@1 \
+  --instruction <span class="string">"Run Program O1001. Monitor first article for chatter."</span> \
+  --tools <span class="string">"3/8 carbide end mill (TL-2024-042)"</span>
+
+<span class="cmd">tdt work add-step</span> WORK@1 \
+  --instruction <span class="string">"Deburr all edges. Inspect per CTRL@1."</span> \
+  --tools <span class="string">"Deburring tool, bore gauge BG-2024-001"</span>
+
+<span class="cmd">tdt work add-step</span> WORK@1 \
+  --instruction <span class="string">"Clean part with IPA. Bag and tag with lot number."</span> \
+  --materials <span class="string">"Isopropyl alcohol, anti-static bags, lot labels"</span></code></pre>
+            </div>
+
+            <h3>Work Instruction YAML Structure</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">yaml</span></div>
+              <pre><code><span class="key">id</span>: <span class="value">WORK-01KC8FF2X3Y4Z5A6B7C8D9E0</span>
+<span class="key">title</span>: <span class="string">"CNC Housing Machining Procedure"</span>
+<span class="key">status</span>: <span class="value">active</span>
+<span class="key">steps</span>:
+  - <span class="key">step_number</span>: <span class="number">1</span>
+    <span class="key">instruction</span>: <span class="string">"Load raw stock into vise..."</span>
+    <span class="key">safety</span>: <span class="string">"Wear safety glasses..."</span>
+  - <span class="key">step_number</span>: <span class="number">2</span>
+    <span class="key">instruction</span>: <span class="string">"Run Program O1001..."</span>
+    <span class="key">tools</span>:
+      - <span class="string">"3/8 carbide end mill (TL-2024-042)"</span>
+  - <span class="key">step_number</span>: <span class="number">3</span>
+    <span class="key">instruction</span>: <span class="string">"Deburr all edges..."</span>
+    <span class="key">tools</span>:
+      - <span class="string">"Deburring tool"</span>
+      - <span class="string">"bore gauge BG-2024-001"</span>
+  - <span class="key">step_number</span>: <span class="number">4</span>
+    <span class="key">instruction</span>: <span class="string">"Clean part with IPA..."</span>
+    <span class="key">materials</span>:
+      - <span class="string">"Isopropyl alcohol"</span>
+      - <span class="string">"anti-static bags"</span>
+<span class="key">links</span>:
+  <span class="key">process</span>: <span class="value">PROC-01KC8FF...</span></code></pre>
+            </div>
+
+            <div class="tip-box">
+              <strong>Tip:</strong> Work instructions are version-controlled by git. When a process changes, update the work instruction and the diff shows exactly what changed for operator re-training.
+            </div>
+          </section>
+
+          <!-- Section 5: Production Lots / DHR -->
+          <section id="lots" class="tutorial-section">
+            <h2>5. Production Lots / DHR</h2>
+
+            <p>A <strong>Lot</strong> (<code>LOT</code>) represents a production batch and serves as the Device History Record (DHR). Lots link to the product being manufactured and track step-by-step execution with operator signatures.</p>
+
+            <h3>Create a Production Lot</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Create a lot from the product's routing</span>
+<span class="cmd">tdt lot new</span> --title <span class="string">"Housing Lot 2024-037"</span> \
+  --product ASM@1 \
+  --quantity <span class="number">100</span> \
+  --lot-number <span class="string">"LOT-2024-037"</span> \
+  --from-routing \
+  --no-edit</code></pre>
+            </div>
+
+            <p>The <code>--from-routing</code> flag automatically populates the lot steps from the assembly's linked processes, ordered by operation number.</p>
+
+            <h3>Execute Lot Steps</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Record step completion with operator signature</span>
+<span class="cmd">tdt lot execute-step</span> LOT@1 --step <span class="number">1</span> \
+  --operator <span class="string">"J. Smith"</span> \
+  --notes <span class="string">"First article approved. Cpk 1.67 on bore diameter."</span>
+
+<span class="cmd">tdt lot execute-step</span> LOT@1 --step <span class="number">2</span> \
+  --operator <span class="string">"M. Chen"</span> \
+  --notes <span class="string">"Assembly complete. Torque values within spec."</span></code></pre>
+            </div>
+
+            <h3>Lot Approval Workflow</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Submit lot for review</span>
+<span class="cmd">tdt lot submit</span> LOT@1
+
+<span class="comment"># Approve the lot (quality role)</span>
+<span class="cmd">tdt lot approve</span> LOT@1 --approver <span class="string">"Quality Manager"</span>
+
+<span class="comment"># Or reject with reason</span>
+<span class="cmd">tdt lot reject</span> LOT@1 --reason <span class="string">"Step 3 inspection data missing"</span></code></pre>
+            </div>
+
+            <h3>Git-Based DHR</h3>
+
+            <p>Each lot creates a complete audit trail through git commits:</p>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># View lot history</span>
+<span class="cmd">git log</span> --oneline lots/LOT-01KC8FF*.pdt.yaml
+
+<span class="comment"># See exactly what changed at each step</span>
+<span class="cmd">git diff</span> HEAD~1 lots/LOT-01KC8FF*.pdt.yaml</code></pre>
+            </div>
+
+            <div class="info-box">
+              <h4>Device History Records</h4>
+              <p>For regulated industries (FDA, ISO 13485), the lot entity combined with git history constitutes a complete DHR. Every step execution, every approval, every change is recorded with timestamps and author identity.</p>
+            </div>
+          </section>
+
+          <!-- Section 6: Deviations -->
+          <section id="deviations" class="tutorial-section">
+            <h2>6. Deviations</h2>
+
+            <p>A <strong>Deviation</strong> (<code>DEV</code>) authorizes a temporary departure from an established process or specification. Deviations have approval workflows, risk assessments, and expiration dates.</p>
+
+            <h3>Create a Deviation</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Temporary deviation (has expiration)</span>
+<span class="cmd">tdt dev new</span> --title <span class="string">"Alternate supplier for housing stock"</span> \
+  --deviation-type temporary \
+  --category material \
+  --risk-level low \
+  --no-edit
+
+<span class="comment"># Permanent deviation (design change)</span>
+<span class="cmd">tdt dev new</span> --title <span class="string">"Increase bore tolerance to +/-0.025mm"</span> \
+  --deviation-type permanent \
+  --category dimensional \
+  --risk-level medium \
+  --no-edit</code></pre>
+            </div>
+
+            <h3>Deviation Approval Workflow</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Submit for approval</span>
+<span class="cmd">tdt dev submit</span> DEV@1
+
+<span class="comment"># Approve with expiration</span>
+<span class="cmd">tdt dev approve</span> DEV@1 \
+  --approver <span class="string">"Engineering Manager"</span> \
+  --expiration <span class="string">"2024-12-31"</span> \
+  --max-quantity <span class="number">500</span>
+
+<span class="comment"># Link to affected entities</span>
+<span class="cmd">tdt link add</span> DEV@1 --type affects PROC@1
+<span class="cmd">tdt link add</span> DEV@1 --type affects CMP@1</code></pre>
+            </div>
+
+            <div class="info-box.warning">
+              <h4>Expiration Tracking</h4>
+              <p>Temporary deviations have expiration dates. Use <code>tdt dev list --expiring</code> to find deviations approaching their expiration date. Expired deviations must be either extended or closed.</p>
+            </div>
+          </section>
+
+          <!-- Section 7: NCRs -->
+          <section id="ncrs" class="tutorial-section">
+            <h2>7. Non-Conformance Reports</h2>
+
+            <p>A <strong>Non-Conformance Report</strong> (<code>NCR</code>) documents when product or process doesn't meet specifications. NCRs track detection, containment, investigation, and disposition.</p>
+
+            <h3>Create an NCR</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Internal NCR (caught in-house)</span>
+<span class="cmd">tdt ncr new</span> --title <span class="string">"Bore diameter out of spec on Lot 2024-037"</span> \
+  --ncr-type internal \
+  --severity major \
+  --category dimensional \
+  --component CMP@1 \
+  --process PROC@1 \
+  --no-edit
+
+<span class="comment"># Supplier NCR</span>
+<span class="cmd">tdt ncr new</span> --title <span class="string">"Raw stock hardness below spec"</span> \
+  --ncr-type supplier \
+  --severity minor \
+  --category material \
+  --no-edit
+
+<span class="comment"># Customer complaint</span>
+<span class="cmd">tdt ncr new</span> --title <span class="string">"Field failure - housing crack"</span> \
+  --ncr-type customer \
+  --severity critical \
+  --no-edit</code></pre>
+            </div>
+
+            <h3>NCR Workflow</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Record containment actions</span>
+<span class="cmd">tdt ncr set-containment</span> NCR@1 \
+  --action <span class="string">"Quarantined remaining 43 parts from Lot 2024-037"</span> \
+  --quantity-affected <span class="number">43</span>
+
+<span class="comment"># Record investigation findings</span>
+<span class="cmd">tdt ncr set-investigation</span> NCR@1 \
+  --root-cause <span class="string">"Tool wear exceeded limits. SPC chart showed trend starting at part 57."</span> \
+  --method <span class="string">"5-Why analysis"</span>
+
+<span class="comment"># Set disposition</span>
+<span class="cmd">tdt ncr set-disposition</span> NCR@1 \
+  --decision rework \
+  --instructions <span class="string">"Re-machine bore diameter on affected parts. 100% re-inspect."</span>
+
+<span class="comment"># Close the NCR</span>
+<span class="cmd">tdt ncr close</span> NCR@1</code></pre>
+            </div>
+
+            <h3>NCR Severity Levels</h3>
+
+            <div class="table-wrapper">
+              <table class="info-table">
+                <thead>
+                  <tr><th>Severity</th><th>Description</th><th>Required Actions</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>critical</code></td><td>Safety or regulatory impact</td><td>Immediate containment, CAPA required, management notification</td></tr>
+                  <tr><td><code>major</code></td><td>Functional impact, out of spec</td><td>Containment, investigation, CAPA typically required</td></tr>
+                  <tr><td><code>minor</code></td><td>Cosmetic or minor deviation</td><td>Documented disposition (use-as-is, rework, scrap)</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Disposition Options</h3>
+
+            <div class="table-wrapper">
+              <table class="info-table">
+                <thead>
+                  <tr><th>Disposition</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>use_as_is</code></td><td>Accept the non-conforming material (requires engineering approval)</td></tr>
+                  <tr><td><code>rework</code></td><td>Repair to bring into conformance</td></tr>
+                  <tr><td><code>scrap</code></td><td>Destroy or recycle the material</td></tr>
+                  <tr><td><code>return_to_supplier</code></td><td>Return to vendor for credit/replacement</td></tr>
+                  <tr><td><code>deviate</code></td><td>Accept under a formal deviation (creates DEV link)</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Section 8: CAPAs -->
+          <section id="capas" class="tutorial-section">
+            <h2>8. CAPAs</h2>
+
+            <p><strong>Corrective and Preventive Actions</strong> (<code>CAPA</code>) close the manufacturing control loop. A CAPA investigates the root cause of a problem and implements changes to prevent recurrence, feeding back into processes and controls.</p>
+
+            <h3>Create a CAPA</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Corrective action (fix existing problem)</span>
+<span class="cmd">tdt capa new</span> --title <span class="string">"Reduce bore diameter excursions"</span> \
+  --capa-type corrective \
+  --source NCR@1 \
+  --no-edit
+
+<span class="comment"># Preventive action (prevent potential problem)</span>
+<span class="cmd">tdt capa new</span> --title <span class="string">"Add tool wear monitoring to all CNC processes"</span> \
+  --capa-type preventive \
+  --no-edit</code></pre>
+            </div>
+
+            <h3>Root Cause Analysis</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Perform 5-Why analysis</span>
+<span class="cmd">tdt capa set-root-cause</span> CAPA@1 \
+  --method <span class="string">"5-Why"</span> \
+  --description <span class="string">"Why bore OOS? Tool wear. Why? No wear monitoring. Why? Not in control plan. Why? Process not reviewed after volume increase. Why? No trigger for process review on volume changes."</span></code></pre>
+            </div>
+
+            <h3>Action Items</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Add corrective actions</span>
+<span class="cmd">tdt capa add-action</span> CAPA@1 \
+  --description <span class="string">"Add tool wear sensor to Haas VF-2SS"</span> \
+  --owner <span class="string">"Maintenance"</span> \
+  --due-date <span class="string">"2024-04-15"</span>
+
+<span class="cmd">tdt capa add-action</span> CAPA@1 \
+  --description <span class="string">"Update CTRL@1 to include tool life tracking"</span> \
+  --owner <span class="string">"Quality"</span> \
+  --due-date <span class="string">"2024-04-01"</span>
+
+<span class="cmd">tdt capa add-action</span> CAPA@1 \
+  --description <span class="string">"Add volume-change trigger to process review SOP"</span> \
+  --owner <span class="string">"Engineering"</span> \
+  --due-date <span class="string">"2024-04-30"</span>
+
+<span class="comment"># Complete an action</span>
+<span class="cmd">tdt capa complete-action</span> CAPA@1 --action <span class="number">1</span></code></pre>
+            </div>
+
+            <h3>Close the Loop</h3>
+
+            <p>The CAPA feeds changes back into the process and control plan:</p>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Link CAPA to the entities it modifies</span>
+<span class="cmd">tdt link add</span> CAPA@1 --type modifies PROC@1
+<span class="cmd">tdt link add</span> CAPA@1 --type modifies CTRL@1
+
+<span class="comment"># Update the control plan based on CAPA findings</span>
+<span class="cmd">tdt ctrl set-sampling</span> CTRL@1 \
+  --frequency <span class="string">"Every 10 parts"</span> \
+  --size <span class="number">5</span>
+
+<span class="comment"># Add new process parameter for tool wear monitoring</span>
+<span class="cmd">tdt proc add-param</span> PROC@1 \
+  --name <span class="string">"Tool Life Limit"</span> \
+  --target <span class="number">200</span> \
+  --unit <span class="string">"parts"</span> \
+  --max <span class="number">250</span>
+
+<span class="comment"># Verify effectiveness and close</span>
+<span class="cmd">tdt capa set-effectiveness</span> CAPA@1 --rating effective \
+  --notes <span class="string">"30-day monitoring shows zero bore excursions since implementation."</span>
+<span class="cmd">tdt capa close</span> CAPA@1</code></pre>
+            </div>
+
+            <div class="info-box">
+              <h4>Closing the Loop</h4>
+              <p>This is the heart of the manufacturing control loop. An NCR in lot production triggered a CAPA, which updated the process parameters and tightened the control plan sampling. The next lot runs with improved controls, and the git history shows the complete chain from detection to resolution.</p>
+            </div>
+          </section>
+
+          <!-- Section 9: Traceability -->
+          <section id="traceability" class="tutorial-section">
+            <h2>9. Traceability</h2>
+
+            <p>Tessera's link system provides full forward and backward traceability through the manufacturing control loop. Every entity in the chain is connected.</p>
+
+            <h3>Trace from a Process</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="cmd">tdt trace from</span> PROC@1</code></pre>
+            </div>
+
+            <div class="terminal-output"><span class="highlight">PROC-01KC8FF...</span> CNC Housing Machining
+<span class="header">  Forward links:</span>
+    <span class="success">produces</span> &rarr; CMP-01KC8FF... (Housing)
+    <span class="success">controls</span> &rarr; CTRL-01KC8FF... (Housing Bore Diameter SPC)
+    <span class="success">controls</span> &rarr; CTRL-02KC8FF... (Thread Depth Inspection)
+    <span class="success">work_instructions</span> &rarr; WORK-01KC8FF... (CNC Housing Machining Procedure)
+<span class="header">  Backward links:</span>
+    <span class="warning">CAPA</span> &larr; CAPA-01KC8FF... (Reduce bore diameter excursions) [modifies]
+    <span class="warning">LOT</span> &larr; LOT-01KC8FF... (Housing Lot 2024-037) [process]</div>
+
+            <h3>Trace from an NCR</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="cmd">tdt trace from</span> NCR@1</code></pre>
+            </div>
+
+            <div class="terminal-output"><span class="highlight">NCR-01KC8FF...</span> Bore diameter out of spec on Lot 2024-037
+<span class="header">  Forward links:</span>
+    <span class="success">component</span> &rarr; CMP-01KC8FF... (Housing)
+    <span class="success">process</span> &rarr; PROC-01KC8FF... (CNC Housing Machining)
+<span class="header">  Backward links:</span>
+    <span class="warning">CAPA</span> &larr; CAPA-01KC8FF... (Reduce bore diameter excursions) [source]</div>
+
+            <h3>Full Chain Trace</h3>
+
+            <p>Follow the complete chain from a CAPA back through the control loop:</p>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Trace the full dependency chain</span>
+<span class="cmd">tdt trace chain</span> CAPA@1</code></pre>
+            </div>
+
+            <div class="terminal-output"><span class="highlight">CAPA-01KC8FF...</span> Reduce bore diameter excursions
+  &rarr; <span class="error">source:</span> NCR-01KC8FF... (Bore diameter out of spec)
+    &rarr; <span class="success">component:</span> CMP-01KC8FF... (Housing)
+    &rarr; <span class="success">process:</span> PROC-01KC8FF... (CNC Housing Machining)
+      &rarr; <span class="success">controls:</span> CTRL-01KC8FF... (Housing Bore Diameter SPC)
+      &rarr; <span class="success">work_instructions:</span> WORK-01KC8FF... (CNC Machining Procedure)
+  &rarr; <span class="warning">modifies:</span> PROC-01KC8FF... (CNC Housing Machining)
+  &rarr; <span class="warning">modifies:</span> CTRL-01KC8FF... (Housing Bore Diameter SPC)</div>
+
+            <div class="tip-box">
+              <strong>Tip:</strong> Use <code>tdt trace chain --format dot</code> to export the trace as a Graphviz DOT file for visual dependency graphs.
+            </div>
+          </section>
+
+          <!-- Section 10: Process Flow -->
+          <section id="process-flow" class="tutorial-section">
+            <h2>10. Process Flow</h2>
+
+            <p>Tessera can generate process flow diagrams showing the manufacturing sequence with associated controls and work instructions.</p>
+
+            <h3>Generate a Process Flow</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Basic process flow</span>
+<span class="cmd">tdt proc flow</span>
+
+<span class="comment"># Include controls and work instructions</span>
+<span class="cmd">tdt proc flow</span> --controls --work-instructions
+
+<span class="comment"># Filter by product</span>
+<span class="cmd">tdt proc flow</span> --product ASM@1 --controls</code></pre>
+            </div>
+
+            <div class="terminal-output"><span class="header">Process Flow</span>
+<span class="header">============</span>
+
+<span class="highlight">OP 10</span>  <span class="success">CNC Housing Machining</span> [machining]
+         Controls: Housing Bore Diameter SPC (spc)
+                   Thread Depth Inspection (inspection)
+         Work:     CNC Housing Machining Procedure
+
+<span class="highlight">OP 20</span>  <span class="success">Final Assembly</span> [assembly]
+         Controls: Orientation Pin Check (poka_yoke)
+         Work:     Final Assembly Procedure
+
+<span class="highlight">OP 30</span>  <span class="success">Final Inspection</span> [inspection]
+         Controls: Visual Inspection (visual)
+                   Functional Test (functional_test)</div>
+
+            <h3>List and Filter</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># List all manufacturing entities</span>
+<span class="cmd">tdt proc list</span>                          <span class="comment"># All processes</span>
+<span class="cmd">tdt ctrl list</span> --process PROC@1          <span class="comment"># Controls for a process</span>
+<span class="cmd">tdt work list</span> --process PROC@1          <span class="comment"># Work instructions for a process</span>
+<span class="cmd">tdt lot list</span> --status in_progress       <span class="comment"># Active lots</span>
+<span class="cmd">tdt ncr list</span> --severity critical         <span class="comment"># Critical NCRs</span>
+<span class="cmd">tdt capa list</span> --status open              <span class="comment"># Open CAPAs</span>
+
+<span class="comment"># Validate manufacturing chain integrity</span>
+<span class="cmd">tdt validate</span></code></pre>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <h3>Next Steps</h3>
+            <ul>
+              <li>Explore the <a href="tutorial.html" style="color: var(--accent);">Tutorial</a> for a complete end-to-end project walkthrough</li>
+              <li>Learn about <a href="tolerance.html" style="color: var(--accent);">Tolerance Analysis</a> to connect features to controls</li>
+              <li>See <a href="reports.html" style="color: var(--accent);">Reports</a> for generating manufacturing documentation</li>
+              <li>Use <code>tdt &lt;entity&gt; --help</code> for detailed command-line help on any entity</li>
+            </ul>
+
+            <div class="info-box">
+              <h4>Get Help</h4>
+              <p>For more information, visit the <a href="https://github.com/jackhale98/TDT" style="color: var(--accent);">Tessera GitHub repository</a> or run <code>tdt --help</code> for command-line help.</p>
+            </div>
+          </section>
+
+        </article>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container" style="max-width: 1200px;">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <div class="logo-icon">
+            <svg viewBox="0 0 70 75" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="footerGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#059669;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#047857;stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="footerGrad2b" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="footerGrad2c" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#34d399;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
+                </linearGradient>
+              </defs>
+              <polygon points="15,25 35,25 45,40 35,55 15,55 5,40" fill="url(#footerGrad2)"/>
+              <polygon points="5,40 15,25 35,25 25,40" fill="url(#footerGrad2b)"/>
+              <polygon points="25,40 35,25 45,40" fill="url(#footerGrad2c)"/>
+              <polygon points="25,40 45,40 35,55 15,55 5,40" fill="#34d399"/>
+              <polygon points="35,25 55,25 65,40 55,55 35,55 25,40" fill="url(#footerGrad2)"/>
+              <polygon points="25,40 35,25 55,25 45,40" fill="url(#footerGrad2b)"/>
+              <polygon points="45,40 55,25 65,40" fill="url(#footerGrad2c)"/>
+              <polygon points="45,40 65,40 55,55 35,55 25,40" fill="#10b981"/>
+              <polygon points="25,40 45,40 55,55 45,70 25,70 15,55" fill="url(#footerGrad2)"/>
+              <polygon points="15,55 25,40 45,40 35,55" fill="url(#footerGrad2b)"/>
+              <polygon points="35,55 45,40 55,55" fill="url(#footerGrad2c)"/>
+              <polygon points="35,55 55,55 45,70 25,70 15,55" fill="#059669"/>
+            </svg>
+          </div>
+          <span class="footer-text">Tessera Design Toolkit</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/jackhale98/TDT">GitHub</a>
+          <a href="https://github.com/jackhale98/TDT/blob/main/README.md">Documentation</a>
+          <a href="https://github.com/jackhale98/TDT/issues">Issues</a>
+          <a href="https://github.com/jackhale98/TDT/blob/main/LICENSE">MIT License</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      const btn = document.querySelector('.mobile-menu-btn');
+      menu.classList.toggle('active');
+
+      if (menu.classList.contains('active')) {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>`;
+      } else {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>`;
+      }
+    }
+
+    function closeMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      const btn = document.querySelector('.mobile-menu-btn');
+      menu.classList.remove('active');
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>`;
+    }
+
+    // Highlight active TOC item on scroll
+    const sections = document.querySelectorAll('.tutorial-section');
+    const tocLinks = document.querySelectorAll('.toc-sidebar a');
+
+    function highlightTOC() {
+      let current = '';
+
+      sections.forEach(section => {
+        const sectionTop = section.offsetTop;
+        const sectionHeight = section.clientHeight;
+        if (window.scrollY >= sectionTop - 100) {
+          current = section.getAttribute('id');
+        }
+      });
+
+      tocLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === '#' + current) {
+          link.classList.add('active');
+        }
+      });
+    }
+
+    window.addEventListener('scroll', highlightTOC);
+    highlightTOC();
+
+    // Close mobile menu on outside click
+    document.addEventListener('click', function(e) {
+      const menu = document.getElementById('mobileMenu');
+      const btn = document.querySelector('.mobile-menu-btn');
+      if (!menu.contains(e.target) && !btn.contains(e.target) && menu.classList.contains('active')) {
+        closeMobileMenu();
+      }
+    });
+
+    // Close mobile menu on escape
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeMobileMenu();
+      }
+    });
+  </script>
+</body>
+</html>

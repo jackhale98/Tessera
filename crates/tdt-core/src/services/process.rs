@@ -472,6 +472,13 @@ impl<'a> ProcessService<'a> {
             {
                 return Err(ServiceError::HasReferences);
             }
+
+            // Check for incoming references from other entities
+            let id_str = process.id.to_string();
+            let links_to = self.cache.get_links_to(&id_str);
+            if !links_to.is_empty() {
+                return Err(ServiceError::HasReferences);
+            }
         }
 
         // Delete the file
