@@ -7,10 +7,10 @@ use std::collections::HashSet;
 use std::io::{self, BufRead};
 use std::path::PathBuf;
 
+use tdt_core::core::entity::Status;
 use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::workflow::{get_entity_info, get_prefix_from_id};
 use tdt_core::core::{Config, Project, Provider, ProviderClient};
-use tdt_core::core::entity::Status;
 
 /// Collect entity IDs from CLI args, stdin, or PR
 pub fn collect_entity_ids_from_args(
@@ -218,8 +218,8 @@ pub fn scan_entities_by_status(
 ) -> Result<Vec<String>> {
     use walkdir::WalkDir;
 
-    let target_prefix: Option<EntityPrefix> = entity_type
-        .and_then(|t| t.to_uppercase().parse().ok());
+    let target_prefix: Option<EntityPrefix> =
+        entity_type.and_then(|t| t.to_uppercase().parse().ok());
 
     let mut ids = Vec::new();
 

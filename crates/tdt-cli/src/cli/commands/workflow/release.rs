@@ -191,7 +191,11 @@ impl ReleaseArgs {
     }
 
     fn scan_project_for_entities(&self, project: &Project) -> Result<Vec<String>> {
-        super::utils::scan_entities_by_status(project, Status::Approved, self.entity_type.as_deref())
+        super::utils::scan_entities_by_status(
+            project,
+            Status::Approved,
+            self.entity_type.as_deref(),
+        )
     }
 
     fn find_entity_file(&self, project: &Project, id: &str) -> Result<PathBuf> {

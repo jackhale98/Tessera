@@ -136,7 +136,13 @@ impl RejectArgs {
     }
 
     fn collect_entity_ids(&self, project: &Project, config: &Config) -> Result<Vec<String>> {
-        super::utils::collect_entity_ids_from_args(&self.ids, self.pr, project, config, self.verbose)
+        super::utils::collect_entity_ids_from_args(
+            &self.ids,
+            self.pr,
+            project,
+            config,
+            self.verbose,
+        )
     }
 
     fn find_entity_file(&self, project: &Project, id: &str) -> Result<PathBuf> {

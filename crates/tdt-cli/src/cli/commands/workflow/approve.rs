@@ -184,9 +184,8 @@ impl ApproveArgs {
             }
         });
 
-        let approver_roles: Vec<tdt_core::core::team::Role> = current_user
-            .map(|u| u.roles.clone())
-            .unwrap_or_default();
+        let approver_roles: Vec<tdt_core::core::team::Role> =
+            current_user.map(|u| u.roles.clone()).unwrap_or_default();
 
         if self.verbose {
             if let Some(user) = current_user {
@@ -391,7 +390,13 @@ impl ApproveArgs {
     }
 
     fn collect_entity_ids(&self, project: &Project, config: &Config) -> Result<Vec<String>> {
-        super::utils::collect_entity_ids_from_args(&self.ids, self.pr, project, config, self.verbose)
+        super::utils::collect_entity_ids_from_args(
+            &self.ids,
+            self.pr,
+            project,
+            config,
+            self.verbose,
+        )
     }
 
     fn find_entity_file(&self, project: &Project, id: &str) -> Result<PathBuf> {

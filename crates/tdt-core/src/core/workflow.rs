@@ -225,9 +225,9 @@ impl WorkflowEngine {
 
     /// Get the current user from the team roster
     pub fn current_user(&self) -> Option<&TeamMember> {
-        self.roster.as_ref().and_then(|r| {
-            r.current_user_in_repo(self.repo_root.as_deref())
-        })
+        self.roster
+            .as_ref()
+            .and_then(|r| r.current_user_in_repo(self.repo_root.as_deref()))
     }
 
     /// Check if a status transition is valid
@@ -405,9 +405,11 @@ fn approval_to_value(options: &ApprovalOptions) -> serde_yml::Value {
 pub fn update_entity_status(file_path: &Path, new_status: Status) -> Result<(), WorkflowError> {
     let mut doc = read_yaml(file_path)?;
 
-    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
-        message: "Expected YAML mapping".to_string(),
-    })?;
+    let map = doc
+        .as_mapping_mut()
+        .ok_or_else(|| WorkflowError::YamlError {
+            message: "Expected YAML mapping".to_string(),
+        })?;
 
     map.insert(
         serde_yml::Value::String("status".to_string()),
@@ -459,9 +461,11 @@ pub fn record_approval_ext(
 ) -> Result<(), WorkflowError> {
     let mut doc = read_yaml(file_path)?;
 
-    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
-        message: "Expected YAML mapping".to_string(),
-    })?;
+    let map = doc
+        .as_mapping_mut()
+        .ok_or_else(|| WorkflowError::YamlError {
+            message: "Expected YAML mapping".to_string(),
+        })?;
 
     let approvals_key = serde_yml::Value::String("approvals".to_string());
 
@@ -500,7 +504,10 @@ pub fn record_approval_ext(
             }
         }
         None => {
-            map.insert(approvals_key.clone(), serde_yml::Value::Sequence(vec![entry]));
+            map.insert(
+                approvals_key.clone(),
+                serde_yml::Value::Sequence(vec![entry]),
+            );
         }
     }
 
@@ -637,9 +644,11 @@ pub fn record_rejection(
 ) -> Result<(), WorkflowError> {
     let mut doc = read_yaml(file_path)?;
 
-    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
-        message: "Expected YAML mapping".to_string(),
-    })?;
+    let map = doc
+        .as_mapping_mut()
+        .ok_or_else(|| WorkflowError::YamlError {
+            message: "Expected YAML mapping".to_string(),
+        })?;
 
     // Update status back to draft
     map.insert(
@@ -684,9 +693,11 @@ pub fn record_rejection(
 pub fn record_release(file_path: &Path, releaser: &str) -> Result<(), WorkflowError> {
     let mut doc = read_yaml(file_path)?;
 
-    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
-        message: "Expected YAML mapping".to_string(),
-    })?;
+    let map = doc
+        .as_mapping_mut()
+        .ok_or_else(|| WorkflowError::YamlError {
+            message: "Expected YAML mapping".to_string(),
+        })?;
 
     // Check if already released
     if let Some(existing_by) = map

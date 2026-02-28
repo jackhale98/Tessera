@@ -826,10 +826,7 @@ target branch:  main
         assert_eq!(pr.title, "Submit REQ-01KCWY20: Flow Rate Requirement");
         assert_eq!(pr.author, "jsmith");
         assert_eq!(pr.branch, "review/REQ-01KCWY20");
-        assert_eq!(
-            pr.url,
-            "https://gitlab.com/org/repo/-/merge_requests/42"
-        );
+        assert_eq!(pr.url, "https://gitlab.com/org/repo/-/merge_requests/42");
         assert_eq!(pr.state, PrState::Open);
     }
 
