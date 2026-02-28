@@ -128,10 +128,7 @@ Defines data to be collected during step execution (measurements, serial numbers
 | Field | Type | Description |
 |-------|------|-------------|
 | `links.process` | EntityId | Parent process |
-| `links.component` | EntityId | Component this work instruction is for |
-| `links.assembly` | EntityId | Assembly this work instruction is for |
 | `links.controls` | array[EntityId] | Related control plan items |
-| `links.risks` | array[EntityId] | Risks addressed by following this instruction |
 
 ## Example
 

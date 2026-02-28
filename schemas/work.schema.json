@@ -87,7 +87,40 @@
           "verification": { "type": ["string", "null"] },
           "caution": { "type": ["string", "null"] },
           "image": { "type": ["string", "null"] },
-          "estimated_time_minutes": { "type": ["number", "null"] }
+          "estimated_time_minutes": { "type": ["number", "null"] },
+          "approval": {
+            "type": ["object", "null"],
+            "properties": {
+              "requires_signoff": { "type": "boolean", "description": "Require sign-off after this step" },
+              "min_approvals": { "type": "integer", "default": 1, "description": "Minimum number of approvals required" },
+              "required_roles": { "type": "array", "items": { "type": "string" }, "description": "Roles that can approve (engineering, quality, management, admin)" },
+              "required_approvers": { "type": "array", "items": { "type": "string" }, "description": "Specific team members who must approve" },
+              "require_signature": { "type": "boolean", "description": "Require digital signature (21 CFR Part 11)" },
+              "hold_point": { "type": "boolean", "description": "Quality hold point - production stops until approved" }
+            },
+            "description": "Approval requirements for this step (electronic router)"
+          },
+          "data_fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["key", "label"],
+              "properties": {
+                "key": { "type": "string", "description": "Field key/name" },
+                "label": { "type": "string", "description": "Human-readable label" },
+                "data_type": { "type": "string", "enum": ["text", "number", "boolean", "select"], "default": "text" },
+                "required": { "type": "boolean", "default": false },
+                "units": { "type": ["string", "null"], "description": "Units for numeric fields" },
+                "options": { "type": "array", "items": { "type": "string" }, "description": "Allowed values for select type" }
+              }
+            },
+            "description": "Data fields to collect at this step"
+          },
+          "equipment": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Equipment/tools required for this step (serial numbers collected at execution)"
+          }
         }
       },
       "description": "Step-by-step procedure"
@@ -125,23 +158,10 @@
           "type": ["string", "null"],
           "description": "Parent process ID"
         },
-        "component": {
-          "type": ["string", "null"],
-          "description": "Component ID this work instruction is for"
-        },
-        "assembly": {
-          "type": ["string", "null"],
-          "description": "Assembly ID this work instruction is for"
-        },
         "controls": {
           "type": "array",
           "items": { "type": "string" },
           "description": "IDs of related control plan items"
-        },
-        "risks": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "IDs of risks addressed by following this instruction"
         }
       }
     },

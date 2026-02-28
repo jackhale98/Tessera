@@ -147,22 +147,6 @@
     "links": {
       "type": "object",
       "properties": {
-        "requirement": {
-          "type": ["string", "null"],
-          "description": "ID of requirement this risk is associated with"
-        },
-        "component": {
-          "type": ["string", "null"],
-          "description": "ID of component primarily affected by this risk"
-        },
-        "assembly": {
-          "type": ["string", "null"],
-          "description": "ID of assembly primarily affected by this risk"
-        },
-        "process": {
-          "type": ["string", "null"],
-          "description": "ID of process associated with this risk (for process risks)"
-        },
         "mitigated_by": {
           "type": "array",
           "items": {
@@ -177,19 +161,12 @@
           },
           "description": "IDs of tests that verify risk mitigation"
         },
-        "controls": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "IDs of control plan items that address this risk"
-        },
         "affects": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "IDs of additional entities affected by this risk"
+          "description": "IDs of entities affected by this risk (REQ, CMP, ASM, FEAT, PROC, etc.)"
         },
         "related_to": {
           "type": "array",

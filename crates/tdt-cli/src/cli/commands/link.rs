@@ -108,76 +108,78 @@ pub struct SuspectMarkArgs {
 #[command(after_help = "\
 LINK TYPES:
   Requirements (REQ):
-    satisfied_by    Entity that satisfies this requirement (→ requirements)
+    satisfied_by    Entity that satisfies this requirement
     verified_by     TEST or CTRL that verifies this requirement (→ verifies)
     derives_from    Parent REQ this derives from (→ derived_by)
     allocated_to    FEAT this requirement is allocated to (→ allocated_from)
-    risks           RISKs associated with this requirement (→ requirement)
 
   Tests (TEST):
     verifies        REQ that this test verifies (→ verified_by)
-    component       CMP being tested (→ tests)
-    assembly        ASM being tested (→ tests)
+    validates       User need this test validates
+    mitigates       RISK whose mitigation this test verifies
+    component       CMP under test (single-value)
+    assembly        ASM under test (single-value)
+    depends_on      TESTs that must pass before this one
 
   Results (RSLT):
-    component       CMP that was tested (→ tests)
-    assembly        ASM that was tested (→ tests)
-    ncrs            NCRs created from failures (→ from_result)
+    test            TEST protocol that was executed (single-value)
+    created_ncr     NCR created from a failure (→ from_result, single-value)
+    actions         Action items created from this result
 
   Risks (RISK):
-    requirement     REQ this risk is associated with (→ risks)
-    component       CMP primarily affected (single-value)
-    assembly        ASM primarily affected (single-value)
-    process         PROC associated with this risk (→ risks)
-    affects         Additional entities affected (→ risks)
+    affects         Entities affected by this risk (REQ, CMP, ASM, FEAT, PROC, etc.)
     mitigated_by    Design output that mitigates this risk
     verified_by     TEST that verifies mitigation
-    controls        CTRL items that address this risk (→ risks)
 
-  Components (CMP) / Assemblies (ASM):
-    requirements    REQs this component satisfies (→ satisfied_by)
-    processes       PROCs used to manufacture this (→ produces)
-    tests           TESTs for this component (→ component)
+  Components (CMP):
     risks           RISKs affecting this component
     used_in         ASMs using this component
     replaces        CMP this replaces (→ replaced_by)
     replaced_by     CMP that replaces this (→ replaces)
+    interchangeable_with  Alternate/interchangeable CMPs
+
+  Assemblies (ASM):
+    risks           RISKs affecting this assembly
+    parent          Parent ASM if this is a sub-assembly (single-value)
 
   Processes (PROC):
-    requirements    REQs this process implements
-    produces        CMPs/ASMs produced (→ processes)
+    produces        CMPs/ASMs produced
+    supplier        SUP that performs this process (outsourced, single-value)
+    controls        CTRL items for this process
+    work_instructions  WORK instructions for this process
     risks           RISKs affecting this process
+    modified_by_capa  CAPAs that modified this process (→ processes_modified)
 
   Controls (CTRL):
+    process         Parent PROC (single-value)
+    feature         FEAT being controlled (single-value)
     verifies        REQ that this control verifies (→ verified_by)
-    component       CMP being controlled
     risks           RISKs this control mitigates
+    added_by_capa   CAPA that added this control (→ controls_added)
 
   Work Instructions (WORK):
-    component       CMP this instruction is for
-    assembly        ASM this instruction is for
-    risks           RISKs addressed by following this
+    process         Parent PROC (single-value)
+    controls        CTRL items referenced
 
   NCRs (NCR):
-    component       CMP affected
-    supplier        SUP related to this NCR
-    process         PROC related to this NCR
-    from_result     RSLT that created this NCR (→ ncrs)
-    capa            CAPA opened for this NCR (→ ncrs)
+    component       CMP affected (single-value)
+    supplier        SUP related to this NCR (single-value)
+    process         PROC related to this NCR (single-value)
+    control         CTRL that detected the issue (single-value)
+    from_result     RSLT that created this NCR (→ created_ncr, single-value)
+    capa            CAPA opened for this NCR (→ ncrs, single-value)
 
   CAPAs (CAPA):
     ncrs                 Source NCRs for this CAPA
-    component            CMP this CAPA addresses
-    supplier             SUP this CAPA is for
     risks                RISKs addressed by this CAPA
-    processes_modified   PROC modified by this CAPA (→ modified_by_capa)
-    controls_added       CTRL added by this CAPA (→ added_by_capa)
+    processes_modified   PROCs modified by this CAPA (→ modified_by_capa)
+    controls_added       CTRLs added by this CAPA (→ added_by_capa)
 
   General (all entities):
     related_to           Symmetric link to any related entity
 
   Reciprocal links are added by default. Use --no-reciprocal to skip.
-  Single-value links (component, assembly, requirement, etc.) replace existing values.
+  Single-value links (component, assembly, process, etc.) replace existing values.
 
 EXAMPLES:
   tdt link add REQ@1 TEST@1                   # Auto-infers 'verified_by' (both directions)
@@ -989,7 +991,7 @@ fn is_array_link_type(link_type: &str) -> bool {
     match link_type {
         // Single-value links (can only have one target)
         "component" | "assembly" | "requirement" | "process" | "parent" | "supplier" | "capa"
-        | "from_result" | "control" | "feature" | "test" => false,
+        | "from_result" | "control" | "feature" | "test" | "created_ncr" | "product" => false,
         // Everything else is an array (can have multiple targets)
         _ => true,
     }

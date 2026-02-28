@@ -349,6 +349,10 @@ pub struct NcrLinks {
     /// Test result that created this NCR (reciprocal of RSLT.created_ncr)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_result: Option<EntityId>,
+
+    /// Supplier responsible for the non-conformance (incoming inspection, SCAR)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supplier: Option<EntityId>,
 }
 
 /// An NCR entity - Non-Conformance Report

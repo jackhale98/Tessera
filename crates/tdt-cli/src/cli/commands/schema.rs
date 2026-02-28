@@ -1,7 +1,7 @@
-//! Schema introspection for AI agent ergonomics
+//! Schema introspection
 //!
-//! Provides commands to view entity schemas, making it easier for AI agents
-//! and automation tools to understand entity structure without external documentation.
+//! Provides commands to view entity field definitions, valid values,
+//! and link types for each entity type.
 
 use clap::Subcommand;
 use miette::{IntoDiagnostic, Result};
@@ -10,6 +10,33 @@ use std::collections::BTreeMap;
 use tdt_core::{EntityPrefix, SchemaRegistry};
 
 #[derive(Subcommand, Debug)]
+#[command(after_help = "\
+YAML FORMATTING GUIDE:
+
+  Strings:        title: My Title
+  Multi-line:     text: |
+                    First line.
+                    Second line.
+  Numbers:        nominal: 25.4
+  Booleans:       critical: true
+  Lists:          tags:
+                    - safety
+                    - mechanical
+  Single link:    links:
+                    process: PROC-01ABC...
+  Link list:      links:
+                    verified_by:
+                      - TEST-01ABC...
+                      - TEST-01DEF...
+  Nested object:  characteristic:
+                    name: diameter
+                    nominal: 10.0
+
+EXAMPLES:
+  tdt schema list              List all entity types
+  tdt schema show req          Show requirement fields and valid values
+  tdt schema show risk         Show risk/FMEA fields
+  tdt schema show req --raw    Full JSON schema")]
 pub enum SchemaCommands {
     /// List all available entity schemas
     List,

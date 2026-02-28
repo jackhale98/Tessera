@@ -154,6 +154,14 @@ pub struct TestLinks {
     /// Tests that must pass before this one
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<EntityId>,
+
+    /// Component under test
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<EntityId>,
+
+    /// Assembly under test
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assembly: Option<EntityId>,
 }
 
 /// A test entity (verification/validation protocol)

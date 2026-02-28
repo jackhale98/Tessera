@@ -199,6 +199,10 @@ pub struct ProcessLinks {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modified_by_capa: Vec<EntityId>,
 
+    /// Supplier that performs this process (outsourced manufacturing)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supplier: Option<EntityId>,
+
     /// Related entities
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related_to: Vec<EntityId>,

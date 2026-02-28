@@ -132,14 +132,6 @@
           "items": { "type": "string" },
           "description": "IDs of NCRs that triggered this CAPA"
         },
-        "component": {
-          "type": ["string", "null"],
-          "description": "Component ID this CAPA addresses"
-        },
-        "supplier": {
-          "type": ["string", "null"],
-          "description": "Supplier ID if CAPA is supplier-related"
-        },
         "risks": {
           "type": "array",
           "items": { "type": "string" },

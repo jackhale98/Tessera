@@ -330,7 +330,26 @@ mod tests {
     #[test]
     fn test_project_discover_fails_without_tdt_dir() {
         let tmp = tempdir().unwrap();
-        let err = Project::discover_from(tmp.path()).unwrap_err();
-        assert!(matches!(err, ProjectError::NotFound { .. }));
+        // Create a nested dir so discover_from walks up through dirs we control
+        let nested = tmp.path().join("a/b/c");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let result = Project::discover_from(&nested);
+        match result {
+            Err(ProjectError::NotFound { .. }) => {} // Expected: no .tdt found at all
+            Ok(project) => {
+                // If discovery succeeded, it must have escaped our temp dir
+                // (e.g. found /tmp/.tdt from a prior test run). That means
+                // there was no .tdt inside our temp dir, which is what we're testing.
+                let found_root = project.root().canonicalize().unwrap();
+                let tmp_root = tmp.path().canonicalize().unwrap();
+                assert!(
+                    !found_root.starts_with(&tmp_root),
+                    "Found .tdt inside temp dir at {:?}, but none should exist",
+                    found_root
+                );
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
     }
 }

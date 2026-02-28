@@ -292,15 +292,16 @@ fn get_entities(cache: &EntityCache, entity_type: EntityType) -> Vec<DmmEntity> 
 fn find_relationships(
     cache: &EntityCache,
     dmm: &mut Dmm,
-    row_type: EntityType,
+    _row_type: EntityType,
     col_type: EntityType,
 ) {
-    let row_prefix = row_type.prefix();
     let col_prefix = col_type.prefix();
 
-    // For each row entity, find links to column entities
+    // For each row entity, find links to/from column entities.
+    // Checking both directions (outgoing + incoming) for each row entity
+    // covers all possible link patterns between the two entity types.
     for row_entity in &dmm.row_entities.clone() {
-        // Check outgoing links
+        // Outgoing links: row → col
         let links = cache.get_links_from(&row_entity.id);
         for link in links {
             if link.target_id.starts_with(col_prefix) {
@@ -308,28 +309,11 @@ fn find_relationships(
             }
         }
 
-        // Check incoming links
+        // Incoming links: col → row
         let reverse_links = cache.get_links_to(&row_entity.id);
         for link in reverse_links {
             if link.source_id.starts_with(col_prefix) {
                 dmm.add_link(&row_entity.id, &link.source_id);
-            }
-        }
-    }
-
-    // Also check from column entities (in case links are asymmetric)
-    for col_entity in &dmm.col_entities.clone() {
-        let links = cache.get_links_from(&col_entity.id);
-        for link in links {
-            if link.target_id.starts_with(row_prefix) {
-                dmm.add_link(&link.target_id, &col_entity.id);
-            }
-        }
-
-        let reverse_links = cache.get_links_to(&col_entity.id);
-        for link in reverse_links {
-            if link.source_id.starts_with(row_prefix) {
-                dmm.add_link(&link.source_id, &col_entity.id);
             }
         }
     }
@@ -366,10 +350,9 @@ fn output_table(
     let id_width = if full_ids {
         dmm.row_entities
             .iter()
-            .map(|e| e.id.len())
+            .map(|e| format_short_id_str(&e.id).len())
             .max()
             .unwrap_or(8)
-            .min(20)
     } else {
         dmm.row_entities
             .iter()
@@ -383,7 +366,7 @@ fn output_table(
     let col_width = if full_ids {
         dmm.col_entities
             .iter()
-            .map(|e| e.short_id.len())
+            .map(|e| format_short_id_str(&e.id).len())
             .max()
             .unwrap_or(5)
             .max(5)

@@ -4,7 +4,6 @@ use miette::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::cli::helpers::truncate_str;
 use crate::cli::GlobalOpts;
 use tabled::{builder::Builder, settings::Style};
 use tdt_core::core::project::Project;
@@ -37,6 +36,10 @@ pub struct ToleranceArgs {
     /// Only show stackups with issues (marginal or fail)
     #[arg(long)]
     pub issues_only: bool,
+
+    /// Show full entity IDs instead of short aliases
+    #[arg(long)]
+    pub full_ids: bool,
 }
 
 pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
@@ -76,9 +79,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
             assembly_title = Some(format!(
                 "{} ({})",
                 asm.title,
-                short_ids
-                    .get_short_id(&asm.id.to_string())
-                    .unwrap_or_else(|| asm.id.to_string())
+                if args.full_ids {
+                    asm.id.to_string()
+                } else {
+                    short_ids
+                        .get_short_id(&asm.id.to_string())
+                        .unwrap_or_else(|| asm.id.to_string())
+                }
             ));
 
             // Collect all component IDs from BOM (recursively)
@@ -228,9 +235,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
     } else if let Some(ref cmp_id) = args.component {
         let resolved = short_ids.resolve(cmp_id).unwrap_or_else(|| cmp_id.clone());
         if let Some(cmp) = component_map.get(&resolved) {
-            let short = short_ids
-                .get_short_id(&resolved)
-                .unwrap_or_else(|| resolved.clone());
+            let short = if args.full_ids {
+                resolved.clone()
+            } else {
+                short_ids
+                    .get_short_id(&resolved)
+                    .unwrap_or_else(|| resolved.clone())
+            };
             output.push_str(&format!(
                 "**Scope:** Component {} {} ({})\n\n",
                 short,
@@ -267,9 +278,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
             None => continue,
         };
 
-        let cmp_short = short_ids
-            .get_short_id(cmp_id)
-            .unwrap_or_else(|| cmp_id.clone());
+        let cmp_short = if args.full_ids {
+            cmp_id.clone()
+        } else {
+            short_ids
+                .get_short_id(cmp_id)
+                .unwrap_or_else(|| cmp_id.clone())
+        };
         let part_number = if cmp.part_number.is_empty() {
             "-"
         } else {
@@ -300,15 +315,19 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                 ]);
 
                 for feat in feats {
-                    let feat_short = short_ids
-                        .get_short_id(&feat.id.to_string())
-                        .unwrap_or_else(|| feat.id.to_string());
+                    let feat_short = if args.full_ids {
+                        feat.id.to_string()
+                    } else {
+                        short_ids
+                            .get_short_id(&feat.id.to_string())
+                            .unwrap_or_else(|| feat.id.to_string())
+                    };
                     let feat_type = format!("{}", feat.feature_type);
 
                     if feat.dimensions.is_empty() {
                         builder.push_record([
                             feat_short,
-                            truncate_str(&feat.title, 25),
+                            feat.title.clone(),
                             feat_type,
                             "-".to_string(),
                             "-".to_string(),
@@ -326,7 +345,7 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                                     "".to_string()
                                 },
                                 if i == 0 {
-                                    truncate_str(&feat.title, 25)
+                                    feat.title.clone()
                                 } else {
                                     "".to_string()
                                 },
@@ -369,9 +388,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                 ]);
 
                 for mate in mates_list {
-                    let mate_short = short_ids
-                        .get_short_id(&mate.id.to_string())
-                        .unwrap_or_else(|| mate.id.to_string());
+                    let mate_short = if args.full_ids {
+                        mate.id.to_string()
+                    } else {
+                        short_ids
+                            .get_short_id(&mate.id.to_string())
+                            .unwrap_or_else(|| mate.id.to_string())
+                    };
 
                     // Determine which feature is "this" vs "mating"
                     let feat_a_cmp = feature_to_component.get(&mate.feature_a.id.to_string());
@@ -420,10 +443,10 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
 
                     builder.push_record([
                         mate_short,
-                        truncate_str(&mate.title, 20),
-                        truncate_str(this_name, 15),
-                        truncate_str(other_name, 15),
-                        truncate_str(&other_cmp_display, 25),
+                        mate.title.clone(),
+                        this_name.to_string(),
+                        other_name.to_string(),
+                        other_cmp_display,
                         fit_str,
                         min_clear,
                         max_clear,
@@ -444,9 +467,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                 builder.push_record(["Stackup", "Title", "Contributor", "Direction"]);
 
                 for (stackup, indices) in contribs {
-                    let stack_short = short_ids
-                        .get_short_id(&stackup.id.to_string())
-                        .unwrap_or_else(|| stackup.id.to_string());
+                    let stack_short = if args.full_ids {
+                        stackup.id.to_string()
+                    } else {
+                        short_ids
+                            .get_short_id(&stackup.id.to_string())
+                            .unwrap_or_else(|| stackup.id.to_string())
+                    };
 
                     for (i, &idx) in indices.iter().enumerate() {
                         let contrib = &stackup.contributors[idx];
@@ -462,7 +489,7 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                                 "".to_string()
                             },
                             if i == 0 {
-                                truncate_str(&stackup.title, 20)
+                                stackup.title.clone()
                             } else {
                                 "".to_string()
                             },
@@ -495,9 +522,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                 None => continue,
             };
 
-            let cmp_short = short_ids
-                .get_short_id(ext_cmp_id)
-                .unwrap_or_else(|| ext_cmp_id.clone());
+            let cmp_short = if args.full_ids {
+                ext_cmp_id.clone()
+            } else {
+                short_ids
+                    .get_short_id(ext_cmp_id)
+                    .unwrap_or_else(|| ext_cmp_id.clone())
+            };
             let part_number = if cmp.part_number.is_empty() {
                 "-"
             } else {
@@ -515,9 +546,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                 builder.push_record(["Stackup", "Contributor", "Direction"]);
 
                 for (stackup, indices) in contribs {
-                    let stack_short = short_ids
-                        .get_short_id(&stackup.id.to_string())
-                        .unwrap_or_else(|| stackup.id.to_string());
+                    let stack_short = if args.full_ids {
+                        stackup.id.to_string()
+                    } else {
+                        short_ids
+                            .get_short_id(&stackup.id.to_string())
+                            .unwrap_or_else(|| stackup.id.to_string())
+                    };
 
                     for &idx in indices {
                         let contrib = &stackup.contributors[idx];
@@ -549,9 +584,13 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
         output.push_str("## Stackups\n\n");
 
         for stackup in &relevant_stackups {
-            let stack_short = short_ids
-                .get_short_id(&stackup.id.to_string())
-                .unwrap_or_else(|| stackup.id.to_string());
+            let stack_short = if args.full_ids {
+                stackup.id.to_string()
+            } else {
+                short_ids
+                    .get_short_id(&stackup.id.to_string())
+                    .unwrap_or_else(|| stackup.id.to_string())
+            };
 
             output.push_str(&format!("### {}: {}\n\n", stack_short, stackup.title));
 
@@ -612,7 +651,7 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                 builder.push_record([
                     (idx + 1).to_string(),
                     format!("{}{}", contrib.name, external_marker),
-                    truncate_str(&cmp_name, 15),
+                    cmp_name,
                     cmp_pn,
                     format!("{:.3}", contrib.nominal),
                     format!("{:.3}", contrib.plus_tol),
@@ -719,7 +758,7 @@ pub fn run(args: ToleranceArgs, _global: &GlobalOpts) -> Result<()> {
                 } else {
                     cmp.part_number.clone()
                 },
-                truncate_str(&cmp.title, 25),
+                cmp.title.clone(),
                 feat_count.to_string(),
                 mate_count.to_string(),
                 stack_count.to_string(),

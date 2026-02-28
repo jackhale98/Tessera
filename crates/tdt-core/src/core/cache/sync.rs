@@ -372,6 +372,7 @@ impl EntityCache {
             ("assembly", "assembly"),
             ("tests", "tests"),
             ("ncrs", "ncrs"),
+            ("created_ncr", "ncrs"),
             ("from_result", "from_result"),
             // Process/Manufacturing links
             ("processes", "processes"),

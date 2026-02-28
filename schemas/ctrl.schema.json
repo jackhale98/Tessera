@@ -94,10 +94,6 @@
           "type": ["string", "null"],
           "description": "Parent process ID"
         },
-        "component": {
-          "type": ["string", "null"],
-          "description": "Component ID being controlled"
-        },
         "feature": {
           "type": ["string", "null"],
           "description": "Feature ID being controlled"
@@ -111,6 +107,11 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "IDs of requirements this control verifies"
+        },
+        "added_by_capa": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "CAPA IDs that added this control (reciprocal of CAPA.controls_added)"
         }
       }
     },

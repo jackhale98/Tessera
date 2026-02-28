@@ -127,7 +127,7 @@ UTILITIES:
   search      Search across all entity types
   recent      Show recently modified entities
   tags        View and manage entity tags (list, show)
-  schema      View entity schemas (list, show) - for AI agent ergonomics
+  schema      View entity field definitions, valid values, and link types
   completions Generate shell completion scripts (bash, zsh, fish, powershell)
   help        Print this message or the help of the given subcommand(s)
 

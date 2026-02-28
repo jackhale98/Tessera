@@ -35,6 +35,10 @@ pub struct BomArgs {
     /// Flatten nested assemblies (show all components in a single list)
     #[arg(long)]
     pub flat: bool,
+
+    /// Show full entity IDs instead of short aliases
+    #[arg(long)]
+    pub full_ids: bool,
 }
 
 pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
@@ -100,6 +104,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
             visited: &mut HashSet<String>,
             source_asm: &str,
             qty_multiplier: u32,
+            full_ids: bool,
         ) {
             for item in bom {
                 let item_id = item.component_id.to_string();
@@ -120,6 +125,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                                 visited,
                                 &sub_asm.title,
                                 qty_multiplier * item.quantity,
+                                full_ids,
                             );
                         }
                         visited.remove(&item_id);
@@ -142,12 +148,16 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                     let line_cost = unit_price * actual_qty as f64;
                     let line_mass = cmp.mass_kg.unwrap_or(0.0) * actual_qty as f64;
 
-                    let item_short = short_ids
-                        .get_short_id(&item_id)
-                        .unwrap_or_else(|| item_id.clone());
+                    let display_id = if full_ids {
+                        item_id.clone()
+                    } else {
+                        short_ids
+                            .get_short_id(&item_id)
+                            .unwrap_or_else(|| item_id.clone())
+                    };
 
                     flat_items.push(FlatBomItem {
-                        component_id: item_short,
+                        component_id: display_id,
                         title: cmp.title.clone(),
                         part_number: cmp.part_number.clone(),
                         quantity: actual_qty,
@@ -175,6 +185,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                             visited,
                             &sub_asm.title,
                             qty_multiplier,
+                            full_ids,
                         );
                     }
                     visited.remove(sub_id);
@@ -197,6 +208,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
             &mut visited,
             "(top-level)",
             1,
+            args.full_ids,
         );
 
         // Aggregate duplicates by component_id
@@ -234,16 +246,8 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
 
             let mut row = vec![
                 item.component_id.clone(),
-                if item.part_number.len() > 12 {
-                    format!("{}...", &item.part_number[..9])
-                } else {
-                    item.part_number.clone()
-                },
-                if item.title.len() > 25 {
-                    format!("{}...", &item.title[..22])
-                } else {
-                    item.title.clone()
-                },
+                item.part_number.clone(),
+                item.title.clone(),
                 item.quantity.to_string(),
             ];
             if args.with_cost {
@@ -265,11 +269,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                     "-".to_string()
                 });
             }
-            row.push(if item.source_assembly.len() > 15 {
-                format!("{}...", &item.source_assembly[..12])
-            } else {
-                item.source_assembly.clone()
-            });
+            row.push(item.source_assembly.clone());
             table.push_record(row);
         }
 
@@ -305,6 +305,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
             with_cost: bool,
             with_mass: bool,
             visited: &mut std::collections::HashSet<String>,
+            full_ids: bool,
         ) {
             let prefix = "│  ".repeat(indent);
             for (i, item) in bom.iter().enumerate() {
@@ -312,9 +313,13 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                 let branch = if is_last { "└─ " } else { "├─ " };
 
                 let item_id = item.component_id.to_string();
-                let item_short = short_ids
-                    .get_short_id(&item_id)
-                    .unwrap_or_else(|| item_id.clone());
+                let item_short = if full_ids {
+                    item_id.clone()
+                } else {
+                    short_ids
+                        .get_short_id(&item_id)
+                        .unwrap_or_else(|| item_id.clone())
+                };
 
                 // Check if it's a component or subassembly
                 if let Some(cmp) = component_map.get(&item_id) {
@@ -383,6 +388,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
                             with_cost,
                             with_mass,
                             visited,
+                            full_ids,
                         );
                         visited.remove(&item_id);
                     }
@@ -410,6 +416,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
             args.with_cost,
             args.with_mass,
             &mut visited,
+            args.full_ids,
         );
 
         output.push_str("```\n");
@@ -466,9 +473,13 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
 
     for cmp_id in &bom_components {
         if let Some(cmp) = component_map.get(cmp_id) {
-            let cmp_short = short_ids
-                .get_short_id(cmp_id)
-                .unwrap_or_else(|| cmp_id.clone());
+            let cmp_short = if args.full_ids {
+                cmp_id.clone()
+            } else {
+                short_ids
+                    .get_short_id(cmp_id)
+                    .unwrap_or_else(|| cmp_id.clone())
+            };
 
             // Check for single source (only 1 supplier)
             let supplier_count = cmp.suppliers.iter().filter(|s| !s.name.is_empty()).count();
@@ -548,11 +559,7 @@ pub fn run(args: BomArgs, _global: &GlobalOpts) -> Result<()> {
         for risk in &supply_risks {
             risk_table.push_record([
                 risk.id.clone(),
-                if risk.title.len() > 25 {
-                    format!("{}...", &risk.title[..22])
-                } else {
-                    risk.title.clone()
-                },
+                risk.title.clone(),
                 risk.risk_type.clone(),
                 risk.details.clone(),
             ]);

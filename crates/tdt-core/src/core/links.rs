@@ -449,7 +449,7 @@ fn is_array_link_type(link_type: &str) -> bool {
     match link_type {
         // Single-value links (can only have one target)
         "component" | "assembly" | "requirement" | "process" | "parent" | "supplier" | "capa"
-        | "from_result" | "control" | "feature" | "test" => false,
+        | "from_result" | "control" | "feature" | "test" | "created_ncr" | "product" => false,
         // Everything else is an array (can have multiple targets)
         _ => true,
     }

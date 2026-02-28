@@ -188,6 +188,10 @@ pub struct ControlLinks {
     /// CAPA that added this control (reciprocal of CAPA.controls_added)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub added_by_capa: Vec<EntityId>,
+
+    /// Risks this control mitigates (FMEA traceability)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub risks: Vec<EntityId>,
 }
 
 /// A Control entity - control plan item

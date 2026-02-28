@@ -121,13 +121,15 @@ Links are simple cross-references stored in the `links` section of entities. The
 | `derived_by` | REQ | `derives_from` | Child requirements derived from this |
 | `allocated_to` | FEAT | `allocated_from` | Feature this requirement is allocated to |
 
-#### Tests (TEST) / Controls (CTRL)
+#### Tests (TEST)
 
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
 | `verifies` | REQ | `verified_by` | Requirements this test verifies |
 | `validates` | REQ | - | User needs this test validates |
 | `mitigates` | RISK | - | Risks whose mitigation this verifies |
+| `component` | CMP | - | Component under test (single-value) |
+| `assembly` | ASM | - | Assembly under test (single-value) |
 | `depends_on` | TEST | - | Tests that must pass before this one |
 
 #### Risks (RISK)
@@ -143,7 +145,9 @@ Links are simple cross-references stored in the `links` section of entities. The
 
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
-| `created_ncr` | NCR | `from_result` | NCR created from this failed result |
+| `test` | TEST | - | Test protocol that was executed (single-value) |
+| `created_ncr` | NCR | `from_result` | NCR created from this failed result (single-value) |
+| `actions` | - | - | Action items created from this result |
 
 #### NCRs (NCR)
 
@@ -151,6 +155,7 @@ Links are simple cross-references stored in the `links` section of entities. The
 |-----------|--------|------------|-------------|
 | `from_result` | RSLT | `created_ncr` | Test result that created this NCR |
 | `component` | CMP | - | Affected component |
+| `supplier` | SUP | - | Supplier responsible (incoming inspection, SCAR) |
 | `process` | PROC | - | Process where defect was found |
 | `control` | CTRL | - | Control that detected the issue |
 | `capa` | CAPA | `ncrs` | Linked CAPA if opened |
@@ -160,35 +165,35 @@ Links are simple cross-references stored in the `links` section of entities. The
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
 | `ncrs` | NCR | `capa` | Source NCRs for this CAPA |
+| `risks` | RISK | - | Related risks |
 | `processes_modified` | PROC | `modified_by_capa` | Processes modified by this CAPA |
 | `controls_added` | CTRL | `added_by_capa` | Controls added by this CAPA |
-| `risks` | RISK | - | Related risks |
 
 #### Components (CMP)
 
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
-| `features` | FEAT | - | Features defined on this component |
+| `risks` | RISK | `affects` | Risks affecting this component |
+| `used_in` | ASM | - | Assemblies using this component |
 | `replaces` | CMP | `replaced_by` | Component this supersedes |
 | `replaced_by` | CMP | `replaces` | Component that supersedes this |
 | `interchangeable_with` | CMP | `interchangeable_with` | Alternate components (symmetric) |
-| `used_in` | ASM | - | Assemblies using this component |
-| `risks` | RISK | `affects` | Risks affecting this component |
 | `related_to` | Any | `related_to` | Generic related entity |
 
 #### Assemblies (ASM)
 
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
-| `features` | FEAT | - | Features defined on this assembly |
-| `related_to` | Any | `related_to` | Generic related entity |
+| `risks` | RISK | `affects` | Risks affecting this assembly |
 | `parent` | ASM | - | Parent assembly (for sub-assemblies) |
+| `related_to` | Any | `related_to` | Generic related entity |
 
 #### Processes (PROC)
 
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
 | `produces` | CMP | - | Components produced by this process |
+| `supplier` | SUP | - | Supplier performing this process (outsourced, single-value) |
 | `controls` | CTRL | `process` | Control plan items |
 | `work_instructions` | WORK | - | Work instructions for this process |
 | `risks` | RISK | `affects` | Risks affecting this process |
@@ -206,10 +211,18 @@ Links are simple cross-references stored in the `links` section of entities. The
 
 | Link Type | Target | Reciprocal | Description |
 |-----------|--------|------------|-------------|
-| `process` | PROC | `controls` | Parent process |
-| `feature` | FEAT | - | Feature being controlled |
+| `process` | PROC | `controls` | Parent process (single-value) |
+| `feature` | FEAT | - | Feature being controlled (single-value) |
 | `verifies` | REQ | `verified_by` | Requirements this control verifies |
+| `risks` | RISK | - | Risks this control mitigates (FMEA traceability) |
 | `added_by_capa` | CAPA | `controls_added` | CAPA that added this control |
+
+#### Work Instructions (WORK)
+
+| Link Type | Target | Reciprocal | Description |
+|-----------|--------|------------|-------------|
+| `process` | PROC | `work_instructions` | Parent process (single-value) |
+| `controls` | CTRL | - | Related control plan items |
 
 ## Managing Links
 

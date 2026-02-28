@@ -141,6 +141,10 @@
         "length": {
           "type": "number",
           "description": "Optional length for axial features (cylinders, cones)"
+        },
+        "length_ref": {
+          "type": ["string", "null"],
+          "description": "Reference to another feature's dimension for length (format: FEAT@1:dimension_name)"
         }
       },
       "required": ["origin", "axis"],

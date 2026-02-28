@@ -78,52 +78,90 @@ pub struct PathArgs {
     pub global_only: bool,
 }
 
-/// Valid configuration keys
-const VALID_KEYS: &[(&str, &str)] = &[
-    ("author", "Default author for new entities"),
-    ("editor", "Editor command for `tdt edit`"),
-    ("pager", "Pager command for long output"),
+/// Configuration key categories for organized display
+const CONFIG_CATEGORIES: &[(&str, &[(&str, &str, &str)])] = &[
     (
-        "default_format",
-        "Default output format (yaml, json, tsv, etc.)",
-    ),
-    // Workflow configuration
-    ("workflow.enabled", "Enable workflow commands (true/false)"),
-    ("workflow.provider", "Git provider: github, gitlab, or none"),
-    (
-        "workflow.auto_commit",
-        "Auto-commit on status changes (true/false)",
-    ),
-    (
-        "workflow.auto_merge",
-        "Merge PR automatically on approval (true/false)",
-    ),
-    ("workflow.base_branch", "Target branch for PRs (e.g., main)"),
-    // Default approval requirements
-    (
-        "workflow.default_approvals.min_approvals",
-        "Default minimum approvals required (number)",
+        "General",
+        &[
+            ("author", "Default author for new entities", "\"Jane Smith\""),
+            ("editor", "Editor command for `tdt edit`", "vim"),
+            ("pager", "Pager command for long output", "less"),
+            (
+                "default_format",
+                "Default output format",
+                "yaml  # yaml, json, tsv",
+            ),
+        ],
     ),
     (
-        "workflow.default_approvals.require_unique_approvers",
-        "Require different approvers (true/false)",
+        "Workflow",
+        &[
+            (
+                "workflow.enabled",
+                "Enable workflow commands",
+                "true  # true/false",
+            ),
+            (
+                "workflow.provider",
+                "Git hosting provider",
+                "github  # github, gitlab, none",
+            ),
+            (
+                "workflow.auto_commit",
+                "Auto-commit on status changes",
+                "true  # true/false",
+            ),
+            (
+                "workflow.auto_merge",
+                "Merge PR automatically on approval",
+                "false  # true/false",
+            ),
+            (
+                "workflow.base_branch",
+                "Target branch for PRs",
+                "main",
+            ),
+        ],
     ),
     (
-        "workflow.default_approvals.require_signature",
-        "Require GPG-signed approvals for Part 11 (true/false)",
+        "Approval Requirements (defaults)",
+        &[
+            (
+                "workflow.default_approvals.min_approvals",
+                "Min approvals required",
+                "1",
+            ),
+            (
+                "workflow.default_approvals.require_unique_approvers",
+                "Require different approvers",
+                "true  # true/false",
+            ),
+            (
+                "workflow.default_approvals.require_signature",
+                "Require GPG-signed approvals (Part 11)",
+                "false  # true/false",
+            ),
+        ],
     ),
-    // Per-entity approval requirements (examples)
     (
-        "workflow.approvals.RISK.min_approvals",
-        "Min approvals for RISK entities",
-    ),
-    (
-        "workflow.approvals.RISK.require_signature",
-        "Require GPG signature for RISK approvals",
-    ),
-    (
-        "workflow.approvals.REQ.min_approvals",
-        "Min approvals for REQ entities",
+        "Approval Requirements (per entity type)",
+        &[
+            (
+                "workflow.approvals.REQ.min_approvals",
+                "Min approvals for REQ entities",
+                "2",
+            ),
+            (
+                "workflow.approvals.RISK.min_approvals",
+                "Min approvals for RISK entities",
+                "2",
+            ),
+            (
+                "workflow.approvals.RISK.require_signature",
+                "Require GPG signature for RISK",
+                "true",
+            ),
+        ],
     ),
 ];
 
@@ -168,10 +206,83 @@ fn run_show(args: ShowArgs) -> Result<()> {
         println!("{}", style("Effective Configuration").bold().underlined());
         println!();
 
+        println!("  {}", style("[General]").bold());
         print_config_value("author", config.author.as_deref());
         print_config_value("editor", config.editor.as_deref());
         print_config_value("pager", config.pager.as_deref());
         print_config_value("default_format", config.default_format.as_deref());
+
+        println!();
+        println!("  {}", style("[Workflow]").bold());
+        print_config_value(
+            "workflow.enabled",
+            Some(if config.workflow.enabled {
+                "true"
+            } else {
+                "false"
+            }),
+        );
+        print_config_value(
+            "workflow.provider",
+            Some(&format!("{:?}", config.workflow.provider).to_lowercase()),
+        );
+        print_config_value("workflow.base_branch", Some(&config.workflow.base_branch));
+        print_config_value(
+            "workflow.auto_commit",
+            Some(if config.workflow.auto_commit {
+                "true"
+            } else {
+                "false"
+            }),
+        );
+        print_config_value(
+            "workflow.auto_merge",
+            Some(if config.workflow.auto_merge {
+                "true"
+            } else {
+                "false"
+            }),
+        );
+
+        println!();
+        println!("  {}", style("[Approval Defaults]").bold());
+        print_config_value(
+            "workflow.default_approvals.min_approvals",
+            Some(&config.workflow.default_approvals.min_approvals.to_string()),
+        );
+        print_config_value(
+            "workflow.default_approvals.require_unique_approvers",
+            Some(if config.workflow.default_approvals.require_unique_approvers {
+                "true"
+            } else {
+                "false"
+            }),
+        );
+        print_config_value(
+            "workflow.default_approvals.require_signature",
+            Some(if config.workflow.default_approvals.require_signature {
+                "true"
+            } else {
+                "false"
+            }),
+        );
+
+        if !config.workflow.approvals.is_empty() {
+            println!();
+            println!("  {}", style("[Per-Entity Approvals]").bold());
+            for (entity_type, reqs) in &config.workflow.approvals {
+                print_config_value(
+                    &format!("workflow.approvals.{}.min_approvals", entity_type),
+                    Some(&reqs.min_approvals.to_string()),
+                );
+                if reqs.require_signature {
+                    print_config_value(
+                        &format!("workflow.approvals.{}.require_signature", entity_type),
+                        Some("true"),
+                    );
+                }
+            }
+        }
 
         // Show source info
         println!();
@@ -318,18 +429,43 @@ fn run_path(args: PathArgs) -> Result<()> {
 }
 
 fn run_keys() -> Result<()> {
-    println!("{}", style("Available configuration keys:").bold());
+    println!("{}", style("Configuration Keys").bold().underlined());
     println!();
 
-    for (key, description) in VALID_KEYS {
-        println!("  {:<20} {}", style(key).cyan(), style(description).dim());
+    for (category, keys) in CONFIG_CATEGORIES {
+        println!("  {}", style(format!("[{}]", category)).bold());
+        for (key, description, example) in *keys {
+            println!(
+                "    {:<50} {}",
+                style(*key).cyan(),
+                style(*description).dim()
+            );
+            println!(
+                "    {:<50} {}",
+                "",
+                style(format!("example: tdt config set {} {}", key, example)).dim()
+            );
+        }
+        println!();
     }
 
+    println!("{}", style("Quick Start — Enable Workflow").bold());
+    println!();
+    println!("  tdt config set workflow.enabled true");
+    println!("  tdt config set workflow.provider github");
     println!();
     println!(
-        "{}",
-        style("Use 'tdt config set <key> <value>' to set a value.").dim()
+        "  {}",
+        style("Then use: tdt submit, tdt approve, tdt reject, tdt release").dim()
     );
+    println!();
+    println!("{}", style("Other Commands").bold());
+    println!();
+    println!("  tdt config show              Show effective configuration");
+    println!("  tdt config set <key> <value>  Set a project config value");
+    println!("  tdt config set -g <key> <val> Set a global (user) config value");
+    println!("  tdt config unset <key>        Remove a config value");
+    println!("  tdt config path               Show config file locations");
 
     Ok(())
 }
@@ -353,7 +489,47 @@ fn get_config_value(config: &Config, key: &str) -> Option<String> {
         "editor" => config.editor.clone(),
         "pager" => config.pager.clone(),
         "default_format" => config.default_format.clone(),
-        _ => None,
+        "workflow.enabled" => Some(config.workflow.enabled.to_string()),
+        "workflow.provider" => Some(format!("{:?}", config.workflow.provider).to_lowercase()),
+        "workflow.auto_commit" => Some(config.workflow.auto_commit.to_string()),
+        "workflow.auto_merge" => Some(config.workflow.auto_merge.to_string()),
+        "workflow.base_branch" => Some(config.workflow.base_branch.clone()),
+        "workflow.default_approvals.min_approvals" => {
+            Some(config.workflow.default_approvals.min_approvals.to_string())
+        }
+        "workflow.default_approvals.require_unique_approvers" => Some(
+            config
+                .workflow
+                .default_approvals
+                .require_unique_approvers
+                .to_string(),
+        ),
+        "workflow.default_approvals.require_signature" => Some(
+            config
+                .workflow
+                .default_approvals
+                .require_signature
+                .to_string(),
+        ),
+        _ => {
+            // Handle dynamic per-entity approval keys like workflow.approvals.RISK.min_approvals
+            if let Some(rest) = key.strip_prefix("workflow.approvals.") {
+                let parts: Vec<&str> = rest.splitn(2, '.').collect();
+                if parts.len() == 2 {
+                    if let Some(reqs) = config.workflow.approvals.get(parts[0]) {
+                        return match parts[1] {
+                            "min_approvals" => Some(reqs.min_approvals.to_string()),
+                            "require_unique_approvers" => {
+                                Some(reqs.require_unique_approvers.to_string())
+                            }
+                            "require_signature" => Some(reqs.require_signature.to_string()),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+            None
+        }
     }
 }
 

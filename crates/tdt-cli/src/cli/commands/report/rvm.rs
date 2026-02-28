@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tabled::{builder::Builder, settings::Style};
 
-use crate::cli::helpers::truncate_str;
 use crate::cli::GlobalOpts;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -23,6 +22,10 @@ pub struct RvmArgs {
     /// Show only unverified requirements
     #[arg(long)]
     pub unverified_only: bool,
+
+    /// Show full entity IDs instead of short aliases
+    #[arg(long)]
+    pub full_ids: bool,
 }
 
 pub fn run(args: RvmArgs, _global: &GlobalOpts) -> Result<()> {
@@ -81,9 +84,13 @@ pub fn run(args: RvmArgs, _global: &GlobalOpts) -> Result<()> {
     let mut failed_count = 0;
 
     for req in &requirements {
-        let req_short = short_ids
-            .get_short_id(&req.id.to_string())
-            .unwrap_or_else(|| req.id.to_string());
+        let req_short = if args.full_ids {
+            req.id.to_string()
+        } else {
+            short_ids
+                .get_short_id(&req.id.to_string())
+                .unwrap_or_else(|| req.id.to_string())
+        };
         let req_title = req.title.clone();
         let req_id_str = req.id.to_string();
 
@@ -122,18 +129,26 @@ pub fn run(args: RvmArgs, _global: &GlobalOpts) -> Result<()> {
             let mut any_executed = false;
 
             for test_id_str in all_test_ids {
-                let test_short = short_ids
-                    .get_short_id(&test_id_str)
-                    .unwrap_or_else(|| test_id_str.clone());
+                let test_short = if args.full_ids {
+                    test_id_str.clone()
+                } else {
+                    short_ids
+                        .get_short_id(&test_id_str)
+                        .unwrap_or_else(|| test_id_str.clone())
+                };
 
                 let (test_title, result_id, verdict, test_passed) =
                     if let Some(test) = test_map.get(&test_id_str) {
                         let title = test.title.clone();
                         if let Some(result) = latest_results.get(&test_id_str) {
                             any_executed = true;
-                            let result_short = short_ids
-                                .get_short_id(&result.id.to_string())
-                                .unwrap_or_else(|| result.id.to_string());
+                            let result_short = if args.full_ids {
+                                result.id.to_string()
+                            } else {
+                                short_ids
+                                    .get_short_id(&result.id.to_string())
+                                    .unwrap_or_else(|| result.id.to_string())
+                            };
                             let (verdict_str, passed) = match result.verdict {
                                 Verdict::Pass => {
                                     passed_count += 1;
@@ -216,9 +231,9 @@ pub fn run(args: RvmArgs, _global: &GlobalOpts) -> Result<()> {
     for row in &rows {
         builder.push_record([
             row.req_short.clone(),
-            truncate_str(&row.req_title, 25),
+            row.req_title.clone(),
             row.test_short.clone(),
-            truncate_str(&row.test_title, 25),
+            row.test_title.clone(),
             row.result_id.clone(),
             row.verdict.clone(),
         ]);

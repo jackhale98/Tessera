@@ -97,10 +97,10 @@ Controls define control plan items - how to monitor and control manufacturing pr
 | Field | Type | Description |
 |-------|------|-------------|
 | `links.process` | EntityId | Parent process |
-| `links.component` | EntityId | Component being controlled |
 | `links.feature` | EntityId | Feature being controlled |
-| `links.risks` | array[EntityId] | Risks this control mitigates |
 | `links.verifies` | array[EntityId] | Requirements verified |
+| `links.risks` | array[EntityId] | Risks this control mitigates (FMEA traceability) |
+| `links.added_by_capa` | array[EntityId] | CAPA(s) that added this control |
 
 ## Example
 

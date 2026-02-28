@@ -139,33 +139,12 @@
     "links": {
       "type": "object",
       "properties": {
-        "requirements": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "IDs of requirements this assembly satisfies"
-        },
-        "tests": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "IDs of tests for this assembly"
-        },
         "risks": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "description": "IDs of risks affecting this assembly"
-        },
-        "processes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "IDs of processes used to build this assembly"
         },
         "parent": {
           "type": ["string", "null"],

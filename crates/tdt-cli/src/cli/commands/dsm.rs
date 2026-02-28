@@ -7,9 +7,8 @@
 //! - Requirements (allocated to same requirement)
 
 use console::style;
-use miette::{IntoDiagnostic, Result};
+use miette::Result;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 
 use crate::cli::helpers::format_short_id_str;
 use crate::cli::GlobalOpts;
@@ -255,54 +254,43 @@ impl Dsm {
         let mut metrics = Vec::with_capacity(n);
 
         for i in 0..n {
-            let mut fan_out = 0; // Outgoing dependencies (row)
-            let mut fan_in = 0; // Incoming dependencies (column)
+            let mut unique_connections = 0; // Number of distinct components connected to
+            let mut total_rel_types = 0; // Total relationship type instances
 
             for j in 0..n {
-                if i != j {
-                    if !self.matrix[i][j].is_empty() {
-                        fan_out += self.matrix[i][j].count();
-                    }
-                    if !self.matrix[j][i].is_empty() {
-                        fan_in += self.matrix[j][i].count();
-                    }
+                if i != j && !self.matrix[i][j].is_empty() {
+                    unique_connections += 1;
+                    total_rel_types += self.matrix[i][j].count();
                 }
             }
 
-            // For symmetric DSM, fan_in == fan_out, so we use total connections
-            let total_connections = fan_out; // Since symmetric
-            let max_possible = (n - 1) * 4; // 4 relationship types max per cell (M, T, P, R)
+            let max_possible = n - 1; // Maximum unique component connections
             let coupling_coefficient = if max_possible > 0 {
-                (total_connections as f64) / (max_possible as f64)
+                (unique_connections as f64) / (max_possible as f64)
             } else {
                 0.0
             };
 
             metrics.push(CouplingMetrics {
                 component_idx: i,
-                fan_in,
-                fan_out,
-                total: total_connections,
+                unique_connections,
+                total_rel_types,
                 coupling_coefficient,
-                is_hub: fan_in > 0 && fan_out > 0 && total_connections >= n - 1,
+                // Hub: connected to majority of other components
+                is_hub: unique_connections > (n - 1) / 2,
             });
         }
 
         metrics
     }
 
-    /// Detect dependency cycles (strongly connected components with size > 1)
-    fn detect_cycles(&self) -> Vec<Vec<usize>> {
-        let n = self.components.len();
-        if n == 0 {
-            return vec![];
-        }
-
-        // For symmetric DSM, any connected component with >1 elements forms a "cycle"
-        // In the sense that changes propagate bidirectionally
+    /// Identify change propagation groups (connected components with size > 1)
+    ///
+    /// In a symmetric DSM (physical interfaces), any connected group of components
+    /// forms a change propagation path — a change to one component may affect all others
+    /// in the group. Larger groups indicate higher change risk.
+    fn detect_propagation_groups(&self) -> Vec<Vec<usize>> {
         let clusters = self.identify_clusters();
-
-        // Filter to clusters with more than one component (actual cycles)
         clusters.into_iter().filter(|c| c.len() > 1).collect()
     }
 }
@@ -311,11 +299,10 @@ impl Dsm {
 #[derive(Debug)]
 pub struct CouplingMetrics {
     pub component_idx: usize,
-    pub fan_in: usize,
-    pub fan_out: usize,
-    pub total: usize,
+    pub unique_connections: usize,
+    pub total_rel_types: usize,
     pub coupling_coefficient: f64,
-    pub is_hub: bool, // High connectivity in both directions
+    pub is_hub: bool, // Connected to majority of other components
 }
 
 pub fn run(args: DsmArgs, global: &GlobalOpts) -> Result<()> {
@@ -401,7 +388,7 @@ struct DisplayOptions {
 
 fn get_assembly_components(
     cache: &EntityCache,
-    project: &Project,
+    _project: &Project,
     asm_id: &str,
 ) -> Result<Vec<DsmComponent>> {
     // Resolve assembly ID
@@ -409,35 +396,28 @@ fn get_assembly_components(
         .resolve_short_id(asm_id)
         .unwrap_or_else(|| asm_id.to_string());
 
-    // Find the assembly file and load it
-    let asm_dir = project.root().join("bom/assemblies");
-    let mut components = Vec::new();
+    // Use cache's recursive BOM traversal (handles subassemblies and cycles)
+    let component_ids = cache.get_bom_components(&resolved_id);
 
-    if asm_dir.exists() {
-        for entry in fs::read_dir(&asm_dir).into_diagnostic()?.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yaml") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(asm) = serde_yml::from_str::<serde_json::Value>(&content) {
-                        let file_asm_id = asm.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        if file_asm_id == resolved_id {
-                            // Found the assembly - extract BOM component IDs
-                            if let Some(bom) = asm.get("bom").and_then(|v| v.as_array()) {
-                                for item in bom {
-                                    if let Some(comp_id) =
-                                        item.get("component_id").and_then(|v| v.as_str())
-                                    {
-                                        if let Some(cmp) = get_component_info(cache, comp_id) {
-                                            components.push(cmp);
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
+    // Build a lookup of all components
+    let all_components: HashMap<String, _> = cache
+        .list_components(None, None, None, None, None, None)
+        .into_iter()
+        .map(|c| (c.id.clone(), c))
+        .collect();
+
+    let mut components = Vec::new();
+    for cmp_id in component_ids {
+        if let Some(cmp) = all_components.get(&cmp_id) {
+            let short_id = cache
+                .get_short_id(&cmp.id)
+                .unwrap_or_else(|| format_short_id_str(&cmp.id));
+            components.push(DsmComponent {
+                id: cmp.id.clone(),
+                short_id,
+                title: cmp.title.clone(),
+                part_number: cmp.part_number.clone(),
+            });
         }
     }
 
@@ -463,54 +443,33 @@ fn get_all_components(cache: &EntityCache) -> Result<Vec<DsmComponent>> {
     Ok(components)
 }
 
-fn get_component_info(cache: &EntityCache, id: &str) -> Option<DsmComponent> {
-    // Try to get from cache list
-    let components = cache.list_components(None, None, None, None, None, None);
-    for cmp in components {
-        if cmp.id == id {
-            let short_id = cache
-                .get_short_id(&cmp.id)
-                .unwrap_or_else(|| format_short_id_str(&cmp.id));
-            return Some(DsmComponent {
-                id: cmp.id,
-                short_id,
-                title: cmp.title,
-                part_number: cmp.part_number,
-            });
-        }
-    }
-    None
-}
-
 fn add_mate_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()> {
-    // Build feature-to-component lookup from cache (no directory walk)
-    let features = cache.list_features(None, None, None, None, None, None);
-    let feature_to_component: HashMap<String, String> = features
-        .into_iter()
-        .map(|f| (f.id, f.component_id))
-        .collect();
+    // Build feature-to-component lookup from cache
+    let feature_to_component = cache.get_all_features();
 
-    // Load mates from cache and extract feature relationships
+    // Load mates from cache
     let mates = cache.list_entities(&tdt_core::core::cache::EntityFilter {
         prefix: Some(tdt_core::core::identity::EntityPrefix::Mate),
         ..Default::default()
     });
 
     for mate_entity in mates {
-        // Parse the mate file to get feature_a and feature_b
-        if let Ok(content) = fs::read_to_string(&mate_entity.file_path) {
-            if let Ok(mate) = serde_yml::from_str::<serde_json::Value>(&content) {
-                // Get component IDs from mate via feature_a and feature_b
-                let comp_a =
-                    get_component_from_feature_field(&mate, "feature_a", &feature_to_component);
-                let comp_b =
-                    get_component_from_feature_field(&mate, "feature_b", &feature_to_component);
+        // Use cached links: MATE → FEAT via "feature_a" and "feature_b" link types
+        let feat_a_ids = cache.get_links_from_of_type(&mate_entity.id, "feature_a");
+        let feat_b_ids = cache.get_links_from_of_type(&mate_entity.id, "feature_b");
 
-                if let (Some(cmp1), Some(cmp2)) = (comp_a, comp_b) {
-                    if cmp1 != cmp2 {
-                        dsm.add_relationship(&cmp1, &cmp2, RelationType::Mate);
-                    }
-                }
+        let comp_a = feat_a_ids
+            .first()
+            .and_then(|feat_id| feature_to_component.get(feat_id))
+            .map(|f| f.component_id.clone());
+        let comp_b = feat_b_ids
+            .first()
+            .and_then(|feat_id| feature_to_component.get(feat_id))
+            .map(|f| f.component_id.clone());
+
+        if let (Some(cmp1), Some(cmp2)) = (comp_a, comp_b) {
+            if cmp1 != cmp2 {
+                dsm.add_relationship(&cmp1, &cmp2, RelationType::Mate);
             }
         }
     }
@@ -518,95 +477,40 @@ fn add_mate_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()> {
     Ok(())
 }
 
-/// Extract component ID from a mate's feature field (feature_a or feature_b)
-fn get_component_from_feature_field(
-    mate: &serde_json::Value,
-    field: &str,
-    feature_to_component: &HashMap<String, String>,
-) -> Option<String> {
-    let feat = mate.get(field)?;
-
-    // Format 1: Simple string "FEAT-xxx"
-    if let Some(feat_id) = feat.as_str() {
-        return feature_to_component.get(feat_id).cloned();
-    }
-
-    // Format 2: Object with component_id directly
-    if let Some(comp_id) = feat.get("component_id").and_then(|v| v.as_str()) {
-        return Some(comp_id.to_string());
-    }
-
-    // Format 3: Object with id field - look up from feature files
-    if let Some(feat_id) = feat.get("id").and_then(|v| v.as_str()) {
-        return feature_to_component.get(feat_id).cloned();
-    }
-
-    None
-}
-
 fn add_tolerance_relationships(cache: &EntityCache, dsm: &mut Dsm) -> Result<()> {
-    // Build feature-to-component lookup from cache (no directory walk)
-    let features = cache.list_features(None, None, None, None, None, None);
-    let feature_to_component: HashMap<String, String> = features
-        .into_iter()
-        .map(|f| (f.id, f.component_id))
-        .collect();
+    // Build feature-to-component lookup from cache
+    let feature_to_component = cache.get_all_features();
 
-    // Load tolerance stackups from cache and extract component relationships
+    // Load tolerance stackups from cache
     let stackups = cache.list_entities(&tdt_core::core::cache::EntityFilter {
         prefix: Some(tdt_core::core::identity::EntityPrefix::Tol),
         ..Default::default()
     });
 
     for stackup_entity in stackups {
-        // Parse the stackup file to get contributors
-        if let Ok(content) = fs::read_to_string(&stackup_entity.file_path) {
-            if let Ok(stackup) = serde_yml::from_str::<serde_json::Value>(&content) {
-                // Collect all unique components in the stackup
-                let mut stackup_components: Vec<String> = Vec::new();
+        // Use cached links: TOL → FEAT via "contributor[N]" link types
+        let all_links = cache.get_links_from(&stackup_entity.id);
 
-                if let Some(contributors) = stackup.get("contributors").and_then(|c| c.as_array()) {
-                    for contrib in contributors {
-                        let comp_id = if let Some(feat_id) =
-                            contrib.get("feature_id").and_then(|v| v.as_str())
-                        {
-                            // Simple feature_id format - look up from cache
-                            feature_to_component.get(feat_id).cloned()
-                        } else if let Some(feature) = contrib.get("feature") {
-                            // Nested feature object
-                            if let Some(cid) = feature.get("component_id").and_then(|v| v.as_str())
-                            {
-                                // Has component_id directly
-                                Some(cid.to_string())
-                            } else if let Some(feat_id) = feature.get("id").and_then(|v| v.as_str())
-                            {
-                                // Only has feature id - look up component
-                                feature_to_component.get(feat_id).cloned()
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-
-                        if let Some(cid) = comp_id {
-                            if !stackup_components.contains(&cid) {
-                                stackup_components.push(cid);
-                            }
-                        }
+        // Collect unique components from contributor feature links
+        let mut stackup_components: Vec<String> = Vec::new();
+        for link in &all_links {
+            if link.link_type.starts_with("contributor[") {
+                if let Some(feat) = feature_to_component.get(&link.target_id) {
+                    if !stackup_components.contains(&feat.component_id) {
+                        stackup_components.push(feat.component_id.clone());
                     }
                 }
+            }
+        }
 
-                // Create relationships for all pairs in the stackup
-                for i in 0..stackup_components.len() {
-                    for j in (i + 1)..stackup_components.len() {
-                        dsm.add_relationship(
-                            &stackup_components[i],
-                            &stackup_components[j],
-                            RelationType::Tolerance,
-                        );
-                    }
-                }
+        // Create relationships for all component pairs in the stackup
+        for i in 0..stackup_components.len() {
+            for j in (i + 1)..stackup_components.len() {
+                dsm.add_relationship(
+                    &stackup_components[i],
+                    &stackup_components[j],
+                    RelationType::Tolerance,
+                );
             }
         }
     }
@@ -716,10 +620,9 @@ fn output_table(dsm: &Dsm, opts: &DisplayOptions) {
     let id_width = if opts.full_ids {
         dsm.components
             .iter()
-            .map(|c| c.id.len())
+            .map(|c| format_short_id_str(&c.id).len())
             .max()
             .unwrap_or(8)
-            .min(20)
     } else {
         dsm.components
             .iter()
@@ -729,18 +632,25 @@ fn output_table(dsm: &Dsm, opts: &DisplayOptions) {
             .max(6)
     };
 
-    // Calculate column width based on longest short ID + padding
-    let max_col_label = dsm
-        .components
-        .iter()
-        .map(|c| c.short_id.len())
-        .max()
-        .unwrap_or(5);
+    // Calculate column width based on longest label + padding
+    let max_col_label = if opts.full_ids {
+        dsm.components
+            .iter()
+            .map(|c| format_short_id_str(&c.id).len())
+            .max()
+            .unwrap_or(5)
+    } else {
+        dsm.components
+            .iter()
+            .map(|c| c.short_id.len())
+            .max()
+            .unwrap_or(5)
+    };
     let cell_width = (max_col_label + 2).max(7); // At least 7 chars per column
 
     // Detect cycles if requested
     let cycles = if opts.show_cycles {
-        dsm.detect_cycles()
+        dsm.detect_propagation_groups()
     } else {
         vec![]
     };
@@ -883,33 +793,38 @@ fn output_table(dsm: &Dsm, opts: &DisplayOptions) {
         }
     }
 
-    // Cycles (if enabled)
+    // Change propagation groups (if enabled)
     if opts.show_cycles {
         println!();
         if cycles.is_empty() {
-            println!("{}: None detected", style("Dependency Cycles").bold());
+            println!(
+                "{}: All components are independent",
+                style("Change Propagation").bold()
+            );
         } else {
             println!(
-                "{}: {} cycle group(s) detected",
-                style("Dependency Cycles").bold().red(),
+                "{}: {} group(s) detected",
+                style("Change Propagation").bold().red(),
                 cycles.len()
             );
-            for (i, cycle) in cycles.iter().enumerate() {
-                let names: Vec<_> = cycle
+            for (i, group) in cycles.iter().enumerate() {
+                let names: Vec<_> = group
                     .iter()
                     .map(|&idx| dsm.components[idx].short_id.clone())
                     .collect();
                 println!(
-                    "  {} {}: {}",
-                    style("Cycle").red(),
+                    "  {} {}: {} ({} components)",
+                    style("Group").red(),
                     i + 1,
-                    names.join(" <-> ")
+                    names.join(", "),
+                    names.len()
                 );
             }
             println!();
             println!(
                 "  {}",
-                style("Components in cycles have bidirectional dependencies").dim()
+                style("A change to any component in a group may affect all others in that group")
+                    .dim()
             );
         }
     }
@@ -929,10 +844,10 @@ fn output_metrics(dsm: &Dsm) {
 
     // Header
     println!(
-        "  {:<12} {:>8} {:>8} {:>8} {:>12}",
-        "Component", "Fan-in", "Fan-out", "Total", "Coupling %"
+        "  {:<12} {:>12} {:>12} {:>12}",
+        "Component", "Connections", "Rel Types", "Coupling %"
     );
-    println!("  {:-<12} {:->8} {:->8} {:->8} {:->12}", "", "", "", "", "");
+    println!("  {:-<12} {:->12} {:->12} {:->12}", "", "", "", "");
 
     // Metrics for each component
     for m in &metrics {
@@ -940,19 +855,20 @@ fn output_metrics(dsm: &Dsm) {
         let coupling_pct = format!("{:.1}%", m.coupling_coefficient * 100.0);
 
         let hub_marker = if m.is_hub {
-            style(" ★").yellow().to_string()
+            style(" hub").yellow().to_string()
         } else {
             String::new()
         };
 
         println!(
-            "  {:<12} {:>8} {:>8} {:>8} {:>12}{}",
-            cmp.short_id, m.fan_in, m.fan_out, m.total, coupling_pct, hub_marker
+            "  {:<12} {:>12} {:>12} {:>12}{}",
+            cmp.short_id, m.unique_connections, m.total_rel_types, coupling_pct, hub_marker
         );
     }
 
     // Summary stats
-    let total_connections: usize = metrics.iter().map(|m| m.total).sum();
+    // Each unique connection is counted in both components, so divide by 2
+    let total_unique: usize = metrics.iter().map(|m| m.unique_connections).sum::<usize>() / 2;
     let avg_coupling: f64 =
         metrics.iter().map(|m| m.coupling_coefficient).sum::<f64>() / metrics.len() as f64;
     let hubs: Vec<_> = metrics
@@ -963,13 +879,13 @@ fn output_metrics(dsm: &Dsm) {
 
     println!();
     println!(
-        "  Total connections: {} | Avg coupling: {:.1}%",
-        total_connections / 2, // Divide by 2 since symmetric
+        "  Total unique connections: {} | Avg coupling: {:.1}%",
+        total_unique,
         avg_coupling * 100.0
     );
     if !hubs.is_empty() {
         println!(
-            "  {} {} (high connectivity)",
+            "  {} {} (connected to majority of components)",
             style("Hubs:").yellow(),
             hubs.join(", ")
         );
@@ -1029,7 +945,7 @@ fn output_dot(dsm: &Dsm, opts: &DisplayOptions) {
 
     // Detect cycles for highlighting
     let cycles = if opts.show_cycles {
-        dsm.detect_cycles()
+        dsm.detect_propagation_groups()
     } else {
         vec![]
     };
@@ -1097,9 +1013,8 @@ fn output_json(dsm: &Dsm, opts: &DisplayOptions) {
 
         if let Some(ref m) = metrics {
             cmp_json["metrics"] = serde_json::json!({
-                "fan_in": m[i].fan_in,
-                "fan_out": m[i].fan_out,
-                "total": m[i].total,
+                "unique_connections": m[i].unique_connections,
+                "total_rel_types": m[i].total_rel_types,
                 "coupling_coefficient": m[i].coupling_coefficient,
                 "is_hub": m[i].is_hub,
             });
@@ -1132,18 +1047,18 @@ fn output_json(dsm: &Dsm, opts: &DisplayOptions) {
         "matrix_size": n,
     });
 
-    // Add cycles if requested
+    // Add change propagation groups if requested
     if opts.show_cycles {
-        let cycles = dsm.detect_cycles();
-        let cycle_json: Vec<Vec<String>> = cycles
+        let groups = dsm.detect_propagation_groups();
+        let groups_json: Vec<Vec<String>> = groups
             .iter()
-            .map(|c| {
-                c.iter()
+            .map(|g| {
+                g.iter()
                     .map(|&idx| dsm.components[idx].short_id.clone())
                     .collect()
             })
             .collect();
-        output["cycles"] = serde_json::json!(cycle_json);
+        output["propagation_groups"] = serde_json::json!(groups_json);
     }
 
     println!(

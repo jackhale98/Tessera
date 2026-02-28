@@ -50,11 +50,15 @@ impl RejectArgs {
         // Check if workflow is enabled
         if !config.workflow.enabled {
             bail!(
-                "Workflow features are not enabled.\n\
-                 Add the following to .tdt/config.yaml:\n\n\
-                 workflow:\n\
-                 \x20 enabled: true\n\
-                 \x20 provider: github  # or gitlab, or none"
+                "Workflow features are not enabled.\n\n\
+                 Enable with:\n\
+                 \x20 tdt config set workflow.enabled true\n\
+                 \x20 tdt config set workflow.provider github  # or: gitlab, none\n\n\
+                 Or add to .tdt/config.yaml:\n\
+                 \x20 workflow:\n\
+                 \x20   enabled: true\n\
+                 \x20   provider: github\n\n\
+                 Run 'tdt config keys' to see all workflow options."
             );
         }
 

@@ -215,27 +215,6 @@
     "links": {
       "type": "object",
       "properties": {
-        "requirements": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "IDs of requirements this component satisfies"
-        },
-        "processes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "IDs of processes used to manufacture this component"
-        },
-        "tests": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "IDs of tests for this component"
-        },
         "risks": {
           "type": "array",
           "items": {

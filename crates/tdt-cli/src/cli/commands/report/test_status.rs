@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tabled::{builder::Builder, settings::Style};
 
-use crate::cli::helpers::{format_date_local, truncate_str};
+use crate::cli::helpers::format_date_local;
 use crate::cli::GlobalOpts;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -19,6 +19,10 @@ pub struct TestStatusArgs {
     /// Output to file instead of stdout
     #[arg(long, short = 'f')]
     pub file: Option<PathBuf>,
+
+    /// Show full entity IDs instead of short aliases
+    #[arg(long)]
+    pub full_ids: bool,
 }
 
 pub fn run(args: TestStatusArgs, _global: &GlobalOpts) -> Result<()> {
@@ -255,12 +259,16 @@ pub fn run(args: TestStatusArgs, _global: &GlobalOpts) -> Result<()> {
         let mut failures = Builder::default();
         failures.push_record(["Test ID", "Title", "Type", "Level", "Execution Date"]);
         for (test, result) in &recent_failures {
-            let test_short = short_ids
-                .get_short_id(&test.id.to_string())
-                .unwrap_or_else(|| test.id.to_string());
+            let test_short = if args.full_ids {
+                test.id.to_string()
+            } else {
+                short_ids
+                    .get_short_id(&test.id.to_string())
+                    .unwrap_or_else(|| test.id.to_string())
+            };
             failures.push_record([
                 test_short,
-                truncate_str(&test.title, 30).to_string(),
+                test.title.clone(),
                 test.test_type.to_string(),
                 test.test_level
                     .map(|l| l.to_string())

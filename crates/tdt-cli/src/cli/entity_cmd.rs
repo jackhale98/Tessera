@@ -281,6 +281,17 @@ pub fn output_new_entity(
                     );
                 }
             }
+
+            let schema_type = id.prefix().as_str().to_lowercase();
+            println!(
+                "   {} {}",
+                style("?").dim(),
+                style(format!(
+                    "See all fields: tdt schema show {}",
+                    schema_type
+                ))
+                .dim()
+            );
         }
     }
 }

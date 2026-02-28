@@ -112,9 +112,7 @@ Results are execution records of test protocols. They capture the outcome of run
 |-------|------|-------------|
 | `links.test` | EntityId | ID of the test protocol (same as test_id) |
 | `links.actions` | array[EntityId] | IDs of action items from this result |
-| `links.component` | EntityId | Component that was tested |
-| `links.assembly` | EntityId | Assembly that was tested |
-| `links.ncrs` | array[EntityId] | NCRs created from this result |
+| `links.created_ncr` | EntityId | NCR created from a failed test result |
 
 ## Verdicts
 

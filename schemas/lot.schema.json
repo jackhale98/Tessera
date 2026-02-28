@@ -194,6 +194,52 @@
       },
       "description": "Process execution records (DHR compliant)"
     },
+    "wi_step_executions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["work_instruction", "step_number"],
+        "properties": {
+          "work_instruction": { "type": "string", "description": "Work instruction ID (WORK-xxx)" },
+          "step_number": { "type": "integer", "minimum": 1, "description": "Step number within the work instruction" },
+          "operator": { "type": ["string", "null"], "description": "Operator who performed the step" },
+          "operator_email": { "type": ["string", "null"], "description": "Operator email" },
+          "operator_signature_verified": { "type": ["boolean", "null"], "description": "Whether operator signature was verified (21 CFR Part 11)" },
+          "signing_key": { "type": ["string", "null"], "description": "Signing key ID (GPG/SSH)" },
+          "completed_at": { "type": ["string", "null"], "format": "date-time", "description": "Completion timestamp" },
+          "data": { "type": "object", "additionalProperties": true, "description": "Collected data from step data_field requirements" },
+          "equipment_used": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "serial_number": { "type": ["string", "null"] }
+              }
+            },
+            "description": "Equipment used with serial numbers for traceability"
+          },
+          "approval_status": { "type": ["string", "null"], "enum": ["not_required", "pending", "approved", "rejected", null] },
+          "approvals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "approver": { "type": "string" },
+                "role": { "type": ["string", "null"] },
+                "timestamp": { "type": "string", "format": "date-time" },
+                "comment": { "type": ["string", "null"] },
+                "signature_verified": { "type": ["boolean", "null"] },
+                "signing_key": { "type": ["string", "null"] }
+              },
+              "required": ["approver", "timestamp"]
+            },
+            "description": "Step-level approval records"
+          }
+        }
+      },
+      "description": "Per-step work instruction execution records (granular DHR tracking)"
+    },
     "notes": {
       "type": ["string", "null"],
       "description": "Production notes"

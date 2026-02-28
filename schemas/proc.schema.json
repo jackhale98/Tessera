@@ -138,11 +138,6 @@
           "items": { "type": "string" },
           "description": "IDs of components produced by this process"
         },
-        "requirements": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "IDs of requirements this process implements"
-        },
         "supplier": {
           "type": ["string", "null"],
           "description": "Supplier ID if process is outsourced"

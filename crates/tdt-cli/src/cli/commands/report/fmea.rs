@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tabled::{builder::Builder, settings::Style};
 
-use crate::cli::helpers::truncate_str;
 use crate::cli::GlobalOpts;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -31,6 +30,10 @@ pub struct FmeaArgs {
     /// Only show process risks
     #[arg(long)]
     pub process_only: bool,
+
+    /// Show full entity IDs instead of short aliases
+    #[arg(long)]
+    pub full_ids: bool,
 }
 
 pub fn run(args: FmeaArgs, _global: &GlobalOpts) -> Result<()> {
@@ -104,13 +107,16 @@ pub fn run(args: FmeaArgs, _global: &GlobalOpts) -> Result<()> {
     let mut overdue_rows: Vec<OverdueRow> = Vec::new();
 
     for risk in &risks {
-        let risk_short = short_ids
-            .get_short_id(&risk.id.to_string())
-            .unwrap_or_else(|| risk.id.to_string());
-        let failure_mode =
-            truncate_str(risk.failure_mode.as_deref().unwrap_or("-"), 20).to_string();
-        let cause = truncate_str(risk.cause.as_deref().unwrap_or("-"), 15).to_string();
-        let effect = truncate_str(risk.effect.as_deref().unwrap_or("-"), 15).to_string();
+        let risk_id_display = if args.full_ids {
+            risk.id.to_string()
+        } else {
+            short_ids
+                .get_short_id(&risk.id.to_string())
+                .unwrap_or_else(|| risk.id.to_string())
+        };
+        let failure_mode = risk.failure_mode.as_deref().unwrap_or("-").to_string();
+        let cause = risk.cause.as_deref().unwrap_or("-").to_string();
+        let effect = risk.effect.as_deref().unwrap_or("-").to_string();
         let s = risk.severity.map_or("-".to_string(), |v| v.to_string());
         let o = risk.occurrence.map_or("-".to_string(), |v| v.to_string());
         let d = risk.detection.map_or("-".to_string(), |v| v.to_string());
@@ -136,9 +142,8 @@ pub fn run(args: FmeaArgs, _global: &GlobalOpts) -> Result<()> {
                 let reduction = init_rpn as i32 - current_rpn as i32;
                 if reduction != 0 {
                     reduction_rows.push(ReductionRow {
-                        id: risk_short.clone(),
-                        failure_mode: truncate_str(risk.failure_mode.as_deref().unwrap_or("-"), 25)
-                            .to_string(),
+                        id: risk_id_display.clone(),
+                        failure_mode: risk.failure_mode.as_deref().unwrap_or("-").to_string(),
                         initial_rpn: init_rpn,
                         current_rpn,
                         reduction,
@@ -154,8 +159,8 @@ pub fn run(args: FmeaArgs, _global: &GlobalOpts) -> Result<()> {
                 status == MitigationStatus::Completed || status == MitigationStatus::Verified;
 
             mitigation_rows.push(MitigationRow {
-                risk_id: risk_short.clone(),
-                action: truncate_str(&mit.action, 30).to_string(),
+                risk_id: risk_id_display.clone(),
+                action: mit.action.clone(),
                 mit_type: mit
                     .mitigation_type
                     .map(|t| format!("{:?}", t).to_lowercase())
@@ -174,8 +179,8 @@ pub fn run(args: FmeaArgs, _global: &GlobalOpts) -> Result<()> {
                     if due < today {
                         let days_overdue = (today - due).num_days();
                         overdue_rows.push(OverdueRow {
-                            risk_id: risk_short.clone(),
-                            action: truncate_str(&mit.action, 30).to_string(),
+                            risk_id: risk_id_display.clone(),
+                            action: mit.action.clone(),
                             owner: mit.owner.as_deref().unwrap_or("-").to_string(),
                             due_date: due.to_string(),
                             days_overdue,
@@ -190,7 +195,7 @@ pub fn run(args: FmeaArgs, _global: &GlobalOpts) -> Result<()> {
         }
 
         rows.push(FmeaRow {
-            id: risk_short,
+            id: risk_id_display,
             failure_mode,
             cause,
             effect,

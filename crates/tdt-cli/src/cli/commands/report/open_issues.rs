@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tabled::{builder::Builder, settings::Style};
 
-use crate::cli::helpers::truncate_str;
 use crate::cli::GlobalOpts;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
@@ -21,6 +20,10 @@ pub struct OpenIssuesArgs {
     /// Output to file instead of stdout
     #[arg(long, short = 'f')]
     pub file: Option<PathBuf>,
+
+    /// Show full entity IDs instead of short aliases
+    #[arg(long)]
+    pub full_ids: bool,
 }
 
 pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
@@ -134,9 +137,13 @@ pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
         });
 
         for ncr in &sorted_ncrs {
-            let ncr_short = short_ids
-                .get_short_id(&ncr.id.to_string())
-                .unwrap_or_else(|| ncr.id.to_string());
+            let ncr_short = if args.full_ids {
+                ncr.id.to_string()
+            } else {
+                short_ids
+                    .get_short_id(&ncr.id.to_string())
+                    .unwrap_or_else(|| ncr.id.to_string())
+            };
 
             let days_open = calc_days_open(ncr)
                 .map(|d| {
@@ -165,7 +172,7 @@ pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
 
             ncr_table.push_record([
                 ncr_short,
-                truncate_str(&ncr.title, 25).to_string(),
+                ncr.title.clone(),
                 ncr.severity.to_string(),
                 days_open,
                 cost,
@@ -203,13 +210,17 @@ pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
         action_table.push_record(["CAPA ID", "Action", "Owner", "Due Date", "Days Overdue"]);
 
         for (capa, action, days_overdue) in &overdue_actions {
-            let capa_short = short_ids
-                .get_short_id(&capa.id.to_string())
-                .unwrap_or_else(|| capa.id.to_string());
+            let capa_short = if args.full_ids {
+                capa.id.to_string()
+            } else {
+                short_ids
+                    .get_short_id(&capa.id.to_string())
+                    .unwrap_or_else(|| capa.id.to_string())
+            };
 
             action_table.push_record([
                 capa_short,
-                truncate_str(&action.description, 30).to_string(),
+                action.description.clone(),
                 action.owner.as_deref().unwrap_or("-").to_string(),
                 action
                     .due_date
@@ -227,9 +238,13 @@ pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
         let mut capa_table = Builder::default();
         capa_table.push_record(["ID", "Title", "Type", "Status", "Open Actions"]);
         for capa in &open_capas {
-            let capa_short = short_ids
-                .get_short_id(&capa.id.to_string())
-                .unwrap_or_else(|| capa.id.to_string());
+            let capa_short = if args.full_ids {
+                capa.id.to_string()
+            } else {
+                short_ids
+                    .get_short_id(&capa.id.to_string())
+                    .unwrap_or_else(|| capa.id.to_string())
+            };
 
             let open_action_count = capa
                 .actions
@@ -241,7 +256,7 @@ pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
 
             capa_table.push_record([
                 capa_short,
-                truncate_str(&capa.title, 25).to_string(),
+                capa.title.clone(),
                 capa.capa_type.to_string(),
                 capa.capa_status.to_string(),
                 open_action_count.to_string(),
@@ -256,12 +271,16 @@ pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
         let mut test_table = Builder::default();
         test_table.push_record(["ID", "Title", "Type"]);
         for test in &failed_tests {
-            let test_short = short_ids
-                .get_short_id(&test.id.to_string())
-                .unwrap_or_else(|| test.id.to_string());
+            let test_short = if args.full_ids {
+                test.id.to_string()
+            } else {
+                short_ids
+                    .get_short_id(&test.id.to_string())
+                    .unwrap_or_else(|| test.id.to_string())
+            };
             test_table.push_record([
                 test_short,
-                truncate_str(&test.title, 40).to_string(),
+                test.title.clone(),
                 test.test_type.to_string(),
             ]);
         }
