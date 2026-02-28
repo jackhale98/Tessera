@@ -1575,7 +1575,7 @@ fn run_run(args: RunArgs, global: &GlobalOpts) -> Result<()> {
             // Default step result based on overall verdict
             let step_result = match verdict {
                 Verdict::Pass => StepResult::Pass,
-                Verdict::Fail => StepResult::Pass, // User will mark specific failures
+                Verdict::Fail => StepResult::Fail,
                 Verdict::Conditional => StepResult::Pass,
                 Verdict::Incomplete => StepResult::Skip,
                 Verdict::NotApplicable => StepResult::NotApplicable,

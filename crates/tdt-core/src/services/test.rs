@@ -771,7 +771,7 @@ impl<'a> TestService<'a> {
             .map(|step| {
                 let step_result = match input.verdict {
                     Verdict::Pass => StepResult::Pass,
-                    Verdict::Fail => StepResult::Pass, // User will mark specific failures
+                    Verdict::Fail => StepResult::Fail,
                     Verdict::Conditional => StepResult::Pass,
                     Verdict::Incomplete => StepResult::Skip,
                     Verdict::NotApplicable => StepResult::NotApplicable,

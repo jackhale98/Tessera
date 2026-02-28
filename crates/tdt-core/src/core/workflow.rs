@@ -172,6 +172,12 @@ pub enum WorkflowError {
     #[error("Duplicate approval not allowed: {approver} has already approved")]
     DuplicateApprover { approver: String },
 
+    #[error("Entity already released by {released_by} at {released_at}")]
+    AlreadyReleased {
+        released_by: String,
+        released_at: String,
+    },
+
     #[error("Failed to parse YAML: {message}")]
     YamlError { message: String },
 
@@ -471,7 +477,9 @@ pub fn record_approval_ext(
                                 .and_then(|v| v.as_str())
                             {
                                 if existing_name.eq_ignore_ascii_case(&options.approver) {
-                                    return Ok(());
+                                    return Err(WorkflowError::DuplicateApprover {
+                                        approver: options.approver.clone(),
+                                    });
                                 }
                             }
                         }
@@ -672,12 +680,28 @@ pub fn record_rejection(
 }
 
 /// Record a release in an entity's YAML file.
+/// Returns an error if the entity has already been released.
 pub fn record_release(file_path: &Path, releaser: &str) -> Result<(), WorkflowError> {
     let mut doc = read_yaml(file_path)?;
 
     let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
         message: "Expected YAML mapping".to_string(),
     })?;
+
+    // Check if already released
+    if let Some(existing_by) = map
+        .get(serde_yml::Value::String("released_by".to_string()))
+        .and_then(|v| v.as_str())
+    {
+        let existing_at = map
+            .get(serde_yml::Value::String("released_at".to_string()))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        return Err(WorkflowError::AlreadyReleased {
+            released_by: existing_by.to_string(),
+            released_at: existing_at.to_string(),
+        });
+    }
 
     map.insert(
         serde_yml::Value::String("status".to_string()),
@@ -1168,8 +1192,13 @@ status: review
         };
         record_approval_ext(&file, &options1, Some(&requirements)).unwrap();
 
-        // Duplicate approval by jsmith (only counts as 1)
-        record_approval_ext(&file, &options1, Some(&requirements)).unwrap();
+        // Duplicate approval by jsmith should return error
+        let result = record_approval_ext(&file, &options1, Some(&requirements));
+        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(WorkflowError::DuplicateApprover { .. })),
+            "Expected DuplicateApprover error"
+        );
 
         // Should still be in review (only 1 unique approver)
         let contents = std::fs::read_to_string(&file).unwrap();

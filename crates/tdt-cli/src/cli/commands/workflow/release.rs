@@ -262,8 +262,30 @@ impl ReleaseArgs {
         };
 
         if self.sign {
-            git.commit_signed(&commit_message).into_diagnostic()?;
-            println!("  Committed (GPG signed): \"{}\"", commit_message);
+            let commit_hash = git.commit_signed(&commit_message).into_diagnostic()?;
+
+            // Verify the signature — failure is fatal when signing is requested
+            match git.verify_commit_signature(&commit_hash) {
+                Ok(Some(signer)) => {
+                    println!("  Committed (GPG signed): \"{}\"", commit_message);
+                    if self.verbose {
+                        eprintln!("  Signature verified: {}", signer);
+                    }
+                }
+                Ok(None) => {
+                    bail!(
+                        "Commit was not signed despite --sign flag.\n\
+                         Ensure GPG signing is configured: git config --global user.signingkey <KEY_ID>"
+                    );
+                }
+                Err(e) => {
+                    bail!(
+                        "Signature verification failed: {}\n\
+                         The commit was created but its signature could not be verified.",
+                        e
+                    );
+                }
+            }
         } else {
             git.commit(&commit_message).into_diagnostic()?;
             println!("  Committed: \"{}\"", commit_message);

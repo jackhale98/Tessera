@@ -619,14 +619,26 @@ impl ApproveArgs {
             };
 
             if self.sign {
-                println!("  Committed (GPG signed): \"{}\"", commit_message);
-
-                // Verify the signature and show key info
-                if self.verbose {
-                    match git.verify_commit_signature(&commit_hash) {
-                        Ok(Some(signer)) => eprintln!("  Signature verified: {}", signer),
-                        Ok(None) => eprintln!("  Warning: Commit was not signed"),
-                        Err(e) => eprintln!("  Warning: Signature verification failed: {}", e),
+                // Verify the signature — failure is fatal when signing is requested
+                match git.verify_commit_signature(&commit_hash) {
+                    Ok(Some(signer)) => {
+                        println!("  Committed (GPG signed): \"{}\"", commit_message);
+                        if self.verbose {
+                            eprintln!("  Signature verified: {}", signer);
+                        }
+                    }
+                    Ok(None) => {
+                        bail!(
+                            "Commit was not signed despite --sign flag.\n\
+                             Ensure GPG signing is configured: git config --global user.signingkey <KEY_ID>"
+                        );
+                    }
+                    Err(e) => {
+                        bail!(
+                            "Signature verification failed: {}\n\
+                             The commit was created but its signature could not be verified.",
+                            e
+                        );
                     }
                 }
             } else {
