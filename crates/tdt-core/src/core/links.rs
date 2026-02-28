@@ -238,7 +238,9 @@ pub fn get_reciprocal_link_type(
         // === "process" link: many entities -> PROC (reciprocal depends on source) ===
         ("process", EntityPrefix::Proc, EntityPrefix::Risk) => Some("risks".to_string()),
         ("process", EntityPrefix::Proc, EntityPrefix::Ctrl) => Some("controls".to_string()),
-        ("process", EntityPrefix::Proc, EntityPrefix::Work) => Some("work_instructions".to_string()),
+        ("process", EntityPrefix::Proc, EntityPrefix::Work) => {
+            Some("work_instructions".to_string())
+        }
         // Ncr -> PROC: no reciprocal on PROC
         ("process", EntityPrefix::Proc, _) => None,
 
