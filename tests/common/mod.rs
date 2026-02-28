@@ -218,3 +218,99 @@ pub fn create_test_hazard(tmp: &TempDir, title: &str, category: &str) -> String 
         .map(|s| s.trim_end_matches("...").to_string())
         .unwrap_or_default()
 }
+
+/// Helper to create a test process
+pub fn create_test_process(tmp: &TempDir, title: &str, proc_type: &str) -> String {
+    let output = tdt()
+        .current_dir(tmp.path())
+        .args([
+            "proc",
+            "new",
+            "--title",
+            title,
+            "--type",
+            proc_type,
+            "--project",
+            "TestProject",
+            "--no-edit",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find(|l| l.contains("PROC-"))
+        .and_then(|l| l.split_whitespace().find(|w| w.starts_with("PROC-")))
+        .map(|s| s.trim_end_matches("...").to_string())
+        .unwrap_or_default()
+}
+
+/// Helper to create a test control
+pub fn create_test_control(tmp: &TempDir, title: &str) -> String {
+    let output = tdt()
+        .current_dir(tmp.path())
+        .args(["ctrl", "new", "--title", title, "--no-edit"])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find(|l| l.contains("CTRL-"))
+        .and_then(|l| l.split_whitespace().find(|w| w.starts_with("CTRL-")))
+        .map(|s| s.trim_end_matches("...").to_string())
+        .unwrap_or_default()
+}
+
+/// Helper to create a test NCR
+pub fn create_test_ncr(tmp: &TempDir, title: &str) -> String {
+    let output = tdt()
+        .current_dir(tmp.path())
+        .args([
+            "ncr",
+            "new",
+            "--title",
+            title,
+            "--type",
+            "internal",
+            "--severity",
+            "major",
+            "--no-edit",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find(|l| l.contains("NCR-"))
+        .and_then(|l| l.split_whitespace().find(|w| w.starts_with("NCR-")))
+        .map(|s| s.trim_end_matches("...").to_string())
+        .unwrap_or_default()
+}
+
+/// Helper to create a test CAPA
+pub fn create_test_capa(tmp: &TempDir, title: &str) -> String {
+    let output = tdt()
+        .current_dir(tmp.path())
+        .args([
+            "capa",
+            "new",
+            "--title",
+            title,
+            "--type",
+            "corrective",
+            "--no-edit",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find(|l| l.contains("CAPA-"))
+        .and_then(|l| l.split_whitespace().find(|w| w.starts_with("CAPA-")))
+        .map(|s| s.trim_end_matches("...").to_string())
+        .unwrap_or_default()
+}

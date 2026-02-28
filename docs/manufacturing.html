@@ -874,40 +874,25 @@
               <div class="code-header"><span class="code-lang">bash</span></div>
               <pre><code><span class="comment"># Create a CNC machining process</span>
 <span class="cmd">tdt proc new</span> --title <span class="string">"CNC Housing Machining"</span> \
-  --process-type machining \
-  --operation-number <span class="number">10</span> \
-  --no-edit
+  -T machining --op-number <span class="string">"OP-010"</span> --no-edit
 
 <span class="comment"># Create an assembly process</span>
 <span class="cmd">tdt proc new</span> --title <span class="string">"Final Assembly"</span> \
-  --process-type assembly \
-  --operation-number <span class="number">20</span> \
-  --no-edit
+  -T assembly --op-number <span class="string">"OP-020"</span> --no-edit
 
 <span class="comment"># Create an inspection process</span>
 <span class="cmd">tdt proc new</span> --title <span class="string">"Final Inspection"</span> \
-  --process-type inspection \
-  --operation-number <span class="number">30</span> \
-  --no-edit</code></pre>
+  -T inspection --op-number <span class="string">"OP-030"</span> --no-edit</code></pre>
             </div>
 
             <h3>Add Equipment and Parameters</h3>
 
+            <p>Equipment, parameters, and other detailed fields are added by editing the YAML directly:</p>
+
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Add equipment to the machining process</span>
-<span class="cmd">tdt proc add-equipment</span> PROC@1 \
-  --name <span class="string">"Haas VF-2SS"</span> \
-  --equipment-type <span class="string">"CNC Mill"</span> \
-  --calibration-required
-
-<span class="comment"># Add process parameters</span>
-<span class="cmd">tdt proc add-param</span> PROC@1 \
-  --name <span class="string">"Spindle Speed"</span> \
-  --target <span class="number">8000</span> \
-  --unit <span class="string">"RPM"</span> \
-  --min <span class="number">7500</span> \
-  --max <span class="number">8500</span></code></pre>
+              <pre><code><span class="comment"># Open process in your editor to add equipment and parameters</span>
+<span class="cmd">tdt proc edit</span> PROC@1</code></pre>
             </div>
 
             <h3>Process YAML Structure</h3>
@@ -920,15 +905,15 @@
 <span class="key">title</span>: <span class="string">"CNC Housing Machining"</span>
 <span class="key">status</span>: <span class="value">active</span>
 <span class="key">process_type</span>: <span class="value">machining</span>
-<span class="key">operation_number</span>: <span class="number">10</span>
+<span class="key">operation_number</span>: <span class="string">"OP-010"</span>
 <span class="key">equipment</span>:
   - <span class="key">name</span>: <span class="string">"Haas VF-2SS"</span>
-    <span class="key">equipment_type</span>: <span class="string">"CNC Mill"</span>
-    <span class="key">calibration_required</span>: <span class="value">true</span>
+    <span class="key">equipment_id</span>: <span class="string">"EQ-001"</span>
+    <span class="key">capability</span>: <span class="string">"3-axis CNC mill"</span>
 <span class="key">parameters</span>:
   - <span class="key">name</span>: <span class="string">"Spindle Speed"</span>
-    <span class="key">target</span>: <span class="number">8000</span>
-    <span class="key">unit</span>: <span class="string">"RPM"</span>
+    <span class="key">value</span>: <span class="number">8000</span>
+    <span class="key">units</span>: <span class="string">"RPM"</span>
     <span class="key">min</span>: <span class="number">7500</span>
     <span class="key">max</span>: <span class="number">8500</span>
 <span class="key">links</span>:
@@ -950,11 +935,14 @@
                 <tbody>
                   <tr><td><code>machining</code></td><td>Material removal operations</td><td>CNC milling, turning, drilling</td></tr>
                   <tr><td><code>assembly</code></td><td>Joining components together</td><td>Mechanical assembly, soldering</td></tr>
-                  <tr><td><code>inspection</code></td><td>Measurement and verification</td><td>CMM, visual inspection, testing</td></tr>
+                  <tr><td><code>inspection</code></td><td>Measurement and verification</td><td>CMM, visual inspection</td></tr>
+                  <tr><td><code>test</code></td><td>Functional/performance testing</td><td>Burn-in, environmental testing</td></tr>
                   <tr><td><code>finishing</code></td><td>Surface treatment operations</td><td>Anodizing, painting, plating</td></tr>
-                  <tr><td><code>molding</code></td><td>Forming operations</td><td>Injection molding, casting</td></tr>
-                  <tr><td><code>testing</code></td><td>Functional/performance testing</td><td>Burn-in, environmental testing</td></tr>
                   <tr><td><code>packaging</code></td><td>Final packaging and labeling</td><td>Clean room packaging, labeling</td></tr>
+                  <tr><td><code>handling</code></td><td>Material handling and transport</td><td>Transfer, staging, storage</td></tr>
+                  <tr><td><code>heat_treat</code></td><td>Thermal processing</td><td>Hardening, annealing, tempering</td></tr>
+                  <tr><td><code>welding</code></td><td>Joining by fusion</td><td>TIG, MIG, spot welding</td></tr>
+                  <tr><td><code>coating</code></td><td>Surface coating operations</td><td>Powder coating, PVD, CVD</td></tr>
                 </tbody>
               </table>
             </div>
@@ -976,50 +964,25 @@
               <div class="code-header"><span class="code-lang">bash</span></div>
               <pre><code><span class="comment"># SPC control on a critical dimension</span>
 <span class="cmd">tdt ctrl new</span> --title <span class="string">"Housing Bore Diameter SPC"</span> \
-  --control-type spc \
-  --process PROC@1 \
-  --feature FEAT@1 \
-  --no-edit
+  -T spc -p PROC@1 --feature FEAT@1 --critical --no-edit
 
 <span class="comment"># 100% inspection on a safety-critical feature</span>
 <span class="cmd">tdt ctrl new</span> --title <span class="string">"Thread Depth Inspection"</span> \
-  --control-type inspection \
-  --process PROC@1 \
-  --no-edit
+  -T inspection -p PROC@1 --no-edit
 
 <span class="comment"># Poka-yoke (error-proofing) control</span>
 <span class="cmd">tdt ctrl new</span> --title <span class="string">"Orientation Pin Check"</span> \
-  --control-type poka_yoke \
-  --process PROC@2 \
-  --no-edit</code></pre>
+  -T poka-yoke -p PROC@2 --no-edit</code></pre>
             </div>
 
             <h3>Set Characteristic and Measurement Details</h3>
 
+            <p>After creation, use <code>tdt ctrl edit</code> to add characteristic, measurement, sampling, and reaction plan details:</p>
+
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Define what is being measured</span>
-<span class="cmd">tdt ctrl set-characteristic</span> CTRL@1 \
-  --name <span class="string">"Bore Diameter"</span> \
-  --nominal <span class="number">25.000</span> \
-  --upper-tolerance <span class="number">0.013</span> \
-  --lower-tolerance <span class="number">-0.013</span> \
-  --unit <span class="string">"mm"</span> \
-  --classification critical
-
-<span class="comment"># Set measurement method and sampling</span>
-<span class="cmd">tdt ctrl set-measurement</span> CTRL@1 \
-  --method <span class="string">"Bore Gauge"</span> \
-  --gauge-id <span class="string">"BG-2024-001"</span> \
-  --gage-rr <span class="number">12.5</span>
-
-<span class="cmd">tdt ctrl set-sampling</span> CTRL@1 \
-  --frequency <span class="string">"Every 25 parts"</span> \
-  --size <span class="number">5</span>
-
-<span class="comment"># Define what happens when out of spec</span>
-<span class="cmd">tdt ctrl set-reaction</span> CTRL@1 \
-  --plan <span class="string">"Stop production. Quarantine suspect parts. Notify quality engineer. Perform 100% sort of last 25 parts."</span></code></pre>
+              <pre><code><span class="comment"># Open control in your editor to add measurement details</span>
+<span class="cmd">tdt ctrl edit</span> CTRL@1</code></pre>
             </div>
 
             <h3>Control Types</h3>
@@ -1032,9 +995,10 @@
                 <tbody>
                   <tr><td><code>spc</code></td><td>Statistical Process Control</td><td>High-volume, critical dimensions with natural variation</td></tr>
                   <tr><td><code>inspection</code></td><td>Direct measurement / go-no-go</td><td>Lower volume or simpler checks</td></tr>
-                  <tr><td><code>poka_yoke</code></td><td>Error-proofing mechanism</td><td>Prevent assembly errors (fixtures, sensors, guides)</td></tr>
+                  <tr><td><code>poka-yoke</code></td><td>Error-proofing mechanism</td><td>Prevent assembly errors (fixtures, sensors, guides)</td></tr>
                   <tr><td><code>visual</code></td><td>Visual inspection</td><td>Surface defects, cosmetic criteria, labeling</td></tr>
-                  <tr><td><code>functional_test</code></td><td>Functional verification</td><td>Go/no-go functional tests</td></tr>
+                  <tr><td><code>functional-test</code></td><td>Functional verification</td><td>Go/no-go functional tests</td></tr>
+                  <tr><td><code>attribute</code></td><td>Attribute check (pass/fail)</td><td>Go/no-go gauge, binary checks</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1050,17 +1014,18 @@
 <span class="key">characteristic</span>:
   <span class="key">name</span>: <span class="string">"Bore Diameter"</span>
   <span class="key">nominal</span>: <span class="number">25.000</span>
-  <span class="key">upper_tolerance</span>: <span class="number">0.013</span>
-  <span class="key">lower_tolerance</span>: <span class="number">-0.013</span>
-  <span class="key">unit</span>: <span class="string">"mm"</span>
-  <span class="key">classification</span>: <span class="value">critical</span>
+  <span class="key">upper_limit</span>: <span class="number">25.013</span>
+  <span class="key">lower_limit</span>: <span class="number">24.987</span>
+  <span class="key">units</span>: <span class="string">"mm"</span>
+  <span class="key">critical</span>: <span class="value">true</span>
 <span class="key">measurement</span>:
   <span class="key">method</span>: <span class="string">"Bore Gauge"</span>
-  <span class="key">gauge_id</span>: <span class="string">"BG-2024-001"</span>
-  <span class="key">gage_rr</span>: <span class="number">12.5</span>
+  <span class="key">equipment</span>: <span class="string">"BG-2024-001"</span>
+  <span class="key">gage_rr_percent</span>: <span class="number">12.5</span>
 <span class="key">sampling</span>:
+  <span class="key">type</span>: <span class="value">continuous</span>
   <span class="key">frequency</span>: <span class="string">"Every 25 parts"</span>
-  <span class="key">size</span>: <span class="number">5</span>
+  <span class="key">sample_size</span>: <span class="number">5</span>
 <span class="key">reaction_plan</span>: <span class="string">"Stop production. Quarantine suspect parts..."</span>
 <span class="key">links</span>:
   <span class="key">process</span>: <span class="value">PROC-01KC8FF...</span>
@@ -1069,7 +1034,7 @@
 
             <div class="info-box">
               <h4>Control Plans and PFMEA</h4>
-              <p>Controls are the bridge between your risk analysis (FMEA) and the shop floor. Link controls to risks with <code>tdt link add CTRL@1 --type mitigates RISK@1</code> to show which failure modes each control addresses.</p>
+              <p>Controls are the bridge between your risk analysis (FMEA) and the shop floor. Link controls to risks with <code>tdt link add CTRL@1 RISK@1</code> &mdash; TDT auto-infers the link type and updates both entities. Entity order doesn't matter.</p>
             </div>
           </section>
 
@@ -1091,24 +1056,12 @@
 
             <h3>Add Steps</h3>
 
+            <p>Steps are added by editing the work instruction YAML:</p>
+
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Add sequential steps with safety and tooling</span>
-<span class="cmd">tdt work add-step</span> WORK@1 \
-  --instruction <span class="string">"Load raw stock into vise. Verify material cert matches traveler."</span> \
-  --safety <span class="string">"Wear safety glasses. Verify vise is tight before cycle start."</span>
-
-<span class="cmd">tdt work add-step</span> WORK@1 \
-  --instruction <span class="string">"Run Program O1001. Monitor first article for chatter."</span> \
-  --tools <span class="string">"3/8 carbide end mill (TL-2024-042)"</span>
-
-<span class="cmd">tdt work add-step</span> WORK@1 \
-  --instruction <span class="string">"Deburr all edges. Inspect per CTRL@1."</span> \
-  --tools <span class="string">"Deburring tool, bore gauge BG-2024-001"</span>
-
-<span class="cmd">tdt work add-step</span> WORK@1 \
-  --instruction <span class="string">"Clean part with IPA. Bag and tag with lot number."</span> \
-  --materials <span class="string">"Isopropyl alcohol, anti-static bags, lot labels"</span></code></pre>
+              <pre><code><span class="comment"># Open work instruction in your editor to add steps</span>
+<span class="cmd">tdt work edit</span> WORK@1</code></pre>
             </div>
 
             <h3>Work Instruction YAML Structure</h3>
@@ -1118,24 +1071,24 @@
               <pre><code><span class="key">id</span>: <span class="value">WORK-01KC8FF2X3Y4Z5A6B7C8D9E0</span>
 <span class="key">title</span>: <span class="string">"CNC Housing Machining Procedure"</span>
 <span class="key">status</span>: <span class="value">active</span>
-<span class="key">steps</span>:
-  - <span class="key">step_number</span>: <span class="number">1</span>
-    <span class="key">instruction</span>: <span class="string">"Load raw stock into vise..."</span>
-    <span class="key">safety</span>: <span class="string">"Wear safety glasses..."</span>
-  - <span class="key">step_number</span>: <span class="number">2</span>
-    <span class="key">instruction</span>: <span class="string">"Run Program O1001..."</span>
-    <span class="key">tools</span>:
-      - <span class="string">"3/8 carbide end mill (TL-2024-042)"</span>
-  - <span class="key">step_number</span>: <span class="number">3</span>
-    <span class="key">instruction</span>: <span class="string">"Deburr all edges..."</span>
-    <span class="key">tools</span>:
-      - <span class="string">"Deburring tool"</span>
-      - <span class="string">"bore gauge BG-2024-001"</span>
-  - <span class="key">step_number</span>: <span class="number">4</span>
-    <span class="key">instruction</span>: <span class="string">"Clean part with IPA..."</span>
-    <span class="key">materials</span>:
-      - <span class="string">"Isopropyl alcohol"</span>
-      - <span class="string">"anti-static bags"</span>
+<span class="key">tools_required</span>:
+  - <span class="key">name</span>: <span class="string">"3/8 carbide end mill"</span>
+    <span class="key">part_number</span>: <span class="string">"TL-2024-042"</span>
+  - <span class="key">name</span>: <span class="string">"Deburring tool"</span>
+  - <span class="key">name</span>: <span class="string">"Bore gauge BG-2024-001"</span>
+<span class="key">materials_required</span>:
+  - <span class="key">name</span>: <span class="string">"Isopropyl alcohol"</span>
+  - <span class="key">name</span>: <span class="string">"Anti-static bags"</span>
+<span class="key">procedure</span>:
+  - <span class="key">step</span>: <span class="number">1</span>
+    <span class="key">action</span>: <span class="string">"Load raw stock into vise..."</span>
+    <span class="key">caution</span>: <span class="string">"Wear safety glasses and hearing protection"</span>
+  - <span class="key">step</span>: <span class="number">2</span>
+    <span class="key">action</span>: <span class="string">"Run Program O1001..."</span>
+  - <span class="key">step</span>: <span class="number">3</span>
+    <span class="key">action</span>: <span class="string">"Deburr all edges and verify bore diameter..."</span>
+  - <span class="key">step</span>: <span class="number">4</span>
+    <span class="key">action</span>: <span class="string">"Clean part with IPA and bag..."</span>
 <span class="key">links</span>:
   <span class="key">process</span>: <span class="value">PROC-01KC8FF...</span></code></pre>
             </div>
@@ -1166,32 +1119,63 @@
 
             <p>The <code>--from-routing</code> flag automatically populates the lot steps from the assembly's linked processes, ordered by operation number.</p>
 
-            <h3>Execute Lot Steps</h3>
+            <h3>Electronic Router Status</h3>
+
+            <p>Use <code>tdt lot router</code> to see the current step status, what's pending, and what needs approval:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Record step completion with operator signature</span>
-<span class="cmd">tdt lot execute-step</span> LOT@1 --step <span class="number">1</span> \
-  --operator <span class="string">"J. Smith"</span> \
-  --notes <span class="string">"First article approved. Cpk 1.67 on bore diameter."</span>
+              <pre><code><span class="comment"># View full router/traveler status</span>
+<span class="cmd">tdt lot router</span> LOT@1
 
-<span class="cmd">tdt lot execute-step</span> LOT@1 --step <span class="number">2</span> \
-  --operator <span class="string">"M. Chen"</span> \
-  --notes <span class="string">"Assembly complete. Torque values within spec."</span></code></pre>
+<span class="comment"># Show only pending steps</span>
+<span class="cmd">tdt lot router</span> LOT@1 --pending
+
+<span class="comment"># Show steps needing quality approval</span>
+<span class="cmd">tdt lot router</span> LOT@1 --approval-needed</code></pre>
             </div>
 
-            <h3>Lot Approval Workflow</h3>
+            <h3>Execute Work Instruction Steps</h3>
+
+            <p>The <code>tdt lot wi-step</code> command records step execution with operator identity, measurement data, equipment traceability, and optional electronic signature:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Submit lot for review</span>
-<span class="cmd">tdt lot submit</span> LOT@1
+              <pre><code><span class="comment"># Complete a work instruction step with operator sign-off</span>
+<span class="cmd">tdt lot wi-step</span> LOT@1 -w WORK@1 -s <span class="number">1</span> --complete \
+  -O <span class="string">"J. Smith"</span> --sign \
+  -d <span class="string">"bore_dia_mm=25.003"</span> \
+  -E <span class="string">"Bore Gauge=BG-2024-001"</span> \
+  -n <span class="string">"First article approved. Cpk 1.67 on bore diameter."</span>
 
-<span class="comment"># Approve the lot (quality role)</span>
-<span class="cmd">tdt lot approve</span> LOT@1 --approver <span class="string">"Quality Manager"</span>
+<span class="comment"># Complete step 2 with approval required</span>
+<span class="cmd">tdt lot wi-step</span> LOT@1 -w WORK@1 -s <span class="number">2</span> --complete \
+  -O <span class="string">"M. Chen"</span> --sign --require-approval \
+  -n <span class="string">"Assembly complete. Torque values within spec."</span></code></pre>
+            </div>
+
+            <h3>Step Approval and Lot Completion</h3>
+
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">bash</span></div>
+              <pre><code><span class="comment"># Approve a work instruction step (quality sign-off)</span>
+<span class="cmd">tdt lot approve</span> LOT@1 -w WORK@1 -s <span class="number">2</span> \
+  -r <span class="string">"quality"</span> --sign -c <span class="string">"Dimensions verified per CTRL@1"</span>
 
 <span class="comment"># Or reject with reason</span>
-<span class="cmd">tdt lot reject</span> LOT@1 --reason <span class="string">"Step 3 inspection data missing"</span></code></pre>
+<span class="cmd">tdt lot approve</span> LOT@1 -w WORK@1 -s <span class="number">2</span> --reject \
+  -c <span class="string">"Step 3 inspection data missing"</span>
+
+<span class="comment"># View all steps needing approval</span>
+<span class="cmd">tdt lot router</span> LOT@1 --approval-needed
+
+<span class="comment"># Complete the lot (with optional GPG-signed commit)</span>
+<span class="cmd">tdt lot complete</span> LOT@1 --sign</code></pre>
+            </div>
+
+            <div class="info-box">
+              <h4>Electronic Signatures</h4>
+              <p>The <code>--sign</code> flag marks step execution and approvals with an electronic signature flag for 21 CFR Part 11 compliance. For cryptographic integrity, enable git commit signing in your workflow config (<code>sign_commits: true</code>) — each step completion creates a GPG-signed git commit with a recorded SHA.</p>
             </div>
 
             <h3>Git-Based DHR</h3>
@@ -1201,10 +1185,10 @@
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
               <pre><code><span class="comment"># View lot history</span>
-<span class="cmd">git log</span> --oneline lots/LOT-01KC8FF*.pdt.yaml
+<span class="cmd">git log</span> --oneline manufacturing/lots/LOT-01KC8FF*.pdt.yaml
 
 <span class="comment"># See exactly what changed at each step</span>
-<span class="cmd">git diff</span> HEAD~1 lots/LOT-01KC8FF*.pdt.yaml</code></pre>
+<span class="cmd">git diff</span> HEAD~1 manufacturing/lots/LOT-01KC8FF*.pdt.yaml</code></pre>
             </div>
 
             <div class="info-box">
@@ -1225,40 +1209,30 @@
               <div class="code-header"><span class="code-lang">bash</span></div>
               <pre><code><span class="comment"># Temporary deviation (has expiration)</span>
 <span class="cmd">tdt dev new</span> --title <span class="string">"Alternate supplier for housing stock"</span> \
-  --deviation-type temporary \
-  --category material \
-  --risk-level low \
-  --no-edit
+  -T temporary -c material -R low --no-edit
 
 <span class="comment"># Permanent deviation (design change)</span>
 <span class="cmd">tdt dev new</span> --title <span class="string">"Increase bore tolerance to +/-0.025mm"</span> \
-  --deviation-type permanent \
-  --category dimensional \
-  --risk-level medium \
-  --no-edit</code></pre>
+  -T permanent -c specification -R medium --no-edit</code></pre>
             </div>
 
             <h3>Deviation Approval Workflow</h3>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Submit for approval</span>
-<span class="cmd">tdt dev submit</span> DEV@1
-
-<span class="comment"># Approve with expiration</span>
+              <pre><code><span class="comment"># Approve the deviation (engineering authorization)</span>
 <span class="cmd">tdt dev approve</span> DEV@1 \
-  --approver <span class="string">"Engineering Manager"</span> \
-  --expiration <span class="string">"2024-12-31"</span> \
-  --max-quantity <span class="number">500</span>
+  --approved-by <span class="string">"Engineering Manager"</span> \
+  -a engineering --activate
 
-<span class="comment"># Link to affected entities</span>
-<span class="cmd">tdt link add</span> DEV@1 --type affects PROC@1
-<span class="cmd">tdt link add</span> DEV@1 --type affects CMP@1</code></pre>
+<span class="comment"># Link to affected entities (order doesn't matter, both updated)</span>
+<span class="cmd">tdt link add</span> DEV@1 PROC@1
+<span class="cmd">tdt link add</span> DEV@1 CMP@1</code></pre>
             </div>
 
-            <div class="info-box.warning">
+            <div class="info-box warning">
               <h4>Expiration Tracking</h4>
-              <p>Temporary deviations have expiration dates. Use <code>tdt dev list --expiring</code> to find deviations approaching their expiration date. Expired deviations must be either extended or closed.</p>
+              <p>Temporary deviations have expiration dates. Use <code>tdt dev list --active</code> to find currently active deviations and monitor their expiration dates. Expired deviations must be either extended or closed.</p>
             </div>
           </section>
 
@@ -1274,48 +1248,31 @@
               <div class="code-header"><span class="code-lang">bash</span></div>
               <pre><code><span class="comment"># Internal NCR (caught in-house)</span>
 <span class="cmd">tdt ncr new</span> --title <span class="string">"Bore diameter out of spec on Lot 2024-037"</span> \
-  --ncr-type internal \
-  --severity major \
-  --category dimensional \
-  --component CMP@1 \
-  --process PROC@1 \
-  --no-edit
+  -T internal -S major -c dimensional \
+  -L <span class="string">"component:CMP@1"</span> -L <span class="string">"process:PROC@1"</span> --no-edit
 
 <span class="comment"># Supplier NCR</span>
 <span class="cmd">tdt ncr new</span> --title <span class="string">"Raw stock hardness below spec"</span> \
-  --ncr-type supplier \
-  --severity minor \
-  --category material \
-  --no-edit
+  -T supplier -S minor -c material --no-edit
 
 <span class="comment"># Customer complaint</span>
 <span class="cmd">tdt ncr new</span> --title <span class="string">"Field failure - housing crack"</span> \
-  --ncr-type customer \
-  --severity critical \
-  --no-edit</code></pre>
+  -T customer -S critical --no-edit</code></pre>
             </div>
 
             <h3>NCR Workflow</h3>
 
+            <p>Use <code>tdt ncr edit</code> to record containment, investigation, and root cause details in the YAML:</p>
+
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Record containment actions</span>
-<span class="cmd">tdt ncr set-containment</span> NCR@1 \
-  --action <span class="string">"Quarantined remaining 43 parts from Lot 2024-037"</span> \
-  --quantity-affected <span class="number">43</span>
+              <pre><code><span class="comment"># Edit NCR to add containment, investigation, and root cause</span>
+<span class="cmd">tdt ncr edit</span> NCR@1
 
-<span class="comment"># Record investigation findings</span>
-<span class="cmd">tdt ncr set-investigation</span> NCR@1 \
-  --root-cause <span class="string">"Tool wear exceeded limits. SPC chart showed trend starting at part 57."</span> \
-  --method <span class="string">"5-Why analysis"</span>
-
-<span class="comment"># Set disposition</span>
-<span class="cmd">tdt ncr set-disposition</span> NCR@1 \
-  --decision rework \
-  --instructions <span class="string">"Re-machine bore diameter on affected parts. 100% re-inspect."</span>
-
-<span class="comment"># Close the NCR</span>
-<span class="cmd">tdt ncr close</span> NCR@1</code></pre>
+<span class="comment"># Close the NCR with disposition and rationale</span>
+<span class="cmd">tdt ncr close</span> NCR@1 \
+  -d rework \
+  -r <span class="string">"Re-machine bore diameter on affected parts. 100% re-inspect."</span></code></pre>
             </div>
 
             <h3>NCR Severity Levels</h3>
@@ -1341,11 +1298,10 @@
                   <tr><th>Disposition</th><th>Description</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td><code>use_as_is</code></td><td>Accept the non-conforming material (requires engineering approval)</td></tr>
+                  <tr><td><code>use-as-is</code></td><td>Accept the non-conforming material (requires engineering approval)</td></tr>
                   <tr><td><code>rework</code></td><td>Repair to bring into conformance</td></tr>
                   <tr><td><code>scrap</code></td><td>Destroy or recycle the material</td></tr>
-                  <tr><td><code>return_to_supplier</code></td><td>Return to vendor for credit/replacement</td></tr>
-                  <tr><td><code>deviate</code></td><td>Accept under a formal deviation (creates DEV link)</td></tr>
+                  <tr><td><code>return</code></td><td>Return to vendor for credit/replacement</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1361,50 +1317,23 @@
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Corrective action (fix existing problem)</span>
+              <pre><code><span class="comment"># Corrective action linked to an NCR</span>
 <span class="cmd">tdt capa new</span> --title <span class="string">"Reduce bore diameter excursions"</span> \
-  --capa-type corrective \
-  --source NCR@1 \
-  --no-edit
+  -T corrective --ncr NCR@1 --no-edit
 
 <span class="comment"># Preventive action (prevent potential problem)</span>
 <span class="cmd">tdt capa new</span> --title <span class="string">"Add tool wear monitoring to all CNC processes"</span> \
-  --capa-type preventive \
-  --no-edit</code></pre>
+  -T preventive --no-edit</code></pre>
             </div>
 
-            <h3>Root Cause Analysis</h3>
+            <h3>Root Cause Analysis and Action Items</h3>
+
+            <p>Root cause analysis, action items, and detailed investigation are recorded by editing the CAPA YAML:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Perform 5-Why analysis</span>
-<span class="cmd">tdt capa set-root-cause</span> CAPA@1 \
-  --method <span class="string">"5-Why"</span> \
-  --description <span class="string">"Why bore OOS? Tool wear. Why? No wear monitoring. Why? Not in control plan. Why? Process not reviewed after volume increase. Why? No trigger for process review on volume changes."</span></code></pre>
-            </div>
-
-            <h3>Action Items</h3>
-
-            <div class="code-block">
-              <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Add corrective actions</span>
-<span class="cmd">tdt capa add-action</span> CAPA@1 \
-  --description <span class="string">"Add tool wear sensor to Haas VF-2SS"</span> \
-  --owner <span class="string">"Maintenance"</span> \
-  --due-date <span class="string">"2024-04-15"</span>
-
-<span class="cmd">tdt capa add-action</span> CAPA@1 \
-  --description <span class="string">"Update CTRL@1 to include tool life tracking"</span> \
-  --owner <span class="string">"Quality"</span> \
-  --due-date <span class="string">"2024-04-01"</span>
-
-<span class="cmd">tdt capa add-action</span> CAPA@1 \
-  --description <span class="string">"Add volume-change trigger to process review SOP"</span> \
-  --owner <span class="string">"Engineering"</span> \
-  --due-date <span class="string">"2024-04-30"</span>
-
-<span class="comment"># Complete an action</span>
-<span class="cmd">tdt capa complete-action</span> CAPA@1 --action <span class="number">1</span></code></pre>
+              <pre><code><span class="comment"># Edit CAPA to add root cause analysis, actions, and owners</span>
+<span class="cmd">tdt capa edit</span> CAPA@1</code></pre>
             </div>
 
             <h3>Close the Loop</h3>
@@ -1413,26 +1342,18 @@
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Link CAPA to the entities it modifies</span>
-<span class="cmd">tdt link add</span> CAPA@1 --type modifies PROC@1
-<span class="cmd">tdt link add</span> CAPA@1 --type modifies CTRL@1
+              <pre><code><span class="comment"># Link CAPA to the entities it modifies (explicit link types)</span>
+<span class="comment"># Entity order doesn't matter - both entities are updated</span>
+<span class="cmd">tdt link add</span> CAPA@1 PROC@1 processes_modified
+<span class="cmd">tdt link add</span> CAPA@1 CTRL@1 controls_added
 
-<span class="comment"># Update the control plan based on CAPA findings</span>
-<span class="cmd">tdt ctrl set-sampling</span> CTRL@1 \
-  --frequency <span class="string">"Every 10 parts"</span> \
-  --size <span class="number">5</span>
+<span class="comment"># Update the control plan and process via edit</span>
+<span class="cmd">tdt ctrl edit</span> CTRL@1   <span class="comment"># Tighten sampling frequency</span>
+<span class="cmd">tdt proc edit</span> PROC@1   <span class="comment"># Add tool life parameter</span>
 
-<span class="comment"># Add new process parameter for tool wear monitoring</span>
-<span class="cmd">tdt proc add-param</span> PROC@1 \
-  --name <span class="string">"Tool Life Limit"</span> \
-  --target <span class="number">200</span> \
-  --unit <span class="string">"parts"</span> \
-  --max <span class="number">250</span>
-
-<span class="comment"># Verify effectiveness and close</span>
-<span class="cmd">tdt capa set-effectiveness</span> CAPA@1 --rating effective \
-  --notes <span class="string">"30-day monitoring shows zero bore excursions since implementation."</span>
-<span class="cmd">tdt capa close</span> CAPA@1</code></pre>
+<span class="comment"># Verify effectiveness</span>
+<span class="cmd">tdt capa verify</span> CAPA@1 -r effective \
+  -e <span class="string">"30-day monitoring shows zero bore excursions since implementation."</span></code></pre>
             </div>
 
             <div class="info-box">
@@ -1454,15 +1375,15 @@
               <pre><code><span class="cmd">tdt trace from</span> PROC@1</code></pre>
             </div>
 
-            <div class="terminal-output"><span class="highlight">PROC-01KC8FF...</span> CNC Housing Machining
-<span class="header">  Forward links:</span>
-    <span class="success">produces</span> &rarr; CMP-01KC8FF... (Housing)
-    <span class="success">controls</span> &rarr; CTRL-01KC8FF... (Housing Bore Diameter SPC)
-    <span class="success">controls</span> &rarr; CTRL-02KC8FF... (Thread Depth Inspection)
-    <span class="success">work_instructions</span> &rarr; WORK-01KC8FF... (CNC Housing Machining Procedure)
-<span class="header">  Backward links:</span>
-    <span class="warning">CAPA</span> &larr; CAPA-01KC8FF... (Reduce bore diameter excursions) [modifies]
-    <span class="warning">LOT</span> &larr; LOT-01KC8FF... (Housing Lot 2024-037) [process]</div>
+            <div class="terminal-output"><span class="highlight">&rarr; Tracing from: PROC@1 - CNC Housing Machining</span>
+
+<span class="header">Entities that depend on this:</span>
+  <span class="success">&larr; CTRL@1</span> - Housing Bore Diameter SPC
+    <span class="success">&larr; RISK@3</span> - Bore diameter out of tolerance
+  <span class="success">&larr; CTRL@2</span> - Thread Depth Inspection
+  <span class="success">&larr; WORK@1</span> - CNC Housing Machining Procedure
+  <span class="success">&larr; LOT@1</span> - Housing Lot 2024-037
+  <span class="warning">&larr; CAPA@1</span> - Reduce bore diameter excursions</div>
 
             <h3>Trace from an NCR</h3>
 
@@ -1471,34 +1392,32 @@
               <pre><code><span class="cmd">tdt trace from</span> NCR@1</code></pre>
             </div>
 
-            <div class="terminal-output"><span class="highlight">NCR-01KC8FF...</span> Bore diameter out of spec on Lot 2024-037
-<span class="header">  Forward links:</span>
-    <span class="success">component</span> &rarr; CMP-01KC8FF... (Housing)
-    <span class="success">process</span> &rarr; PROC-01KC8FF... (CNC Housing Machining)
-<span class="header">  Backward links:</span>
-    <span class="warning">CAPA</span> &larr; CAPA-01KC8FF... (Reduce bore diameter excursions) [source]</div>
+            <div class="terminal-output"><span class="highlight">&rarr; Tracing from: NCR@1 - Bore diameter out of spec on Lot 2024-037</span>
 
-            <h3>Full Chain Trace</h3>
+<span class="header">Entities that depend on this:</span>
+  <span class="warning">&larr; CAPA@1</span> - Reduce bore diameter excursions</div>
 
-            <p>Follow the complete chain from a CAPA back through the control loop:</p>
+            <h3>Trace from a CAPA</h3>
+
+            <p>Follow the links from a CAPA back through the control loop:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Trace the full dependency chain</span>
-<span class="cmd">tdt trace chain</span> CAPA@1</code></pre>
+              <pre><code><span class="comment"># Trace forward and backward links from a CAPA</span>
+<span class="cmd">tdt trace from</span> CAPA@1</code></pre>
             </div>
 
-            <div class="terminal-output"><span class="highlight">CAPA-01KC8FF...</span> Reduce bore diameter excursions
-  &rarr; <span class="error">source:</span> NCR-01KC8FF... (Bore diameter out of spec)
-    &rarr; <span class="success">component:</span> CMP-01KC8FF... (Housing)
-    &rarr; <span class="success">process:</span> PROC-01KC8FF... (CNC Housing Machining)
-      &rarr; <span class="success">controls:</span> CTRL-01KC8FF... (Housing Bore Diameter SPC)
-      &rarr; <span class="success">work_instructions:</span> WORK-01KC8FF... (CNC Machining Procedure)
-  &rarr; <span class="warning">modifies:</span> PROC-01KC8FF... (CNC Housing Machining)
-  &rarr; <span class="warning">modifies:</span> CTRL-01KC8FF... (Housing Bore Diameter SPC)</div>
+            <div class="terminal-output"><span class="highlight">&rarr; Tracing from: CAPA@1 - Reduce bore diameter excursions</span>
+
+<span class="header">Entities that depend on this:</span>
+  <span class="success">&larr; NCR@1</span> - Bore diameter out of spec on Lot 2024-037
+  <span class="success">&larr; PROC@1</span> - CNC Housing Machining
+  <span class="success">&larr; CTRL@1</span> - Housing Bore Diameter SPC</div>
+
+            <p>Use <code>tdt trace from</code> to see what depends on an entity, and <code>tdt trace to</code> to see what an entity depends on. Use <code>tdt trace matrix</code> for a complete traceability overview, and <code>tdt trace orphans</code> to find unlinked entities.</p>
 
             <div class="tip-box">
-              <strong>Tip:</strong> Use <code>tdt trace chain --format dot</code> to export the trace as a Graphviz DOT file for visual dependency graphs.
+              <strong>Tip:</strong> <code>tdt trace from X</code> shows entities that depend on X (incoming links). <code>tdt trace to X</code> shows what X depends on (outgoing links). The <code>tdt trace matrix</code> command generates a full traceability matrix across all entity types, and <code>tdt trace orphans</code> finds entities missing links.
             </div>
           </section>
 
@@ -1518,25 +1437,29 @@
 <span class="comment"># Include controls and work instructions</span>
 <span class="cmd">tdt proc flow</span> --controls --work-instructions
 
-<span class="comment"># Filter by product</span>
-<span class="cmd">tdt proc flow</span> --product ASM@1 --controls</code></pre>
+<span class="comment"># Filter to a specific process</span>
+<span class="cmd">tdt proc flow</span> --process PROC@1 --controls</code></pre>
             </div>
 
             <div class="terminal-output"><span class="header">Process Flow</span>
-<span class="header">============</span>
+<span class="header">────────────────────────────────────────────────────────────</span>
 
-<span class="highlight">OP 10</span>  <span class="success">CNC Housing Machining</span> [machining]
-         Controls: Housing Bore Diameter SPC (spc)
-                   Thread Depth Inspection (inspection)
-         Work:     CNC Housing Machining Procedure
+<span class="highlight">[OP-010]</span> <span class="success">CNC Housing Machining</span> (PROC@1)
+  │ Type: machining | Cycle: 15 min | Setup: 30 min
+  │ Equipment: Haas VF-2SS
+  │ Controls: <span class="warning">CTRL@1</span> "Housing Bore Diameter SPC"
+  │ Controls: <span class="warning">CTRL@2</span> "Thread Depth Inspection"
+  │ Work Inst: WORK@1 "CNC Housing Machining Procedure"
+  ▼
+<span class="highlight">[OP-020]</span> <span class="success">Final Assembly</span> (PROC@2)
+  │ Type: assembly
+  │ Controls: <span class="warning">CTRL@3</span> "Orientation Pin Check"
+  │ Work Inst: WORK@2 "Final Assembly Procedure"
+  ▼
+<span class="highlight">[OP-030]</span> <span class="success">Final Inspection</span> (PROC@3)
+  │ Type: inspection
 
-<span class="highlight">OP 20</span>  <span class="success">Final Assembly</span> [assembly]
-         Controls: Orientation Pin Check (poka_yoke)
-         Work:     Final Assembly Procedure
-
-<span class="highlight">OP 30</span>  <span class="success">Final Inspection</span> [inspection]
-         Controls: Visual Inspection (visual)
-                   Functional Test (functional_test)</div>
+3 processes in flow</div>
 
             <h3>List and Filter</h3>
 
@@ -1546,9 +1469,9 @@
 <span class="cmd">tdt proc list</span>                          <span class="comment"># All processes</span>
 <span class="cmd">tdt ctrl list</span> --process PROC@1          <span class="comment"># Controls for a process</span>
 <span class="cmd">tdt work list</span> --process PROC@1          <span class="comment"># Work instructions for a process</span>
-<span class="cmd">tdt lot list</span> --status in_progress       <span class="comment"># Active lots</span>
-<span class="cmd">tdt ncr list</span> --severity critical         <span class="comment"># Critical NCRs</span>
-<span class="cmd">tdt capa list</span> --status open              <span class="comment"># Open CAPAs</span>
+<span class="cmd">tdt lot list</span> --status in-progress       <span class="comment"># Active lots</span>
+<span class="cmd">tdt ncr list</span> -S critical                 <span class="comment"># Critical NCRs</span>
+<span class="cmd">tdt capa list</span> --open                     <span class="comment"># Open CAPAs</span>
 
 <span class="comment"># Validate manufacturing chain integrity</span>
 <span class="cmd">tdt validate</span></code></pre>

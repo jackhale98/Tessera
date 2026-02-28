@@ -73,7 +73,8 @@ pub fn infer_link_type(source_prefix: EntityPrefix, target_prefix: EntityPrefix)
         (EntityPrefix::Cmp, EntityPrefix::Risk) => Some("risks".to_string()),
         (EntityPrefix::Asm, EntityPrefix::Risk) => Some("risks".to_string()),
         (EntityPrefix::Proc, EntityPrefix::Risk) => Some("risks".to_string()),
-        (EntityPrefix::Ctrl, EntityPrefix::Risk) => Some("risks".to_string()),
+        // Controls mitigate risks (symmetric with Risk->Ctrl = mitigated_by)
+        (EntityPrefix::Ctrl, EntityPrefix::Risk) => Some("mitigates".to_string()),
         (EntityPrefix::Work, EntityPrefix::Risk) => Some("risks".to_string()),
 
         // Components/Assemblies linking to requirements
@@ -101,6 +102,9 @@ pub fn infer_link_type(source_prefix: EntityPrefix, target_prefix: EntityPrefix)
         // Processes linking to components/assemblies (produces)
         (EntityPrefix::Proc, EntityPrefix::Cmp) => Some("produces".to_string()),
         (EntityPrefix::Proc, EntityPrefix::Asm) => Some("produces".to_string()),
+
+        // Processes linking to controls
+        (EntityPrefix::Proc, EntityPrefix::Ctrl) => Some("controls".to_string()),
 
         // Controls linking to components and features
         (EntityPrefix::Ctrl, EntityPrefix::Cmp) => Some("component".to_string()),
@@ -161,107 +165,140 @@ pub fn infer_link_type(source_prefix: EntityPrefix, target_prefix: EntityPrefix)
     }
 }
 
-/// Get the reciprocal link type for a given forward link type and target entity prefix.
+/// Get the reciprocal link type for a given forward link type, target entity prefix,
+/// and source entity prefix.
 ///
 /// When entity A links to entity B, this function returns what field on B
-/// should link back to A (if any).
+/// should link back to A (if any). The `source_prefix` parameter is needed
+/// to disambiguate link type names that are reused across different source
+/// entity types (e.g., "component", "risks", "process" all have different
+/// reciprocals depending on what entity the link originates from).
 ///
 /// Returns None if no reciprocal link should be created.
-pub fn get_reciprocal_link_type(link_type: &str, target_prefix: EntityPrefix) -> Option<String> {
-    match (link_type, target_prefix) {
-        // REQ.verified_by -> TEST means TEST.verifies -> REQ
-        ("verified_by", EntityPrefix::Test) => Some("verifies".to_string()),
+pub fn get_reciprocal_link_type(
+    link_type: &str,
+    target_prefix: EntityPrefix,
+    source_prefix: EntityPrefix,
+) -> Option<String> {
+    match (link_type, target_prefix, source_prefix) {
+        // === Verification links ===
+        // REQ/RISK/HAZ.verified_by -> TEST/CTRL means TEST/CTRL.verifies -> source
+        ("verified_by", EntityPrefix::Test, _) => Some("verifies".to_string()),
+        ("verified_by", EntityPrefix::Ctrl, _) => Some("verifies".to_string()),
+        // TEST/CTRL.verifies -> REQ means REQ.verified_by -> source
+        ("verifies", EntityPrefix::Req, _) => Some("verified_by".to_string()),
 
-        // REQ.verified_by -> CTRL means CTRL.verifies -> REQ
-        ("verified_by", EntityPrefix::Ctrl) => Some("verifies".to_string()),
-
-        // REQ.satisfied_by -> REQ means bidirectional satisfaction
-        ("satisfied_by", EntityPrefix::Req) => Some("satisfied_by".to_string()),
-
+        // === Satisfaction links ===
+        // REQ.satisfied_by -> REQ (symmetric)
+        ("satisfied_by", EntityPrefix::Req, _) => Some("satisfied_by".to_string()),
         // REQ.satisfied_by -> CMP/ASM means CMP/ASM.requirements -> REQ
-        ("satisfied_by", EntityPrefix::Cmp) => Some("requirements".to_string()),
-        ("satisfied_by", EntityPrefix::Asm) => Some("requirements".to_string()),
+        ("satisfied_by", EntityPrefix::Cmp, _) => Some("requirements".to_string()),
+        ("satisfied_by", EntityPrefix::Asm, _) => Some("requirements".to_string()),
+        // CMP/ASM/PROC.requirements -> REQ means REQ.satisfied_by
+        ("requirements", EntityPrefix::Req, _) => Some("satisfied_by".to_string()),
 
-        // TEST.verifies -> REQ or CTRL.verifies -> REQ means REQ.verified_by
-        ("verifies", EntityPrefix::Req) => Some("verified_by".to_string()),
+        // === Requirement decomposition ===
+        ("derives_from", EntityPrefix::Req, _) => Some("derived_by".to_string()),
+        ("derived_by", EntityPrefix::Req, _) => Some("derives_from".to_string()),
 
-        // TEST/RSLT linking to component/assembly - reciprocal is tests array
-        ("component", EntityPrefix::Cmp) => Some("tests".to_string()),
-        ("assembly", EntityPrefix::Asm) => Some("tests".to_string()),
+        // === Requirement allocation ===
+        ("allocated_to", EntityPrefix::Feat, _) => Some("allocated_from".to_string()),
+        ("allocated_from", EntityPrefix::Req, _) => Some("allocated_to".to_string()),
 
-        // CMP/ASM.tests -> TEST means TEST.component or TEST.assembly (no reciprocal needed)
-        ("tests", EntityPrefix::Test) => None,
+        // === "risks" link: many entities -> RISK (reciprocal depends on source) ===
+        ("risks", EntityPrefix::Risk, EntityPrefix::Req) => Some("requirement".to_string()),
+        ("risks", EntityPrefix::Risk, EntityPrefix::Feat) => Some("affects".to_string()),
+        ("risks", EntityPrefix::Risk, EntityPrefix::Cmp) => Some("component".to_string()),
+        ("risks", EntityPrefix::Risk, EntityPrefix::Asm) => Some("assembly".to_string()),
+        ("risks", EntityPrefix::Risk, EntityPrefix::Proc) => Some("process".to_string()),
+        ("risks", EntityPrefix::Risk, EntityPrefix::Capa) => Some("related_to".to_string()),
+        // Ctrl/Work -> Risk: no clean reciprocal field on Risk
+        ("risks", EntityPrefix::Risk, _) => None,
 
-        // CMP/ASM.requirements -> REQ means REQ.satisfied_by -> CMP/ASM
-        ("requirements", EntityPrefix::Req) => Some("satisfied_by".to_string()),
+        // === RISK single-value links back to entities ===
+        ("requirement", EntityPrefix::Req, _) => Some("risks".to_string()),
+        ("affects", EntityPrefix::Feat, _) => Some("risks".to_string()),
+        ("affects", EntityPrefix::Cmp, _) => Some("risks".to_string()),
+        ("affects", EntityPrefix::Asm, _) => Some("risks".to_string()),
+        ("affects", EntityPrefix::Proc, _) => Some("risks".to_string()),
 
-        // CMP/ASM.processes -> PROC means PROC.produces -> CMP
-        ("processes", EntityPrefix::Proc) => Some("produces".to_string()),
-        ("produces", EntityPrefix::Cmp) => Some("processes".to_string()),
-        ("produces", EntityPrefix::Asm) => Some("processes".to_string()),
+        // === "component" link: many entities -> CMP (reciprocal depends on source) ===
+        ("component", EntityPrefix::Cmp, EntityPrefix::Test) => Some("tests".to_string()),
+        ("component", EntityPrefix::Cmp, EntityPrefix::Feat) => Some("features".to_string()),
+        ("component", EntityPrefix::Cmp, EntityPrefix::Risk) => Some("risks".to_string()),
+        // Rslt, Ctrl, Work, Ncr, Capa -> CMP: no reciprocal on CMP
+        ("component", EntityPrefix::Cmp, _) => None,
 
-        // RISK single-value links
-        ("requirement", EntityPrefix::Req) => Some("risks".to_string()),
-        ("component", EntityPrefix::Risk) => None, // RISK.component is single-value
-        ("assembly", EntityPrefix::Risk) => None,  // RISK.assembly is single-value
-        ("process", EntityPrefix::Proc) => Some("risks".to_string()),
+        // === "assembly" link: many entities -> ASM (reciprocal depends on source) ===
+        ("assembly", EntityPrefix::Asm, EntityPrefix::Test) => Some("tests".to_string()),
+        ("assembly", EntityPrefix::Asm, EntityPrefix::Risk) => Some("risks".to_string()),
+        // Rslt, Work -> ASM: no reciprocal on ASM
+        ("assembly", EntityPrefix::Asm, _) => None,
 
-        // RISK.mitigated_by -> CTRL means CTRL.mitigates -> RISK
-        ("mitigated_by", EntityPrefix::Ctrl) => Some("mitigates".to_string()),
+        // === "process" link: many entities -> PROC (reciprocal depends on source) ===
+        ("process", EntityPrefix::Proc, EntityPrefix::Risk) => Some("risks".to_string()),
+        ("process", EntityPrefix::Proc, EntityPrefix::Ctrl) => Some("controls".to_string()),
+        ("process", EntityPrefix::Proc, EntityPrefix::Work) => Some("work_instructions".to_string()),
+        // Ncr -> PROC: no reciprocal on PROC
+        ("process", EntityPrefix::Proc, _) => None,
 
-        // related_to is symmetric
-        ("related_to", _) => Some("related_to".to_string()),
+        // === Tests/Features/Processes arrays ===
+        ("tests", EntityPrefix::Test, EntityPrefix::Cmp) => Some("component".to_string()),
+        ("tests", EntityPrefix::Test, EntityPrefix::Asm) => Some("assembly".to_string()),
+        ("tests", EntityPrefix::Test, _) => None,
+        ("features", EntityPrefix::Feat, EntityPrefix::Cmp) => Some("component".to_string()),
+        ("features", EntityPrefix::Feat, _) => None,
+        ("processes", EntityPrefix::Proc, _) => Some("produces".to_string()),
+        ("produces", EntityPrefix::Cmp, _) => Some("processes".to_string()),
+        ("produces", EntityPrefix::Asm, _) => Some("processes".to_string()),
 
-        // capa link
-        ("capa", EntityPrefix::Capa) => Some("ncrs".to_string()),
+        // === Process child entities ===
+        ("controls", EntityPrefix::Ctrl, EntityPrefix::Proc) => Some("process".to_string()),
+        ("controls", EntityPrefix::Ctrl, _) => None,
+        ("work_instructions", EntityPrefix::Work, _) => Some("process".to_string()),
 
-        // Requirement decomposition: derives_from <-> derived_by
-        ("derives_from", EntityPrefix::Req) => Some("derived_by".to_string()),
-        ("derived_by", EntityPrefix::Req) => Some("derives_from".to_string()),
+        // === Mitigation ===
+        ("mitigated_by", EntityPrefix::Ctrl, _) => Some("mitigates".to_string()),
+        ("mitigates", EntityPrefix::Risk, _) => Some("mitigated_by".to_string()),
 
-        // Requirement allocation: allocated_to <-> allocated_from
-        ("allocated_to", EntityPrefix::Feat) => Some("allocated_from".to_string()),
-        ("allocated_from", EntityPrefix::Req) => Some("allocated_to".to_string()),
+        // === NCR / Result / CAPA chain ===
+        ("from_result", EntityPrefix::Rslt, _) => Some("ncrs".to_string()),
+        ("ncrs", EntityPrefix::Ncr, EntityPrefix::Rslt) => Some("from_result".to_string()),
+        ("ncrs", EntityPrefix::Ncr, EntityPrefix::Capa) => Some("capa".to_string()),
+        ("ncrs", EntityPrefix::Ncr, _) => None,
+        ("capa", EntityPrefix::Capa, _) => Some("ncrs".to_string()),
 
-        // REQ.risks -> RISK means RISK.requirement -> REQ
-        ("risks", EntityPrefix::Risk) => Some("requirement".to_string()),
+        // === CAPA -> Process/Control modifications ===
+        ("processes_modified", EntityPrefix::Proc, _) => Some("modified_by_capa".to_string()),
+        ("modified_by_capa", EntityPrefix::Capa, _) => Some("processes_modified".to_string()),
+        ("controls_added", EntityPrefix::Ctrl, _) => Some("added_by_capa".to_string()),
+        ("added_by_capa", EntityPrefix::Capa, _) => Some("controls_added".to_string()),
 
-        // RISK.affects -> target.risks
-        ("affects", EntityPrefix::Feat) => Some("risks".to_string()),
-        ("affects", EntityPrefix::Cmp) => Some("risks".to_string()),
-        ("affects", EntityPrefix::Asm) => Some("risks".to_string()),
-        ("affects", EntityPrefix::Proc) => Some("risks".to_string()),
+        // === Component supersession ===
+        ("replaces", EntityPrefix::Cmp, _) => Some("replaced_by".to_string()),
+        ("replaced_by", EntityPrefix::Cmp, _) => Some("replaces".to_string()),
+        ("interchangeable_with", EntityPrefix::Cmp, _) => Some("interchangeable_with".to_string()),
 
-        // Result -> NCR: from_result link
-        ("from_result", EntityPrefix::Rslt) => Some("ncrs".to_string()),
+        // === Symmetric ===
+        ("related_to", _, _) => Some("related_to".to_string()),
 
-        // NCR single-value links (component, supplier, process) - no reciprocals
-        ("supplier", _) => None, // Supplier doesn't link back to NCRs/CAPAs
+        // === Supplier (no reciprocal) ===
+        ("supplier", _, _) => None,
 
-        // CAPA -> Process/Control modifications
-        ("processes_modified", EntityPrefix::Proc) => Some("modified_by_capa".to_string()),
-        ("modified_by_capa", EntityPrefix::Capa) => Some("processes_modified".to_string()),
-        ("controls_added", EntityPrefix::Ctrl) => Some("added_by_capa".to_string()),
-        ("added_by_capa", EntityPrefix::Capa) => Some("controls_added".to_string()),
+        // === Hazard reciprocals ===
+        ("originates_from", EntityPrefix::Cmp, _) => Some("hazards".to_string()),
+        ("originates_from", EntityPrefix::Asm, _) => Some("hazards".to_string()),
+        ("hazards", EntityPrefix::Haz, _) => Some("originates_from".to_string()),
+        ("causes", EntityPrefix::Risk, _) => Some("caused_by".to_string()),
+        ("caused_by", EntityPrefix::Haz, _) => Some("causes".to_string()),
+        ("controlled_by", EntityPrefix::Ctrl, _) => Some("controls_hazard".to_string()),
+        ("controls_hazard", EntityPrefix::Haz, _) => Some("controlled_by".to_string()),
 
-        // Component supersession: replaces <-> replaced_by
-        ("replaces", EntityPrefix::Cmp) => Some("replaced_by".to_string()),
-        ("replaced_by", EntityPrefix::Cmp) => Some("replaces".to_string()),
-
-        // Component interchangeability is symmetric
-        ("interchangeable_with", EntityPrefix::Cmp) => Some("interchangeable_with".to_string()),
-
-        // Hazard reciprocals
-        ("originates_from", EntityPrefix::Cmp) => Some("hazards".to_string()),
-        ("originates_from", EntityPrefix::Asm) => Some("hazards".to_string()),
-        ("hazards", EntityPrefix::Haz) => Some("originates_from".to_string()),
-        ("causes", EntityPrefix::Risk) => Some("caused_by".to_string()),
-        ("caused_by", EntityPrefix::Haz) => Some("causes".to_string()),
-        ("controlled_by", EntityPrefix::Ctrl) => Some("controls_hazard".to_string()),
-        ("controls_hazard", EntityPrefix::Haz) => Some("controlled_by".to_string()),
-
-        // No reciprocal defined for other cases
-        (_, _) => None,
+        // === Fallback: try reverse inference ===
+        // If no explicit reciprocal is defined, check if the reverse direction
+        // has an inferred link type. This ensures new entity combinations added
+        // to infer_link_type automatically get reciprocals.
+        (_, _, _) => infer_link_type(target_prefix, source_prefix),
     }
 }
 
@@ -548,7 +585,7 @@ mod tests {
     #[test]
     fn test_reciprocal_verified_by() {
         assert_eq!(
-            get_reciprocal_link_type("verified_by", EntityPrefix::Test),
+            get_reciprocal_link_type("verified_by", EntityPrefix::Test, EntityPrefix::Req),
             Some("verifies".to_string())
         );
     }
@@ -556,9 +593,97 @@ mod tests {
     #[test]
     fn test_reciprocal_verifies() {
         assert_eq!(
-            get_reciprocal_link_type("verifies", EntityPrefix::Req),
+            get_reciprocal_link_type("verifies", EntityPrefix::Req, EntityPrefix::Test),
             Some("verified_by".to_string())
         );
+    }
+
+    #[test]
+    fn test_reciprocal_ncrs_from_capa() {
+        // CAPA.ncrs -> NCR should reciprocate as NCR.capa -> CAPA
+        assert_eq!(
+            get_reciprocal_link_type("ncrs", EntityPrefix::Ncr, EntityPrefix::Capa),
+            Some("capa".to_string())
+        );
+    }
+
+    #[test]
+    fn test_reciprocal_capa_from_ncr() {
+        // NCR.capa -> CAPA should reciprocate as CAPA.ncrs -> NCR
+        assert_eq!(
+            get_reciprocal_link_type("capa", EntityPrefix::Capa, EntityPrefix::Ncr),
+            Some("ncrs".to_string())
+        );
+    }
+
+    #[test]
+    fn test_reciprocal_risks_disambiguated_by_source() {
+        // CMP.risks -> RISK should reciprocate as RISK.component -> CMP
+        assert_eq!(
+            get_reciprocal_link_type("risks", EntityPrefix::Risk, EntityPrefix::Cmp),
+            Some("component".to_string())
+        );
+        // REQ.risks -> RISK should reciprocate as RISK.requirement -> REQ
+        assert_eq!(
+            get_reciprocal_link_type("risks", EntityPrefix::Risk, EntityPrefix::Req),
+            Some("requirement".to_string())
+        );
+        // FEAT.risks -> RISK should reciprocate as RISK.affects -> FEAT
+        assert_eq!(
+            get_reciprocal_link_type("risks", EntityPrefix::Risk, EntityPrefix::Feat),
+            Some("affects".to_string())
+        );
+        // PROC.risks -> RISK should reciprocate as RISK.process -> PROC
+        assert_eq!(
+            get_reciprocal_link_type("risks", EntityPrefix::Risk, EntityPrefix::Proc),
+            Some("process".to_string())
+        );
+    }
+
+    #[test]
+    fn test_reciprocal_component_disambiguated_by_source() {
+        // TEST.component -> CMP should reciprocate as CMP.tests -> TEST
+        assert_eq!(
+            get_reciprocal_link_type("component", EntityPrefix::Cmp, EntityPrefix::Test),
+            Some("tests".to_string())
+        );
+        // FEAT.component -> CMP should reciprocate as CMP.features -> FEAT
+        assert_eq!(
+            get_reciprocal_link_type("component", EntityPrefix::Cmp, EntityPrefix::Feat),
+            Some("features".to_string())
+        );
+    }
+
+    #[test]
+    fn test_reciprocal_process_disambiguated_by_source() {
+        // CTRL.process -> PROC should reciprocate as PROC.controls -> CTRL
+        assert_eq!(
+            get_reciprocal_link_type("process", EntityPrefix::Proc, EntityPrefix::Ctrl),
+            Some("controls".to_string())
+        );
+        // WORK.process -> PROC should reciprocate as PROC.work_instructions -> WORK
+        assert_eq!(
+            get_reciprocal_link_type("process", EntityPrefix::Proc, EntityPrefix::Work),
+            Some("work_instructions".to_string())
+        );
+    }
+
+    #[test]
+    fn test_order_symmetry_req_test() {
+        // infer(REQ, TEST) and infer(TEST, REQ) should be reciprocals
+        let forward = infer_link_type(EntityPrefix::Req, EntityPrefix::Test).unwrap();
+        let reverse = infer_link_type(EntityPrefix::Test, EntityPrefix::Req).unwrap();
+        assert_eq!(forward, "verified_by");
+        assert_eq!(reverse, "verifies");
+    }
+
+    #[test]
+    fn test_order_symmetry_ncr_capa() {
+        // infer(NCR, CAPA) and infer(CAPA, NCR) should be reciprocals
+        let forward = infer_link_type(EntityPrefix::Ncr, EntityPrefix::Capa).unwrap();
+        let reverse = infer_link_type(EntityPrefix::Capa, EntityPrefix::Ncr).unwrap();
+        assert_eq!(forward, "capa");
+        assert_eq!(reverse, "ncrs");
     }
 
     #[test]
@@ -567,5 +692,157 @@ mod tests {
             infer_link_type(EntityPrefix::Proc, EntityPrefix::Proc),
             Some("related_to".to_string())
         );
+    }
+
+    /// Comprehensive test: for every entity pair (A, B) in the inference table,
+    /// verify that when we infer a forward link type and look up its reciprocal,
+    /// we get the same result as inferring in the reverse direction (B, A).
+    /// This guarantees that `tdt link add A B` and `tdt link add B A` produce
+    /// identical final state on both entities.
+    #[test]
+    fn test_all_inferred_pairs_have_symmetric_reciprocals() {
+        use EntityPrefix::*;
+
+        // Every (source, target) pair defined in infer_link_type (excluding same-type)
+        let pairs: Vec<(EntityPrefix, EntityPrefix, &str)> = vec![
+            // Requirements
+            (Req, Test, "verified_by"),
+            (Req, Ctrl, "verified_by"),
+            (Req, Req, "derives_from"),
+            (Req, Feat, "allocated_to"),
+            (Req, Risk, "risks"),
+            (Req, Cmp, "satisfied_by"),
+            (Req, Asm, "satisfied_by"),
+            // Verification
+            (Test, Req, "verifies"),
+            (Ctrl, Req, "verifies"),
+            (Test, Cmp, "component"),
+            (Test, Asm, "assembly"),
+            // Results
+            (Rslt, Cmp, "component"),
+            (Rslt, Asm, "assembly"),
+            (Rslt, Ncr, "ncrs"),
+            // Risks
+            (Risk, Req, "requirement"),
+            (Risk, Cmp, "component"),
+            (Risk, Asm, "assembly"),
+            (Risk, Proc, "process"),
+            (Risk, Feat, "affects"),
+            (Risk, Test, "verified_by"),
+            (Risk, Ctrl, "mitigated_by"),
+            (Risk, Haz, "caused_by"),
+            // Entities -> Risks
+            (Feat, Risk, "risks"),
+            (Cmp, Risk, "risks"),
+            (Asm, Risk, "risks"),
+            (Proc, Risk, "risks"),
+            (Ctrl, Risk, "mitigates"),
+            (Work, Risk, "risks"),
+            // Components/Assemblies
+            (Cmp, Req, "requirements"),
+            (Asm, Req, "requirements"),
+            (Cmp, Proc, "processes"),
+            (Asm, Proc, "processes"),
+            (Cmp, Test, "tests"),
+            (Asm, Test, "tests"),
+            (Cmp, Feat, "features"),
+            (Asm, Feat, "features"),
+            (Cmp, Cmp, "replaces"),
+            (Cmp, Haz, "hazards"),
+            (Asm, Haz, "hazards"),
+            // Features
+            (Feat, Cmp, "component"),
+            (Feat, Req, "allocated_from"),
+            // Processes
+            (Proc, Req, "requirements"),
+            (Proc, Cmp, "produces"),
+            (Proc, Asm, "produces"),
+            (Proc, Capa, "modified_by_capa"),
+            // Processes -> Controls
+            (Proc, Ctrl, "controls"),
+            // Controls
+            (Ctrl, Cmp, "component"),
+            (Ctrl, Feat, "feature"),
+            (Ctrl, Proc, "process"),
+            (Ctrl, Capa, "added_by_capa"),
+            (Ctrl, Haz, "controls_hazard"),
+            // Work Instructions
+            (Work, Cmp, "component"),
+            (Work, Asm, "assembly"),
+            (Work, Proc, "process"),
+            (Work, Ctrl, "controls"),
+            // NCR chain
+            (Ncr, Rslt, "from_result"),
+            (Ncr, Capa, "capa"),
+            (Ncr, Cmp, "component"),
+            (Ncr, Sup, "supplier"),
+            (Ncr, Proc, "process"),
+            // CAPA chain
+            (Capa, Ncr, "ncrs"),
+            (Capa, Proc, "processes_modified"),
+            (Capa, Ctrl, "controls_added"),
+            (Capa, Cmp, "component"),
+            (Capa, Sup, "supplier"),
+            (Capa, Risk, "risks"),
+            // Hazards
+            (Haz, Cmp, "originates_from"),
+            (Haz, Asm, "originates_from"),
+            (Haz, Risk, "causes"),
+            (Haz, Ctrl, "controlled_by"),
+            (Haz, Test, "verified_by"),
+            (Haz, Req, "related_to"),
+        ];
+
+        let mut failures = Vec::new();
+
+        for (source, target, expected_link) in &pairs {
+            // Verify inference gives the expected link type
+            let inferred = infer_link_type(*source, *target);
+            if inferred.as_deref() != Some(expected_link) {
+                failures.push(format!(
+                    "INFER: ({:?}, {:?}) expected {:?} but got {:?}",
+                    source, target, expected_link, inferred
+                ));
+                continue;
+            }
+
+            // Get the reciprocal of this forward link
+            let reciprocal = get_reciprocal_link_type(expected_link, *target, *source);
+
+            // Check if the reverse direction also has inference defined
+            let reverse_inferred = infer_link_type(*target, *source);
+
+            // For pairs where both directions have inference, the reciprocal
+            // should match the reverse inference — EXCEPT for same-type pairs
+            // with directional semantics (derives_from/derived_by, replaces/replaced_by)
+            // where the inference always returns the default direction but the
+            // reciprocal correctly returns the opposite direction.
+            if let (Some(ref recip), Some(ref reverse)) = (&reciprocal, &reverse_inferred) {
+                if recip != reverse && *source != *target {
+                    failures.push(format!(
+                        "MISMATCH: ({:?}, {:?}) link={:?}, reciprocal={:?} but reverse_infer={:?}",
+                        source, target, expected_link, recip, reverse
+                    ));
+                }
+            }
+
+            // For pairs where the forward direction has inference, the reciprocal
+            // should exist (either from get_reciprocal_link_type or from the
+            // fallback to infer_link_type in the match)
+            if reciprocal.is_none() && reverse_inferred.is_some() {
+                failures.push(format!(
+                    "MISSING RECIPROCAL: ({:?}, {:?}) link={:?}, no reciprocal but reverse_infer={:?}",
+                    source, target, expected_link, reverse_inferred
+                ));
+            }
+        }
+
+        if !failures.is_empty() {
+            panic!(
+                "Link symmetry failures ({}):\n{}",
+                failures.len(),
+                failures.join("\n")
+            );
+        }
     }
 }

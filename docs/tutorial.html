@@ -862,7 +862,7 @@
             <p>Some commands also accept <strong>positional arguments</strong> for common operations:</p>
             <ul>
               <li><code>tdt mate new FEAT@1 FEAT@2</code> - Features as positional args</li>
-              <li><code>tdt link add SRC DST link_type</code> - Link type as 3rd arg</li>
+              <li><code>tdt link add A B [link_type]</code> - Entity order doesn't matter; links are bidirectional</li>
               <li><code>tdt asm add ASM@1 CMP@1:2 CMP@2:1</code> - Multiple ID:QTY pairs</li>
             </ul>
           </section>
@@ -893,19 +893,19 @@
               <div class="code-header"><span class="code-lang">bash</span></div>
               <pre><code><span class="comment"># Brightness requirement</span>
 <span class="cmd">tdt req new</span> --title <span class="string">"Light Output"</span> --type input --priority critical \
-  --category performance --status approved --no-edit
+  --category performance --no-edit
 
 <span class="comment"># Battery life requirement</span>
 <span class="cmd">tdt req new</span> --title <span class="string">"Battery Life"</span> --type input --priority high \
-  --category performance --status approved --no-edit
+  --category performance --no-edit
 
 <span class="comment"># Water resistance requirement</span>
 <span class="cmd">tdt req new</span> --title <span class="string">"Water Resistance"</span> --type input --priority medium \
-  --category environmental --status approved --no-edit
+  --category environmental --no-edit
 
 <span class="comment"># Drop resistance requirement</span>
 <span class="cmd">tdt req new</span> --title <span class="string">"Drop Resistance"</span> --type input --priority high \
-  --category durability --status approved --no-edit</code></pre>
+  --category durability --no-edit</code></pre>
             </div>
 
             <div class="tip-box">
@@ -919,12 +919,14 @@
               <pre><code><span class="cmd">tdt req list</span></code></pre>
             </div>
 
-            <div class="terminal-output"><span class="header">SHORT    ID               TYPE   TITLE             STATUS    PRIORITY</span>
-----------------------------------------------------------------------
-<span class="highlight">REQ@1</span>    REQ-01KCA...     input  Light Output      <span class="success">approved</span>  critical
-<span class="highlight">REQ@2</span>    REQ-01KCA...     input  Battery Life      <span class="success">approved</span>  high
-<span class="highlight">REQ@3</span>    REQ-01KCA...     input  Water Resistance  <span class="success">approved</span>  medium
-<span class="highlight">REQ@4</span>    REQ-01KCA...     input  Drop Resistance   <span class="success">approved</span>  high</div>
+            <div class="terminal-output"><span class="header">SHORT TYPE    TITLE                     STATUS     PRI</span>
+-------------------------------------------------------------
+<span class="highlight">REQ@1</span> input   Light Output              <span class="success">draft</span>      critical
+<span class="highlight">REQ@2</span> input   Battery Life              <span class="success">draft</span>      high
+<span class="highlight">REQ@3</span> input   Water Resistance          <span class="success">draft</span>      medium
+<span class="highlight">REQ@4</span> input   Drop Resistance           <span class="success">draft</span>      high
+
+4 requirement(s) found. Use REQ@N to reference by short ID.</div>
 
             <h3>Edit Requirements with Full Details</h3>
             <p>Open a requirement in your editor to add detailed information:</p>
@@ -970,21 +972,21 @@
               <div class="code-header"><span class="code-lang">bash</span></div>
               <pre><code><span class="comment"># Create an output requirement (derived from input)</span>
 <span class="cmd">tdt req new</span> --title <span class="string">"LED Selection"</span> --type output --priority high \
-  --category electrical --status approved --no-edit</code></pre>
+  --category electrical --no-edit</code></pre>
             </div>
 
             <p>Then link it to the parent requirement using <code>derives_from</code>:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Positional syntax (link type as 3rd argument)</span>
+              <pre><code><span class="comment"># Entity order doesn't matter - TDT infers the link type</span>
 <span class="cmd">tdt link add</span> REQ@5 REQ@1 derives_from
 
-<span class="comment"># Long form - equivalent</span>
-<span class="cmd">tdt link add</span> REQ@5 REQ@1 --link-type derives_from</code></pre>
+<span class="comment"># Equivalent - same result regardless of order</span>
+<span class="cmd">tdt link add</span> REQ@1 REQ@5 derives_from</code></pre>
             </div>
 
-            <p>This creates a traceability chain from customer needs (input) → design specifications (output).</p>
+            <p>Links are <strong>bidirectional by default</strong> &mdash; both entities are updated. TDT automatically infers the link type when possible, so entity order doesn't matter. This creates a traceability chain from customer needs (input) → design specifications (output).</p>
           </section>
 
           <!-- Section 3: Components -->
@@ -1413,8 +1415,9 @@
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="cmd">tdt link add</span> PROC@1 CMP@1 --link-type produces
-<span class="cmd">tdt link add</span> PROC@1 RISK@2 --link-type risks</code></pre>
+              <pre><code><span class="comment"># TDT auto-infers the link type from entity types</span>
+<span class="cmd">tdt link add</span> PROC@1 CMP@1
+<span class="cmd">tdt link add</span> PROC@1 RISK@2</code></pre>
             </div>
 
             <h3>Define Manufacturing Routing</h3>
@@ -1811,7 +1814,8 @@
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="cmd">tdt link add</span> NCR@1 RSLT@3 --link-type from_result</code></pre>
+              <pre><code><span class="comment"># Auto-infers from_result link type</span>
+<span class="cmd">tdt link add</span> NCR@1 RSLT@3</code></pre>
             </div>
 
             <h3>Create a CAPA</h3>
@@ -1869,7 +1873,8 @@
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="cmd">tdt link add</span> CAPA@1 NCR@1 --link-type ncrs</code></pre>
+              <pre><code><span class="comment"># Auto-infers ncrs link type</span>
+<span class="cmd">tdt link add</span> CAPA@1 NCR@1</code></pre>
             </div>
           </section>
 

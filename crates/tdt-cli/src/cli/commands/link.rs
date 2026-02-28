@@ -1064,10 +1064,11 @@ fn add_reciprocal_link(
     target_id: &EntityId,
     link_type: &str,
 ) -> Result<Option<String>> {
-    // Determine the reciprocal link type based on source link type and target entity type
+    // Determine the reciprocal link type based on source link type and both entity types
     let target_prefix = target_id.prefix();
+    let source_prefix = source_id.prefix();
 
-    let reciprocal_type = get_reciprocal_link_type(link_type, target_prefix);
+    let reciprocal_type = get_reciprocal_link_type(link_type, target_prefix, source_prefix);
 
     let recip_type = match reciprocal_type {
         Some(t) => t,

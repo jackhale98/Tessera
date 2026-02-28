@@ -3,7 +3,8 @@
 mod common;
 
 use common::{
-    create_test_component, create_test_protocol, create_test_requirement, create_test_risk,
+    create_test_capa, create_test_component, create_test_control, create_test_ncr,
+    create_test_process, create_test_protocol, create_test_requirement, create_test_risk,
     setup_test_project, tdt,
 };
 use predicates::prelude::*;
@@ -154,6 +155,161 @@ fn test_link_bidirectional() {
             .success()
             .stdout(predicate::str::contains("derives_from"));
     }
+}
+
+// ============================================================================
+// Link Order Symmetry Tests
+// Verify that `tdt link add A B` and `tdt link add B A` both produce
+// reciprocal links on both entities.
+// ============================================================================
+
+/// Helper: verify that link add produces both forward and reciprocal links
+fn assert_link_symmetry(
+    tmp: &tempfile::TempDir,
+    source_short: &str,
+    target_short: &str,
+    expected_forward: &str,
+    expected_reciprocal: &str,
+) {
+    let output = tdt()
+        .current_dir(tmp.path())
+        .args(["link", "add", source_short, target_short])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Added link") && stdout.contains(expected_forward),
+        "Expected forward link type '{}' in output: {}",
+        expected_forward,
+        stdout
+    );
+    assert!(
+        stdout.contains("Added reciprocal") && stdout.contains(expected_reciprocal),
+        "Expected reciprocal link type '{}' in output: {}",
+        expected_reciprocal,
+        stdout
+    );
+}
+
+#[test]
+fn test_link_order_symmetry_req_test() {
+    let tmp = setup_test_project();
+    create_test_requirement(&tmp, "Spec", "input");
+    create_test_protocol(&tmp, "Verify", "verification");
+
+    // REQ -> TEST: should add verified_by + verifies
+    assert_link_symmetry(&tmp, "REQ@1", "TEST@1", "verified_by", "verifies");
+}
+
+#[test]
+fn test_link_order_symmetry_test_req() {
+    let tmp = setup_test_project();
+    create_test_requirement(&tmp, "Spec", "input");
+    create_test_protocol(&tmp, "Verify", "verification");
+
+    // TEST -> REQ: should add verifies + verified_by (reverse order)
+    assert_link_symmetry(&tmp, "TEST@1", "REQ@1", "verifies", "verified_by");
+}
+
+#[test]
+fn test_link_order_symmetry_cmp_risk() {
+    let tmp = setup_test_project();
+    create_test_component(&tmp, "P-001", "Widget");
+    create_test_risk(&tmp, "Failure", "design");
+
+    // CMP -> RISK: should add risks + component
+    assert_link_symmetry(&tmp, "CMP@1", "RISK@1", "risks", "component");
+}
+
+#[test]
+fn test_link_order_symmetry_risk_cmp() {
+    let tmp = setup_test_project();
+    create_test_component(&tmp, "P-001", "Widget");
+    create_test_risk(&tmp, "Failure", "design");
+
+    // RISK -> CMP: should add component + risks (reverse order, same result)
+    assert_link_symmetry(&tmp, "RISK@1", "CMP@1", "component", "risks");
+}
+
+#[test]
+fn test_link_order_symmetry_ncr_capa() {
+    let tmp = setup_test_project();
+    create_test_ncr(&tmp, "Defect");
+    create_test_capa(&tmp, "Fix");
+
+    // NCR -> CAPA: should add capa + ncrs
+    assert_link_symmetry(&tmp, "NCR@1", "CAPA@1", "capa", "ncrs");
+}
+
+#[test]
+fn test_link_order_symmetry_capa_ncr() {
+    let tmp = setup_test_project();
+    create_test_ncr(&tmp, "Defect");
+    create_test_capa(&tmp, "Fix");
+
+    // CAPA -> NCR: should add ncrs + capa (reverse order, same result)
+    assert_link_symmetry(&tmp, "CAPA@1", "NCR@1", "ncrs", "capa");
+}
+
+#[test]
+fn test_link_order_symmetry_ctrl_proc() {
+    let tmp = setup_test_project();
+    create_test_process(&tmp, "Assembly", "assembly");
+    create_test_control(&tmp, "Inspect");
+
+    // CTRL -> PROC: should add process + controls
+    assert_link_symmetry(&tmp, "CTRL@1", "PROC@1", "process", "controls");
+}
+
+#[test]
+fn test_link_order_symmetry_proc_ctrl() {
+    let tmp = setup_test_project();
+    create_test_process(&tmp, "Assembly", "assembly");
+    create_test_control(&tmp, "Inspect");
+
+    // PROC -> CTRL: should add controls + process (reverse order)
+    assert_link_symmetry(&tmp, "PROC@1", "CTRL@1", "controls", "process");
+}
+
+#[test]
+fn test_link_order_symmetry_ctrl_risk() {
+    let tmp = setup_test_project();
+    create_test_control(&tmp, "Inspect");
+    create_test_risk(&tmp, "Failure", "design");
+
+    // CTRL -> RISK: should add mitigates + mitigated_by
+    assert_link_symmetry(&tmp, "CTRL@1", "RISK@1", "mitigates", "mitigated_by");
+}
+
+#[test]
+fn test_link_order_symmetry_risk_ctrl() {
+    let tmp = setup_test_project();
+    create_test_control(&tmp, "Inspect");
+    create_test_risk(&tmp, "Failure", "design");
+
+    // RISK -> CTRL: should add mitigated_by + mitigates (reverse order)
+    assert_link_symmetry(&tmp, "RISK@1", "CTRL@1", "mitigated_by", "mitigates");
+}
+
+#[test]
+fn test_link_order_symmetry_capa_proc() {
+    let tmp = setup_test_project();
+    create_test_capa(&tmp, "Fix");
+    create_test_process(&tmp, "Assembly", "assembly");
+
+    // CAPA -> PROC: should add processes_modified + modified_by_capa
+    assert_link_symmetry(&tmp, "CAPA@1", "PROC@1", "processes_modified", "modified_by_capa");
+}
+
+#[test]
+fn test_link_order_symmetry_proc_capa() {
+    let tmp = setup_test_project();
+    create_test_capa(&tmp, "Fix");
+    create_test_process(&tmp, "Assembly", "assembly");
+
+    // PROC -> CAPA: should add modified_by_capa + processes_modified (reverse)
+    assert_link_symmetry(&tmp, "PROC@1", "CAPA@1", "modified_by_capa", "processes_modified");
 }
 
 // ============================================================================

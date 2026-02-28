@@ -344,9 +344,11 @@ pub async fn add_link(
     }
 
     // Now add the reciprocal link on the target entity
-    if let Some(reciprocal_type) =
-        links::get_reciprocal_link_type(&actual_link_type, target_entity_id.prefix())
-    {
+    if let Some(reciprocal_type) = links::get_reciprocal_link_type(
+        &actual_link_type,
+        target_entity_id.prefix(),
+        source_entity_id.prefix(),
+    ) {
         // Find the target entity file
         let target_dir = project
             .root()
@@ -403,9 +405,11 @@ pub async fn remove_link(
         .map_err(|e| CommandError::Other(e))?;
 
     // Now remove the reciprocal link from the target entity
-    if let Some(reciprocal_type) =
-        links::get_reciprocal_link_type(&link_type, target_entity_id.prefix())
-    {
+    if let Some(reciprocal_type) = links::get_reciprocal_link_type(
+        &link_type,
+        target_entity_id.prefix(),
+        source_entity_id.prefix(),
+    ) {
         // Find the target entity file
         let target_dir = project
             .root()

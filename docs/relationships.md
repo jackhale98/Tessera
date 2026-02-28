@@ -216,19 +216,18 @@ Links are simple cross-references stored in the `links` section of entities. The
 ### Add a link
 
 ```bash
-# Basic syntax
-tdt link add SOURCE TARGET LINK_TYPE
+# Entity order doesn't matter — TDT auto-infers the link type
+# and updates BOTH entities (bidirectional by default)
+tdt link add REQ@1 TEST@1              # infers verified_by + verifies
+tdt link add RISK@1 CMP@1             # infers affects + risks
+tdt link add CAPA@1 PROC@1 processes_modified  # explicit link type
 
-# Examples
-tdt link add REQ@1 TEST@1 verified_by
-tdt link add RISK@1 CMP@1 affects
-tdt link add CAPA@1 PROC@1 processes_modified
-tdt link add CMP@1 FEAT@1 features    # Link component to its feature
+# These are equivalent — order doesn't matter:
+tdt link add REQ@1 TEST@1
+tdt link add TEST@1 REQ@1
 
-# Add reciprocal automatically with -r
-tdt link add REQ@1 TEST@1 verified_by -r
-# This adds: REQ@1.verified_by → TEST@1
-#       and: TEST@1.verifies → REQ@1
+# Use --no-reciprocal for one-way links only
+tdt link add CAPA@1 PROC@1 --no-reciprocal
 ```
 
 ### Remove a link
