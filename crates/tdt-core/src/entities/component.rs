@@ -201,6 +201,30 @@ pub struct ComponentLinks {
     /// Risks affecting this component (reciprocal of RISK.affects)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub risks: Vec<EntityId>,
+
+    /// Requirements satisfied by this component (reciprocal of REQ.satisfied_by)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requirements: Vec<EntityId>,
+
+    /// Features on this component (reciprocal of FEAT.component)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<EntityId>,
+
+    /// Tests for this component (reciprocal of TEST.component)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<EntityId>,
+
+    /// Manufacturing processes (reciprocal of PROC.produces)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub processes: Vec<EntityId>,
+
+    /// Hazards originating from this component (reciprocal of HAZ.originates_from)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hazards: Vec<EntityId>,
+
+    /// Quotes for this component (reciprocal of QUOT.component)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quotes: Vec<String>,
 }
 
 /// A Component entity - individual part (purchased or manufactured)

@@ -13,8 +13,9 @@
 
 	// Helper types for analysis results
 	interface AnalysisResults {
-		worst_case?: { result?: string };
-		rss?: { cpk?: number; yield_percent?: number };
+		worst_case?: { result?: string; margin?: number; min?: number; max?: number };
+		rss?: { cpk?: number; yield_percent?: number; mean?: number; sigma_3?: number };
+		monte_carlo?: { ppk?: number; yield_percent?: number; mean?: number; std_dev?: number };
 	}
 
 	// Helper to format WC result with warning indicator
@@ -46,6 +47,32 @@
 	function formatYield(value: unknown, entity: EntityData): string {
 		const results = entity.data?.analysis_results as AnalysisResults | undefined;
 		const yieldPct = results?.rss?.yield_percent;
+		if (yieldPct === undefined || yieldPct === null) return '-';
+		return `${yieldPct.toFixed(1)}%`;
+	}
+
+	// Helper to format WC Margin
+	function formatWcMargin(value: unknown, entity: EntityData): string {
+		const results = entity.data?.analysis_results as AnalysisResults | undefined;
+		const margin = results?.worst_case?.margin;
+		if (margin === undefined || margin === null) return '-';
+		if (margin < 0) return `⚠ ${margin.toFixed(3)}`;
+		return margin.toFixed(3);
+	}
+
+	// Helper to format Monte Carlo Ppk
+	function formatMcPpk(value: unknown, entity: EntityData): string {
+		const results = entity.data?.analysis_results as AnalysisResults | undefined;
+		const ppk = results?.monte_carlo?.ppk;
+		if (ppk === undefined || ppk === null) return '-';
+		if (ppk < 1.0) return `⚠ ${ppk.toFixed(2)}`;
+		return ppk.toFixed(2);
+	}
+
+	// Helper to format Monte Carlo Yield
+	function formatMcYield(value: unknown, entity: EntityData): string {
+		const results = entity.data?.analysis_results as AnalysisResults | undefined;
+		const yieldPct = results?.monte_carlo?.yield_percent;
 		if (yieldPct === undefined || yieldPct === null) return '-';
 		return `${yieldPct.toFixed(1)}%`;
 	}
@@ -84,16 +111,34 @@
 			render: formatWcResult
 		},
 		{
+			key: 'data.analysis_results.worst_case.margin',
+			label: 'WC Margin',
+			class: 'w-24 font-mono',
+			render: formatWcMargin
+		},
+		{
 			key: 'data.analysis_results.rss.cpk',
-			label: 'Cpk',
+			label: 'RSS Cpk',
 			class: 'w-20 font-mono',
 			render: formatCpk
 		},
 		{
 			key: 'data.analysis_results.rss.yield_percent',
-			label: 'Yield',
-			class: 'w-20',
+			label: 'RSS Yield',
+			class: 'w-24',
 			render: formatYield
+		},
+		{
+			key: 'data.analysis_results.monte_carlo.ppk',
+			label: 'MC Ppk',
+			class: 'w-20 font-mono',
+			render: formatMcPpk
+		},
+		{
+			key: 'data.analysis_results.monte_carlo.yield_percent',
+			label: 'MC Yield',
+			class: 'w-24',
+			render: formatMcYield
 		},
 		{ key: 'status', label: 'Status', sortable: true, class: 'w-24' }
 	];
@@ -105,7 +150,7 @@
 		error = null;
 
 		try {
-			const result = await entities.list('TOL');
+			const result = await entities.list('TOL', { include_data: true } as any);
 			entitiesData = result.items;
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);

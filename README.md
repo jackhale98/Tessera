@@ -90,19 +90,19 @@ The command-line tool is called `tdt` (Tessera Design Toolkit).
 
 #### Pre-built Binaries (Recommended)
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/jackhale98/tdt/releases):
+Download the latest release for your platform from [GitHub Releases](https://github.com/jackhale98/Tessera/releases):
 
 ```bash
 # Linux (x64)
-curl -sSL https://github.com/jackhale98/tdt/releases/latest/download/tdt-linux-x64.tar.gz | tar xz
+curl -sSL https://github.com/jackhale98/Tessera/releases/latest/download/tdt-linux-x64.tar.gz | tar xz
 sudo mv tdt /usr/local/bin/
 
 # macOS (Apple Silicon)
-curl -sSL https://github.com/jackhale98/tdt/releases/latest/download/tdt-macos-arm64.tar.gz | tar xz
+curl -sSL https://github.com/jackhale98/Tessera/releases/latest/download/tdt-macos-arm64.tar.gz | tar xz
 sudo mv tdt /usr/local/bin/
 
 # macOS (Intel)
-curl -sSL https://github.com/jackhale98/tdt/releases/latest/download/tdt-macos-x64.tar.gz | tar xz
+curl -sSL https://github.com/jackhale98/Tessera/releases/latest/download/tdt-macos-x64.tar.gz | tar xz
 sudo mv tdt /usr/local/bin/
 
 # Windows - download tdt-windows-x64.zip and extract to your PATH
@@ -119,8 +119,8 @@ This installs the `tdt` binary. Note: compilation takes a few minutes due to dep
 #### From Source
 
 ```bash
-git clone https://github.com/jackhale98/tdt.git
-cd tdt
+git clone https://github.com/jackhale98/Tessera.git
+cd Tessera/pdt
 cargo build --release
 # Binary will be at target/release/tdt
 ```
@@ -129,7 +129,7 @@ cargo build --release
 
 Tessera Desktop provides a full-featured graphical interface for managing your engineering artifacts. The desktop app is currently in **beta**.
 
-Download the latest desktop release for your platform from [GitHub Releases](https://github.com/jackhale98/tdt/releases):
+Download the latest desktop release for your platform from [GitHub Releases](https://github.com/jackhale98/Tessera/releases):
 
 | Platform | Download |
 |----------|----------|
@@ -228,14 +228,14 @@ tdt capa verify CAPA@1 --result effective --method "30-day audit"
 
 ### Analyze Component Interactions
 ```bash
-tdt cmp matrix                         # View design structure matrix
+tdt dsm                                # View design structure matrix
 tdt tol analyze TOL@1                  # Run tolerance stackup analysis
 ```
 
 ### Risk Assessment Review
 ```bash
 tdt risk matrix                        # Visual severity × occurrence grid
-tdt risk list --by-rpn --top 5         # Top 5 risks by RPN
+tdt risk list --by-rpn -n 5            # Top 5 risks by RPN
 ```
 
 ### Manufacturing Process Review
@@ -253,7 +253,8 @@ After `tdt init`, your project will have:
 ```
 .tdt/
 ├── config.yaml              # Project configuration
-├── cache.db                 # SQLite cache (auto-generated)
+├── cache.db                 # SQLite cache (auto-generated on first query)
+├── schema/                  # JSON schemas (auto-generated)
 └── archive/                 # Archived entities (from `tdt <entity> archive`)
 
 requirements/
@@ -261,12 +262,16 @@ requirements/
 └── outputs/                 # Design outputs (specifications)
 
 risks/
+├── hazards/                 # Hazard definitions
 ├── design/                  # Design risks
-└── process/                 # Process risks
+├── process/                 # Process risks
+├── use/                     # Use risks
+└── software/                # Software risks
 
 bom/
 ├── assemblies/              # Assembly definitions
 ├── components/              # Component definitions
+├── suppliers/               # Approved supplier list
 └── quotes/                  # Supplier quotes
 
 tolerances/
@@ -286,6 +291,8 @@ manufacturing/
 ├── processes/               # Manufacturing process definitions
 ├── controls/                # Control plan items (SPC, inspection)
 ├── work_instructions/       # Operator procedures
+├── lots/                    # Production lots/batches
+├── deviations/              # Process deviations
 ├── ncrs/                    # Non-conformance reports
 └── capas/                   # Corrective/preventive actions
 ```
@@ -297,6 +304,7 @@ manufacturing/
 | Prefix | Entity | Description |
 |--------|--------|-------------|
 | REQ | Requirement | Design inputs and outputs |
+| HAZ | Hazard | Hazard definition |
 | RISK | Risk | Risk / FMEA item |
 | TEST | Test | Verification or validation protocol |
 | RSLT | Result | Test result / execution record |
@@ -308,6 +316,8 @@ manufacturing/
 | PROC | Process | Manufacturing process definition |
 | CTRL | Control | Control plan item (SPC, inspection) |
 | WORK | Work Instruction | Operator procedures |
+| LOT | Lot | Production lot / batch |
+| DEV | Deviation | Process deviation |
 | NCR | Non-Conformance | Non-conformance report |
 | CAPA | CAPA | Corrective/preventive action |
 | QUOT | Quote | Quote / cost record |
@@ -320,15 +330,15 @@ manufacturing/
 Use `-o/--output` to control output format:
 
 ```bash
-tdt req list -f json        # JSON output (for scripting)
-tdt req list -f yaml        # YAML output
-tdt req list -f csv         # CSV output (for spreadsheets)
-tdt req list -f tsv         # Tab-separated (default for lists)
-tdt req list -f md          # Markdown table
-tdt req list -f id          # Just IDs, one per line
+tdt req list -o json        # JSON output (for scripting)
+tdt req list -o yaml        # YAML output
+tdt req list -o csv         # CSV output (for spreadsheets)
+tdt req list -o tsv         # Tab-separated (default for lists)
+tdt req list -o md          # Markdown table
+tdt req list -o id          # Just IDs, one per line
 
-tdt req show REQ-01 -f json # Full entity as JSON
-tdt req show REQ-01 -f yaml # Full entity as YAML
+tdt req show REQ-01 -o json # Full entity as JSON
+tdt req show REQ-01 -o yaml # Full entity as YAML
 ```
 
 ---
@@ -341,7 +351,7 @@ tdt req show REQ-01 -f yaml # Full entity as YAML
 tdt init                    # Initialize a new project
 tdt init --git              # Initialize with git repository
 tdt validate                # Validate all project files
-tdt validate --keep-going   # Continue after errors
+tdt validate --fail-fast    # Stop on first error (default: validate all)
 tdt validate --summary      # Show summary only
 tdt validate --fix          # Auto-fix calculated values (RPN, risk level)
 tdt validate --strict       # Treat warnings as errors
@@ -371,12 +381,12 @@ Configuration is layered (highest priority first):
 
 ```bash
 tdt search "temperature"              # Search all entities
-tdt search "motor" --type req,risk    # Search specific entity types
+tdt search "motor" -t req,risk        # Search specific entity types
 tdt search "draft" --status draft     # Filter by status
 tdt search "keyword" --author "Jane"  # Filter by author
 tdt search "v2" --tag "release"       # Filter by tag
 tdt search "term" --count             # Show count only
-tdt search "term" -f json             # Output as JSON
+tdt search "term" -o json             # Output as JSON
 ```
 
 ### Recent Activity
@@ -385,7 +395,7 @@ tdt search "term" -f json             # Output as JSON
 tdt recent                            # Show 20 most recently modified entities
 tdt recent -n 50                      # Show 50 most recent
 tdt recent -t req,risk                # Filter by entity type
-tdt recent -f short-id                # Output short IDs (for piping)
+tdt recent -o short-id                # Output short IDs (for piping)
 tdt recent --count                    # Show count only
 ```
 
@@ -394,9 +404,9 @@ tdt recent --count                    # Show count only
 ```bash
 tdt tags list                         # List all tags with usage counts
 tdt tags list -n 10                   # Show top 10 tags
-tdt tags list -f json                 # Output as JSON
+tdt tags list -o json                 # Output as JSON
 tdt tags show precision               # Show entities with tag "precision"
-tdt tags show thermal -f id           # Output full IDs (for piping)
+tdt tags show thermal -o id           # Output full IDs (for piping)
 tdt tags show urgent --count          # Count entities with tag
 ```
 
@@ -498,8 +508,8 @@ tdt cmp show CMP@1                            # Show details
 tdt cmp edit CMP@1                            # Open in editor
 tdt cmp delete CMP@1                          # Permanently delete
 tdt cmp archive CMP@1                         # Move to archive
-tdt cmp matrix                                # Design structure matrix (component interactions)
-tdt cmp matrix --show-ids                     # Show component IDs in cells
+tdt dsm                                       # Design structure matrix (component interactions)
+tdt dsm --full-ids                            # Show full component IDs in cells
 ```
 
 ### Assemblies (BOM)
@@ -629,7 +639,7 @@ tdt ctrl delete CTRL@1                        # Permanently delete
 tdt ctrl archive CTRL@1                       # Move to archive
 ```
 
-Control types: `spc`, `inspection`, `poka_yoke`, `visual`, `functional_test`, `attribute`
+Control types: `spc`, `inspection`, `poka-yoke`, `visual`, `functional-test`, `attribute`
 
 ### Work Instructions
 
@@ -654,7 +664,7 @@ tdt ncr list --type internal                  # Filter by NCR type
 tdt ncr list --severity critical              # Filter by severity
 tdt ncr list --ncr-status open                # Filter by workflow status
 tdt ncr list --linked-to CMP@1               # NCRs linked to a component
-tdt cmp list -f short-id | tdt ncr list --linked-to -  # NCRs for piped components
+tdt cmp list -o short-id | tdt ncr list --linked-to -  # NCRs for piped components
 tdt ncr show NCR@1                            # Show details
 tdt ncr edit NCR@1                            # Open in editor
 tdt ncr delete NCR@1                          # Permanently delete
@@ -705,11 +715,9 @@ tdt trace matrix -o csv           # Export as CSV
 tdt trace matrix -o dot           # Export as GraphViz DOT
 tdt trace from REQ@1              # What depends on this?
 tdt trace from REQ@1 REQ@2        # Trace from multiple entities
-tdt req list -f short-id | tdt trace from -  # Trace from piped IDs
+tdt req list -o short-id | tdt trace from -  # Trace from piped IDs
 tdt trace to REQ@1                # What does this depend on?
 tdt trace orphans                 # Find unlinked entities
-tdt trace coverage                # Verification coverage report
-tdt trace coverage --uncovered    # Show uncovered requirements
 ```
 
 ### Where-Used Queries
@@ -725,9 +733,9 @@ tdt where-used CMP@1 --direct-only  # Show only direct references
 
 ```bash
 tdt report rvm                    # Requirements Verification Matrix
-tdt report rvm -o report.csv      # Export RVM to CSV
+tdt report rvm -f report.csv      # Export RVM to file
 tdt report fmea                   # FMEA report sorted by RPN
-tdt report fmea --top 10          # Show top 10 risks by RPN
+tdt report fmea --min-rpn 100     # Show risks above RPN threshold
 tdt report bom ASM@1              # Indented BOM with costs/masses
 tdt report test-status            # Test execution summary
 tdt report open-issues            # All open NCRs, CAPAs, failed tests
@@ -737,8 +745,8 @@ tdt report open-issues            # All open NCRs, CAPAs, failed tests
 
 ```bash
 tdt risk summary                  # Risk statistics overview
-tdt risk summary --top 5          # Show top N risks by RPN
-tdt risk summary -f json          # Output as JSON (for CI/CD)
+tdt risk summary -n 5             # Show top N risks by RPN
+tdt risk summary -o json          # Output as JSON (for CI/CD)
 ```
 
 ### Project Status Dashboard
@@ -748,7 +756,7 @@ tdt status                        # Full project status dashboard
 tdt status --section requirements # Show only requirements metrics
 tdt status --section risks        # Show only risk metrics
 tdt status --detailed             # Show detailed breakdown
-tdt status -f json                # Output as JSON (for CI/CD)
+tdt status -o json                # Output as JSON (for CI/CD)
 ```
 
 ### Version Control (Git Wrappers)
@@ -762,7 +770,7 @@ tdt history REQ@1 --full          # Show full commit messages
 
 # Blame - view git blame for an entity
 tdt blame REQ@1                   # Show who changed each line
-tdt blame REQ@1 --line 15         # Blame specific line range
+tdt blame REQ@1 -L 10-20          # Blame specific line range
 
 # Diff - view git diff for an entity
 tdt diff REQ@1                    # Show working changes
@@ -777,7 +785,7 @@ tdt baseline create v1.0          # Validate, then create git tag
 tdt baseline create v1.0 -m "Release 1.0"  # With message
 tdt baseline list                 # List all Tessera baselines
 tdt baseline compare v1.0 v2.0    # Show what changed between versions
-tdt baseline changed --since v1.0 # List entities changed since baseline
+tdt baseline changed v1.0         # List entities changed since baseline
 ```
 
 ### Bulk Operations
@@ -827,13 +835,13 @@ Every `list` command supports `--linked-to` to filter entities by their links to
 tdt ncr list --linked-to CMP@1
 
 # Pipe component IDs to find all linked NCRs
-tdt cmp list -f short-id | tdt ncr list --linked-to -
+tdt cmp list -o short-id | tdt ncr list --linked-to -
 
 # Find tests linked to approved requirements
-tdt req list --status approved -f short-id | tdt test list --linked-to -
+tdt req list --status approved -o short-id | tdt test list --linked-to -
 
 # Show risks linked to components in an assembly's BOM
-tdt asm bom ASM@1 -f short-id | tdt risk list --linked-to -
+tdt asm bom ASM@1 -o short-id | tdt risk list --linked-to -
 
 # Filter by link type with --via
 tdt test list --linked-to REQ@1 --via verified_by
@@ -841,7 +849,7 @@ tdt req list --linked-to CMP@1 --via satisfied_by
 
 # Pipe multiple IDs to trace commands
 echo -e "REQ@1\nREQ@2" | tdt trace from -
-tdt req list -f short-id | tdt trace from -
+tdt req list -o short-id | tdt trace from -
 ```
 
 The `--linked-to` flag accepts comma-separated IDs, short IDs, or `-` for stdin. The optional `--via` flag filters by a specific link type (e.g., `verified_by`, `satisfied_by`, `mitigated_by`).
@@ -988,12 +996,12 @@ $ tdt link add REQ@1 TEST@1 -t verified_by
 ✓ Added link: REQ-01KC5W... --[verified_by]--> TEST-01KC5W...
 
 # Check verification coverage
-$ tdt trace coverage
-Verification Coverage Report
+$ tdt report rvm
+Requirements Verification Matrix
 ════════════════════════════════════════════════════════════
 Total requirements:     24
-With verification:      22
-Without verification:   2
+Verified:               22
+Unverified:             2
 
 Coverage: 92%
 
@@ -1052,7 +1060,7 @@ $ tdt import sysml updated_model.sysml
 
 # Verify imported entities
 $ tdt req list
-$ tdt trace coverage
+$ tdt report rvm
 ```
 
 > **Note:** For complete YAML schema documentation and field references, see the individual entity docs in the [docs/](docs/) directory.

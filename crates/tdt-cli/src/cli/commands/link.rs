@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use crate::cli::helpers::format_short_id;
 use tdt_core::core::cache::{EntityCache, EntityFilter};
 use tdt_core::core::identity::{EntityId, EntityPrefix};
+use tdt_core::core::links::{add_explicit_link, get_field_reference_rules};
+use tdt_core::core::loader;
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::suspect::{
@@ -27,6 +29,14 @@ pub enum LinkCommands {
 
     /// Find broken links (references to non-existent entities)
     Check(CheckLinksArgs),
+
+    /// Synchronize reciprocal links across all entities
+    ///
+    /// Scans field-based references (e.g., QUOT.supplier, FEAT.component) and
+    /// ensures target entities have matching reciprocal links. This is the same
+    /// check performed by `tdt validate`, but runs only the link consistency
+    /// portion and always fixes missing links.
+    Sync(SyncLinksArgs),
 
     /// Manage suspect links (links that need review due to changes)
     Suspect(SuspectCommands),
@@ -262,12 +272,20 @@ pub struct CheckLinksArgs {
     pub fix: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct SyncLinksArgs {
+    /// Dry run - report missing links without fixing
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
 pub fn run(cmd: LinkCommands) -> Result<()> {
     match cmd {
         LinkCommands::Add(args) => run_add(args),
         LinkCommands::Remove(args) => run_remove(args),
         LinkCommands::Show(args) => run_show(args),
         LinkCommands::Check(args) => run_check(args),
+        LinkCommands::Sync(args) => run_sync(args),
         LinkCommands::Suspect(args) => run_suspect(args),
     }
 }
@@ -687,6 +705,171 @@ fn truncate_id(id: &str) -> String {
         format!("{}...", &id[..13])
     } else {
         id.to_string()
+    }
+}
+
+fn run_sync(args: SyncLinksArgs) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+
+    println!(
+        "{} Scanning for missing reciprocal links...\n",
+        style("→").blue()
+    );
+
+    // Collect all entity files from cache
+    let all_entities = cache.list_entities(&EntityFilter::default());
+    let mut missing_count = 0u32;
+    let mut fixed_count = 0u32;
+
+    for entity in &all_entities {
+        let prefix = match entity.prefix.parse::<EntityPrefix>() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let rules = get_field_reference_rules(prefix);
+        if rules.is_empty() {
+            continue;
+        }
+
+        // Read and parse the entity YAML
+        let content = match fs::read_to_string(&entity.file_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let value: serde_yml::Value = match serde_yml::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        for rule in &rules {
+            // Get the field value (direct field, not in links)
+            let target_id = match value.get(rule.field_name).and_then(|v| v.as_str()) {
+                Some(id) if !id.is_empty() => id.to_string(),
+                _ => continue,
+            };
+
+            // Determine target entity prefix
+            let target_prefix = match target_id.split('-').next() {
+                Some(p) => match p.parse::<EntityPrefix>() {
+                    Ok(prefix) => prefix,
+                    Err(_) => continue,
+                },
+                None => continue,
+            };
+
+            // Find the target entity file
+            let target_dir = project.root().join(Project::entity_directory(target_prefix));
+            let target_path = match loader::find_entity_file(&target_dir, &target_id) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // Check if the target has the reciprocal link
+            if check_has_reciprocal(&target_path, rule.reciprocal_link_type, &entity.id) {
+                continue;
+            }
+
+            missing_count += 1;
+
+            if args.dry_run {
+                println!(
+                    "  {} {}.{} → {} missing {}.links.{}",
+                    style("!").yellow(),
+                    truncate_id(&entity.id),
+                    rule.field_name,
+                    truncate_id(&target_id),
+                    truncate_id(&target_id),
+                    rule.reciprocal_link_type
+                );
+            } else {
+                match add_explicit_link(&target_path, rule.reciprocal_link_type, &entity.id) {
+                    Ok(()) => {
+                        fixed_count += 1;
+                        println!(
+                            "  {} {}.links.{} ← {}",
+                            style("✓").green(),
+                            truncate_id(&target_id),
+                            rule.reciprocal_link_type,
+                            truncate_id(&entity.id)
+                        );
+                    }
+                    Err(e) => {
+                        println!(
+                            "  {} Failed to add {}.links.{} ← {}: {}",
+                            style("✗").red(),
+                            truncate_id(&target_id),
+                            rule.reciprocal_link_type,
+                            truncate_id(&entity.id),
+                            e
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    println!();
+    println!("{}", style("─".repeat(60)).dim());
+
+    if missing_count == 0 {
+        println!(
+            "{} All reciprocal links are consistent!",
+            style("✓").green().bold()
+        );
+    } else if args.dry_run {
+        println!(
+            "{} {} missing reciprocal link(s) found. Run without --dry-run to fix.",
+            style("!").yellow(),
+            missing_count
+        );
+    } else {
+        println!(
+            "{} Fixed {} reciprocal link(s)",
+            style("✓").green().bold(),
+            fixed_count
+        );
+
+        // Update cache
+        if let Ok(mut cache) = EntityCache::open(&project) {
+            if let Err(e) = cache.sync() {
+                eprintln!(
+                    "{} Warning: Failed to update cache: {}",
+                    style("!").yellow(),
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if an entity file has a specific link to a given target ID
+fn check_has_reciprocal(path: &std::path::Path, link_type: &str, target_id: &str) -> bool {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    let value: serde_yml::Value = match serde_yml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    let links = match value.get("links") {
+        Some(l) => l,
+        None => return false,
+    };
+
+    match links.get(link_type) {
+        Some(serde_yml::Value::Sequence(arr)) => arr
+            .iter()
+            .any(|v| v.as_str().map_or(false, |s| s == target_id)),
+        Some(serde_yml::Value::String(s)) => s == target_id,
+        _ => false,
     }
 }
 

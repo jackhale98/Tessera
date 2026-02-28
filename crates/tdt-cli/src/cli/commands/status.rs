@@ -5,7 +5,8 @@ use miette::Result;
 use std::collections::HashMap;
 
 use crate::cli::{GlobalOpts, OutputFormat};
-use tdt_core::core::cache::EntityCache;
+use tdt_core::core::cache::{EntityCache, EntityFilter};
+use tdt_core::core::entity::Status;
 use tdt_core::core::project::Project;
 use tdt_core::services::{
     AssemblyService, CapaService, ComponentService, FeatureService, MateService, NcrService,
@@ -34,6 +35,7 @@ pub fn run(_args: StatusArgs, global: &GlobalOpts) -> Result<()> {
     let quality_metrics = collect_quality_metrics(&project, &cache);
     let bom_metrics = collect_bom_metrics(&project, &cache);
     let tol_metrics = collect_tolerance_metrics(&project, &cache);
+    let maturity_metrics = collect_maturity_metrics(&cache);
 
     match global.output {
         OutputFormat::Json => {
@@ -44,6 +46,7 @@ pub fn run(_args: StatusArgs, global: &GlobalOpts) -> Result<()> {
                 "quality": quality_metrics,
                 "bom": bom_metrics,
                 "tolerances": tol_metrics,
+                "maturity": maturity_metrics,
             });
             println!(
                 "{}",
@@ -90,6 +93,16 @@ pub fn run(_args: StatusArgs, global: &GlobalOpts) -> Result<()> {
             );
 
             println!();
+
+            if maturity_metrics.mismatches > 0 {
+                println!(
+                    "  {} Maturity gaps: {}",
+                    style("⚠").yellow(),
+                    style(maturity_metrics.mismatches).yellow(),
+                );
+                println!();
+            }
+
             println!("{}", "═".repeat(width));
 
             // Overall health indicator
@@ -99,6 +112,7 @@ pub fn run(_args: StatusArgs, global: &GlobalOpts) -> Result<()> {
                 &test_metrics,
                 &quality_metrics,
                 &tol_metrics,
+                &maturity_metrics,
             );
             let health_style = match health.as_str() {
                 "Healthy" => style(health.clone()).green().bold(),
@@ -173,6 +187,11 @@ struct ToleranceMetrics {
     stackups_fail: usize,
     contributors_linked: usize,
     contributors_unlinked: usize,
+}
+
+#[derive(serde::Serialize, Default)]
+struct MaturityMetrics {
+    mismatches: usize,
 }
 
 fn collect_requirement_metrics(project: &Project, cache: &EntityCache) -> RequirementMetrics {
@@ -351,6 +370,29 @@ fn collect_tolerance_metrics(project: &Project, cache: &EntityCache) -> Toleranc
         contributors_linked: 0,   // Not tracked in service stats yet
         contributors_unlinked: 0, // Not tracked in service stats yet
     }
+}
+
+fn collect_maturity_metrics(cache: &EntityCache) -> MaturityMetrics {
+    let filter = EntityFilter::default();
+    let entities = cache.list_entities(&filter);
+    let mut mismatches = 0;
+
+    for entity in &entities {
+        if entity.status <= Status::Draft || entity.status == Status::Obsolete {
+            continue;
+        }
+
+        let links = cache.get_links_from(&entity.id);
+        for link in &links {
+            if let Some(target) = cache.get_entity(&link.target_id) {
+                if target.status != Status::Obsolete && entity.status > target.status {
+                    mismatches += 1;
+                }
+            }
+        }
+    }
+
+    MaturityMetrics { mismatches }
 }
 
 fn format_requirement_metrics(m: &RequirementMetrics) -> Vec<String> {
@@ -533,6 +575,7 @@ fn calculate_health(
     test: &TestMetrics,
     quality: &QualityMetrics,
     tol: &ToleranceMetrics,
+    maturity: &MaturityMetrics,
 ) -> String {
     let mut score = 100i32;
 
@@ -577,6 +620,13 @@ fn calculate_health(
     // Marginal stackups
     if tol.stackups_marginal > 0 {
         score -= 5 * tol.stackups_marginal as i32;
+    }
+
+    // Maturity mismatches
+    if maturity.mismatches > 5 {
+        score -= 10;
+    } else if maturity.mismatches > 0 {
+        score -= 5;
     }
 
     match score {

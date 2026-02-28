@@ -1,5 +1,5 @@
 export * from './types.js';
-export { api, project, entities, requirements, risks, components, traceability, settings, versionControl, cache } from './tauri.js';
+export { api, project, entities, requirements, risks, components, mates, stackups, traceability, settings, versionControl, cache } from './tauri.js';
 export type {
 	GeneralSettings,
 	WorkflowSettings,
@@ -20,7 +20,12 @@ export type {
 	BranchInfo,
 	TagInfo,
 	CommitResult,
+	CommitDetails,
+	CommitFileInfo,
 	PushResult,
+	// Mate & Stackup types
+	RecalcMateResult,
+	RecalcAllMatesResult,
 	// DMM types
 	DmmEntity,
 	DmmLink,

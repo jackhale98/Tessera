@@ -76,8 +76,6 @@ impl Project {
         // Create .tdt directory structure
         std::fs::create_dir_all(tdt_dir.join("schema"))
             .map_err(|e| ProjectError::IoError(e.to_string()))?;
-        std::fs::create_dir_all(tdt_dir.join("templates"))
-            .map_err(|e| ProjectError::IoError(e.to_string()))?;
 
         // Create default config
         let config_path = tdt_dir.join("config.yaml");
@@ -98,8 +96,6 @@ impl Project {
 
         // Create .tdt directory structure (overwrite if exists)
         std::fs::create_dir_all(tdt_dir.join("schema"))
-            .map_err(|e| ProjectError::IoError(e.to_string()))?;
-        std::fs::create_dir_all(tdt_dir.join("templates"))
             .map_err(|e| ProjectError::IoError(e.to_string()))?;
 
         // Create default config
@@ -295,7 +291,6 @@ mod tests {
         assert!(project.tdt_dir().exists());
         assert!(project.tdt_dir().join("config.yaml").exists());
         assert!(project.tdt_dir().join("schema").is_dir());
-        assert!(project.tdt_dir().join("templates").is_dir());
         assert!(project.root().join("requirements/inputs").is_dir());
         assert!(project.root().join("requirements/outputs").is_dir());
         assert!(project.root().join("risks/design").is_dir());

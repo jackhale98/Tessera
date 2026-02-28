@@ -224,20 +224,30 @@ export interface ListParams {
 }
 
 // Traceability types
-export interface TraceLink {
-	entity_id: string;
+export interface TraceNode {
+	id: string;
 	entity_type: EntityPrefix;
 	title: string;
 	status: Status;
+	depth: number;
+}
+
+export interface TraceEdge {
+	from_id: string;
+	to_id: string;
 	link_type: string;
 }
 
 export interface TraceResult {
-	entity_id: string;
-	entity_type: EntityPrefix;
+	root_id: string;
+	nodes: TraceNode[];
+	edges: TraceEdge[];
+}
+
+export interface CycleEntity {
+	id: string;
+	entity_type: string;
 	title: string;
-	upstream: TraceLink[];
-	downstream: TraceLink[];
 }
 
 export interface CoverageStats {

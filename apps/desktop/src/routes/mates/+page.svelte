@@ -89,7 +89,7 @@
 		error = null;
 
 		try {
-			const result = await entities.list('MATE');
+			const result = await entities.list('MATE', { include_data: true } as any);
 			entitiesData = result.items;
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);

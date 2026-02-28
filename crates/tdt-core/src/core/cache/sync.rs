@@ -366,11 +366,17 @@ impl EntityCache {
             // Hazard links
             ("originates_from", "originates_from"),
             ("causes", "causes"),
+            ("caused_by", "caused_by"),
             ("controlled_by", "controlled_by"),
+            ("controls_hazard", "controls_hazard"),
+            ("hazards", "hazards"),
             // Test/Result links
             ("component", "component"),
             ("assembly", "assembly"),
             ("tests", "tests"),
+            ("feature", "feature"),
+            ("features", "features"),
+            ("replaces", "replaces"),
             ("ncrs", "ncrs"),
             ("created_ncr", "ncrs"),
             ("from_result", "from_result"),
@@ -385,6 +391,8 @@ impl EntityCache {
             ("capa", "capa"),
             ("processes_modified", "processes_modified"),
             ("controls_added", "controls_added"),
+            ("modified_by_capa", "modified_by_capa"),
+            ("added_by_capa", "added_by_capa"),
         ];
 
         // Helper to extract links from a value

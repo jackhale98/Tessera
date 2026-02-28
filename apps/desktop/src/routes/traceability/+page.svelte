@@ -1,46 +1,51 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import {
 		Card,
 		CardContent,
 		CardHeader,
 		CardTitle,
-		Input,
 		Button,
 		Badge
 	} from '$lib/components/ui';
+	import { EntityPicker } from '$lib/components/common';
 	import { TraceGraph } from '$lib/components/traceability';
-	import { traceability, entities } from '$lib/api';
+	import { traceability } from '$lib/api';
 	import { isProjectOpen } from '$lib/stores/project';
-	import type { TraceResult, EntityData } from '$lib/api/types';
-	import { Search, GitBranch, AlertCircle, RefreshCw } from 'lucide-svelte';
+	import type { TraceResult, CycleEntity } from '$lib/api/types';
+	import { Search, GitBranch, AlertCircle, RefreshCw, ArrowRight } from 'lucide-svelte';
 
-	let searchQuery = $state('');
-	let searchResults = $state<EntityData[]>([]);
+	const allEntityTypes = ['REQ', 'RISK', 'HAZ', 'TEST', 'RSLT', 'CMP', 'ASM', 'FEAT', 'MATE', 'TOL', 'PROC', 'CTRL', 'WORK', 'LOT', 'DEV', 'NCR', 'CAPA', 'QUOT', 'SUP'];
+
+	const entityRoutes: Record<string, string> = {
+		REQ: 'requirements',
+		RISK: 'risks',
+		HAZ: 'hazards',
+		TEST: 'verification/tests',
+		RSLT: 'verification/results',
+		CMP: 'components',
+		ASM: 'assemblies',
+		FEAT: 'features',
+		MATE: 'mates',
+		TOL: 'tolerances',
+		PROC: 'manufacturing/processes',
+		CTRL: 'controls',
+		WORK: 'manufacturing/work-instructions',
+		LOT: 'manufacturing/lots',
+		DEV: 'manufacturing/deviations',
+		NCR: 'quality/ncrs',
+		CAPA: 'quality/capas',
+		QUOT: 'procurement/quotes',
+		SUP: 'procurement/suppliers'
+	};
+
 	let selectedEntityId = $state<string | null>(null);
 	let traceResult = $state<TraceResult | null>(null);
 	let orphans = $state<string[]>([]);
-	let cycles = $state<string[][]>([]);
+	let cycles = $state<CycleEntity[][]>([]);
 	let loading = $state(false);
-	let searching = $state(false);
 	let error = $state<string | null>(null);
-
-	async function searchEntities() {
-		if (!searchQuery.trim() || !$isProjectOpen) return;
-
-		searching = true;
-		error = null;
-
-		try {
-			// Search across multiple entity types
-			const results = await entities.list('REQ', { search: searchQuery, limit: 10 });
-			searchResults = results.items;
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-		} finally {
-			searching = false;
-		}
-	}
 
 	async function selectEntity(id: string) {
 		selectedEntityId = id;
@@ -48,7 +53,7 @@
 		error = null;
 
 		try {
-			const result = await traceability.traceFrom({ id, depth: 1 });
+			const result = await traceability.traceFrom({ id });
 			traceResult = result;
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
@@ -75,8 +80,9 @@
 		}
 	}
 
-	function handleEntitySelect(id: string) {
-		selectEntity(id);
+	function navigateToEntity(entityType: string, id: string) {
+		const route = entityRoutes[entityType] ?? 'entities';
+		goto(`/${route}/${id}`);
 	}
 
 	onMount(() => {
@@ -106,35 +112,12 @@
 			</CardTitle>
 		</CardHeader>
 		<CardContent>
-			<div class="flex gap-4">
-				<Input
-					type="text"
-					placeholder="Search by ID or title..."
-					bind:value={searchQuery}
-					onkeydown={(e) => e.key === 'Enter' && searchEntities()}
-					class="flex-1"
-				/>
-				<Button onclick={searchEntities} disabled={searching}>
-					{searching ? 'Searching...' : 'Search'}
-				</Button>
-			</div>
-
-			{#if searchResults.length > 0}
-				<div class="mt-4 space-y-2">
-					{#each searchResults as entity}
-						<button
-							class="flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 {selectedEntityId === entity.id ? 'border-primary bg-primary/5' : ''}"
-							onclick={() => selectEntity(entity.id)}
-						>
-							<div>
-								<p class="font-medium">{entity.title}</p>
-								<p class="font-mono text-sm text-muted-foreground">{entity.id}</p>
-							</div>
-							<Badge variant="outline">{entity.prefix}</Badge>
-						</button>
-					{/each}
-				</div>
-			{/if}
+			<EntityPicker
+				entityTypes={allEntityTypes}
+				placeholder="Search by ID or title..."
+				onSelect={(entity) => selectEntity(entity.id)}
+				onClear={() => { selectedEntityId = null; traceResult = null; }}
+			/>
 		</CardContent>
 	</Card>
 
@@ -158,7 +141,7 @@
 						{error}
 					</div>
 				{:else}
-					<TraceGraph {traceResult} onSelectEntity={handleEntitySelect} />
+					<TraceGraph {traceResult} />
 				{/if}
 			</CardContent>
 		</Card>
@@ -211,14 +194,30 @@
 				{#if cycles.length === 0}
 					<p class="text-center text-muted-foreground">No circular dependencies found</p>
 				{:else}
-					<div class="max-h-64 space-y-2 overflow-auto">
+					<div class="max-h-80 space-y-3 overflow-auto">
 						{#each cycles as cycle, i}
-							<div class="rounded-lg border p-2">
-								<p class="mb-1 text-xs text-muted-foreground">Cycle {i + 1}</p>
-								<div class="flex flex-wrap gap-1">
-									{#each cycle as id}
-										<Badge variant="outline" class="font-mono text-xs">{id.split('-')[0]}</Badge>
+							<div class="rounded-lg border p-3">
+								<p class="mb-2 text-xs font-medium text-muted-foreground">Cycle {i + 1}</p>
+								<div class="flex flex-wrap items-center gap-1">
+									{#each cycle as entity, j}
+										<button
+											class="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-mono transition-colors hover:bg-muted/50"
+											onclick={() => navigateToEntity(entity.entity_type, entity.id)}
+											title={entity.title}
+										>
+											<Badge variant="outline" class="text-xs px-1 py-0">{entity.entity_type}</Badge>
+											<span class="truncate max-w-32">{entity.title || entity.id}</span>
+										</button>
+										{#if j < cycle.length - 1}
+											<ArrowRight class="h-3 w-3 text-muted-foreground shrink-0" />
+										{:else}
+											<ArrowRight class="h-3 w-3 text-destructive shrink-0" />
+										{/if}
 									{/each}
+									<!-- Arrow back to first entity to show the cycle -->
+									{#if cycle.length > 0}
+										<Badge variant="outline" class="text-xs px-1 py-0 border-destructive text-destructive">{cycle[0].entity_type}</Badge>
+									{/if}
 								</div>
 							</div>
 						{/each}

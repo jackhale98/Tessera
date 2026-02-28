@@ -690,6 +690,85 @@ pub async fn stage_entity(id: String, state: State<'_, AppState>) -> CommandResu
     Ok(())
 }
 
+/// Unstage files (remove from staging area)
+#[tauri::command]
+pub async fn unstage_files(paths: Vec<String>, state: State<'_, AppState>) -> CommandResult<()> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let output = Command::new("git")
+        .arg("restore")
+        .arg("--staged")
+        .args(&paths)
+        .current_dir(project.root())
+        .output()
+        .map_err(|e| CommandError::Other(format!("Failed to unstage files: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CommandError::Other(format!(
+            "Failed to unstage files: {}",
+            stderr
+        )));
+    }
+
+    Ok(())
+}
+
+/// Discard uncommitted changes to files (revert to last committed version)
+#[tauri::command]
+pub async fn discard_changes(paths: Vec<String>, state: State<'_, AppState>) -> CommandResult<()> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    for path in &paths {
+        let full_path = project.root().join(path);
+
+        // Check if file is untracked (not in git)
+        let check = Command::new("git")
+            .args(["ls-files", "--error-unmatch", path])
+            .current_dir(project.root())
+            .output();
+
+        if let Ok(output) = check {
+            if output.status.success() {
+                // Tracked file: restore from HEAD
+                let restore = Command::new("git")
+                    .args(["restore", path])
+                    .current_dir(project.root())
+                    .output()
+                    .map_err(|e| {
+                        CommandError::Other(format!("Failed to restore {}: {}", path, e))
+                    })?;
+
+                if !restore.status.success() {
+                    let stderr = String::from_utf8_lossy(&restore.stderr);
+                    return Err(CommandError::Other(format!(
+                        "Failed to restore {}: {}",
+                        path, stderr
+                    )));
+                }
+            } else {
+                // Untracked file: delete it
+                if full_path.exists() {
+                    std::fs::remove_file(&full_path).map_err(|e| {
+                        CommandError::Other(format!("Failed to delete untracked file {}: {}", path, e))
+                    })?;
+                }
+            }
+        }
+    }
+
+    // Sync cache after reverting changes
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(())
+}
+
 /// Commit staged changes
 #[tauri::command]
 pub async fn commit_changes(
@@ -849,6 +928,218 @@ pub async fn get_recent_commits(
         .collect();
 
     Ok(commits)
+}
+
+/// A file changed in a commit, with optional entity info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitFileInfo {
+    /// File path relative to repo root
+    pub path: String,
+    /// Change type: "added", "modified", "deleted", "renamed"
+    pub change_type: String,
+    /// Entity ID if this is an entity file
+    pub entity_id: Option<String>,
+    /// Entity title if available
+    pub entity_title: Option<String>,
+    /// Entity type prefix if available
+    pub entity_type: Option<String>,
+}
+
+/// Details of a specific commit
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitDetails {
+    /// Full commit hash
+    pub hash: String,
+    /// Short commit hash
+    pub short_hash: String,
+    /// Full commit message (all lines)
+    pub full_message: String,
+    /// Author name
+    pub author: String,
+    /// Author email
+    pub author_email: Option<String>,
+    /// Commit date
+    pub date: String,
+    /// Whether the commit is GPG signed
+    pub is_signed: bool,
+    /// Files changed in this commit
+    pub files: Vec<CommitFileInfo>,
+    /// Number of insertions
+    pub insertions: u32,
+    /// Number of deletions
+    pub deletions: u32,
+}
+
+/// Get detailed information about a specific commit
+#[tauri::command]
+pub async fn get_commit_details(
+    hash: String,
+    state: State<'_, AppState>,
+) -> CommandResult<CommitDetails> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+    let cache_guard = state.cache.lock().unwrap();
+    let cache = cache_guard.as_ref();
+
+    let root = project.root();
+
+    // Get commit metadata
+    let output = Command::new("git")
+        .args([
+            "show",
+            "--format=%H|%h|%B%n---END_MSG---|%an|%ae|%aI|%G?",
+            "--no-patch",
+            &hash,
+        ])
+        .current_dir(root)
+        .output()
+        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CommandError::Other(format!("Git error: {}", stderr)));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = stdout.trim();
+
+    // Parse: everything before ---END_MSG--- is full_hash|short_hash|message body
+    // After ---END_MSG--- is |author|email|date|sig
+    let (msg_part, meta_part) = stdout
+        .split_once("---END_MSG---")
+        .ok_or_else(|| CommandError::Other("Failed to parse commit output".to_string()))?;
+
+    let meta_parts: Vec<&str> = meta_part.split('|').collect();
+    // meta_parts: ["", author, email, date, sig]
+
+    let msg_lines: Vec<&str> = msg_part.split('|').collect();
+    let full_hash = msg_lines.first().unwrap_or(&"").to_string();
+    let short_hash_val = msg_lines.get(1).unwrap_or(&"").to_string();
+    let full_message = msg_lines
+        .get(2..)
+        .map(|s| s.join("|"))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    let author = meta_parts.get(1).unwrap_or(&"").to_string();
+    let author_email = meta_parts.get(2).map(|s| s.to_string());
+    let date = meta_parts.get(3).unwrap_or(&"").to_string();
+    let is_signed = meta_parts.get(4).map_or(false, |s| *s == "G" || *s == "U");
+
+    // Get changed files with status
+    let output = Command::new("git")
+        .args([
+            "diff-tree",
+            "--no-commit-id",
+            "-r",
+            "--name-status",
+            &hash,
+        ])
+        .current_dir(root)
+        .output()
+        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+
+    let files_stdout = String::from_utf8_lossy(&output.stdout);
+    let files: Vec<CommitFileInfo> = files_stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let parts: Vec<&str> = line.split('\t').collect();
+            let status_char = parts.first().unwrap_or(&"M");
+            let path = parts.get(1).unwrap_or(&"").to_string();
+
+            let change_type = match *status_char {
+                "A" => "added",
+                "M" => "modified",
+                "D" => "deleted",
+                s if s.starts_with('R') => "renamed",
+                _ => "modified",
+            }
+            .to_string();
+
+            // Extract entity info from .pdt.yaml / .tdt.yaml files
+            let (entity_id, entity_title) =
+                if path.ends_with(".tdt.yaml") || path.ends_with(".pdt.yaml") {
+                    extract_entity_info_from_path(root, &path, cache)
+                } else {
+                    (None, None)
+                };
+
+            let entity_type = entity_id
+                .as_ref()
+                .and_then(|id| id.split('-').next().map(|s| s.to_string()));
+
+            CommitFileInfo {
+                path,
+                change_type,
+                entity_id,
+                entity_title,
+                entity_type,
+            }
+        })
+        .collect();
+
+    // Get stat summary (insertions/deletions)
+    let output = Command::new("git")
+        .args(["diff-tree", "--no-commit-id", "--shortstat", "-r", &hash])
+        .current_dir(root)
+        .output()
+        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+
+    let stat_stdout = String::from_utf8_lossy(&output.stdout);
+    let mut insertions: u32 = 0;
+    let mut deletions: u32 = 0;
+
+    for part in stat_stdout.split(',') {
+        let part = part.trim();
+        if part.contains("insertion") {
+            if let Some(num) = part.split_whitespace().next() {
+                insertions = num.parse().unwrap_or(0);
+            }
+        } else if part.contains("deletion") {
+            if let Some(num) = part.split_whitespace().next() {
+                deletions = num.parse().unwrap_or(0);
+            }
+        }
+    }
+
+    Ok(CommitDetails {
+        hash: full_hash,
+        short_hash: short_hash_val,
+        full_message,
+        author,
+        author_email,
+        date,
+        is_signed,
+        files,
+        insertions,
+        deletions,
+    })
+}
+
+/// Get the diff of a specific file at a specific commit
+#[tauri::command]
+pub async fn get_commit_file_diff(
+    commit_hash: String,
+    file_path: String,
+    state: State<'_, AppState>,
+) -> CommandResult<String> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let output = Command::new("git")
+        .args(["show", "--format=", &commit_hash, "--", &file_path])
+        .current_dir(project.root())
+        .output()
+        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CommandError::Other(format!("Git error: {}", stderr)));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 // ============================================================================

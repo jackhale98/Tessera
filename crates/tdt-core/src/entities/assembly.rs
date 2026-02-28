@@ -66,6 +66,30 @@ pub struct AssemblyLinks {
     /// Risks affecting this assembly (reciprocal of RISK.affects)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub risks: Vec<String>,
+
+    /// Requirements satisfied by this assembly (reciprocal of REQ.satisfied_by)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requirements: Vec<String>,
+
+    /// Features on this assembly (reciprocal of FEAT.component)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
+
+    /// Tests for this assembly (reciprocal of TEST.assembly)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<String>,
+
+    /// Manufacturing processes (reciprocal of PROC.produces)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub processes: Vec<String>,
+
+    /// Hazards originating from this assembly (reciprocal of HAZ.originates_from)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hazards: Vec<String>,
+
+    /// Quotes for this assembly (reciprocal of QUOT.assembly)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quotes: Vec<String>,
 }
 
 /// Assembly entity - collection of components and sub-assemblies

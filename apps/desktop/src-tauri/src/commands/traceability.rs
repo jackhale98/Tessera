@@ -104,90 +104,232 @@ pub async fn get_links_to(id: String, state: State<'_, AppState>) -> CommandResu
     Ok(enriched)
 }
 
-/// Frontend-compatible trace link
+/// A node in the trace graph
 #[derive(Debug, Clone, Serialize)]
-pub struct FrontendTraceLink {
-    pub entity_id: String,
+pub struct TraceNode {
+    pub id: String,
     pub entity_type: String,
     pub title: String,
     pub status: String,
+    pub depth: i32,
+}
+
+/// A directed edge in the trace graph (always from upstream to downstream)
+#[derive(Debug, Clone, Serialize)]
+pub struct TraceEdge {
+    pub from_id: String,
+    pub to_id: String,
     pub link_type: String,
 }
 
-/// Frontend-compatible trace result
+/// Frontend-compatible trace result — a graph of nodes and directed edges
 #[derive(Debug, Clone, Serialize)]
 pub struct FrontendTraceResult {
-    pub entity_id: String,
-    pub entity_type: String,
-    pub title: String,
-    pub upstream: Vec<FrontendTraceLink>,
-    pub downstream: Vec<FrontendTraceLink>,
+    pub root_id: String,
+    pub nodes: Vec<TraceNode>,
+    pub edges: Vec<TraceEdge>,
 }
 
-/// Trace from an entity — returns frontend-compatible result with upstream and downstream links
+/// Trace from an entity — returns a graph of upstream and downstream entities
+/// with edges always pointing from upstream to downstream.
+///
+/// Uses `is_downstream_link` to classify link types:
+/// - `verified_by`, `satisfied_by`, etc. → target is downstream
+/// - `verifies`, `component`, `requirement`, etc. → target is upstream
 #[tauri::command]
 pub async fn trace_from(
     params: TraceParams,
     state: State<'_, AppState>,
 ) -> CommandResult<FrontendTraceResult> {
+    use std::collections::{HashMap, HashSet, VecDeque};
+    use tdt_core::core::links::is_downstream_link;
+
     let cache = state.cache.lock().unwrap();
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
-    // Get source entity info from cache
-    let source = cache
+    let root = cache
         .get_entity(&params.id)
         .ok_or_else(|| CommandError::NotFound(format!("Entity not found: {}", params.id)))?;
 
-    let entity_type = source.id.split('-').next().unwrap_or("").to_string();
+    let max_depth = params.depth.unwrap_or(5) as i32;
 
-    // Get downstream links (FROM source)
-    let links_from = cache.get_links_from(&params.id);
-    let downstream: Vec<FrontendTraceLink> = links_from
-        .iter()
-        .filter_map(|link| {
-            let target = cache.get_entity(&link.target_id)?;
-            Some(FrontendTraceLink {
-                entity_id: target.id.clone(),
-                entity_type: target.id.split('-').next().unwrap_or("").to_string(),
-                title: target.title.clone(),
-                status: format!("{:?}", target.status).to_lowercase(),
-                link_type: link.link_type.clone(),
-            })
-        })
-        .collect();
+    let mut nodes: HashMap<String, TraceNode> = HashMap::new();
+    let mut edges: Vec<TraceEdge> = Vec::new();
+    let mut seen_edges: HashSet<(String, String)> = HashSet::new();
 
-    // Get upstream links (TO source)
-    let links_to = cache.get_links_to(&params.id);
-    let upstream: Vec<FrontendTraceLink> = links_to
-        .iter()
-        .filter_map(|link| {
-            let source_entity = cache.get_entity(&link.source_id)?;
-            Some(FrontendTraceLink {
-                entity_id: source_entity.id.clone(),
-                entity_type: source_entity.id.split('-').next().unwrap_or("").to_string(),
-                title: source_entity.title.clone(),
-                status: format!("{:?}", source_entity.status).to_lowercase(),
-                link_type: link.link_type.clone(),
-            })
-        })
-        .collect();
+    // Add root node
+    nodes.insert(
+        root.id.clone(),
+        TraceNode {
+            id: root.id.clone(),
+            entity_type: root.id.split('-').next().unwrap_or("").to_string(),
+            title: root.title.clone(),
+            status: format!("{:?}", root.status).to_lowercase(),
+            depth: 0,
+        },
+    );
+
+    // Helper: try to add an edge and node, returns true if the neighbor is new
+    fn try_add_edge(
+        upstream_id: &str,
+        downstream_id: &str,
+        link_type: &str,
+        neighbor_id: &str,
+        neighbor_depth: i32,
+        cache: &tdt_core::core::cache::EntityCache,
+        nodes: &mut HashMap<String, TraceNode>,
+        edges: &mut Vec<TraceEdge>,
+        seen_edges: &mut HashSet<(String, String)>,
+    ) -> bool {
+        let edge_key = (upstream_id.to_string(), downstream_id.to_string());
+        let reverse_key = (downstream_id.to_string(), upstream_id.to_string());
+        if seen_edges.contains(&edge_key) || seen_edges.contains(&reverse_key) {
+            return false;
+        }
+        seen_edges.insert(edge_key);
+        edges.push(TraceEdge {
+            from_id: upstream_id.to_string(),
+            to_id: downstream_id.to_string(),
+            link_type: link_type.to_string(),
+        });
+        if !nodes.contains_key(neighbor_id) {
+            if let Some(entity) = cache.get_entity(neighbor_id) {
+                nodes.insert(
+                    neighbor_id.to_string(),
+                    TraceNode {
+                        id: entity.id.clone(),
+                        entity_type: entity.id.split('-').next().unwrap_or("").to_string(),
+                        title: entity.title.clone(),
+                        status: format!("{:?}", entity.status).to_lowercase(),
+                        depth: neighbor_depth,
+                    },
+                );
+            }
+        }
+        true
+    }
+
+    // BFS downstream
+    let mut queue: VecDeque<(String, i32)> = VecDeque::new();
+    queue.push_back((params.id.clone(), 0));
+    let mut visited_down: HashSet<String> = HashSet::new();
+    visited_down.insert(params.id.clone());
+
+    while let Some((current_id, current_depth)) = queue.pop_front() {
+        if current_depth >= max_depth {
+            continue;
+        }
+
+        // Downstream via links_from: downstream link types → target is downstream
+        for link in cache.get_links_from(&current_id) {
+            if is_downstream_link(&link.link_type) {
+                let added = try_add_edge(
+                    &current_id,
+                    &link.target_id,
+                    &link.link_type,
+                    &link.target_id,
+                    current_depth + 1,
+                    cache,
+                    &mut nodes,
+                    &mut edges,
+                    &mut seen_edges,
+                );
+                if added && !visited_down.contains(&link.target_id) {
+                    visited_down.insert(link.target_id.clone());
+                    queue.push_back((link.target_id.clone(), current_depth + 1));
+                }
+            }
+        }
+
+        // Downstream via links_to: upstream link types pointing to us → source is downstream
+        for link in cache.get_links_to(&current_id) {
+            if !is_downstream_link(&link.link_type) {
+                let added = try_add_edge(
+                    &current_id,
+                    &link.source_id,
+                    &link.link_type,
+                    &link.source_id,
+                    current_depth + 1,
+                    cache,
+                    &mut nodes,
+                    &mut edges,
+                    &mut seen_edges,
+                );
+                if added && !visited_down.contains(&link.source_id) {
+                    visited_down.insert(link.source_id.clone());
+                    queue.push_back((link.source_id.clone(), current_depth + 1));
+                }
+            }
+        }
+    }
+
+    // BFS upstream
+    let mut queue: VecDeque<(String, i32)> = VecDeque::new();
+    queue.push_back((params.id.clone(), 0));
+    let mut visited_up: HashSet<String> = HashSet::new();
+    visited_up.insert(params.id.clone());
+
+    while let Some((current_id, current_depth)) = queue.pop_front() {
+        if current_depth >= max_depth {
+            continue;
+        }
+
+        // Upstream via links_from: upstream link types → target is upstream
+        for link in cache.get_links_from(&current_id) {
+            if !is_downstream_link(&link.link_type) {
+                let added = try_add_edge(
+                    &link.target_id,
+                    &current_id,
+                    &link.link_type,
+                    &link.target_id,
+                    -(current_depth + 1),
+                    cache,
+                    &mut nodes,
+                    &mut edges,
+                    &mut seen_edges,
+                );
+                if added && !visited_up.contains(&link.target_id) {
+                    visited_up.insert(link.target_id.clone());
+                    queue.push_back((link.target_id.clone(), current_depth + 1));
+                }
+            }
+        }
+
+        // Upstream via links_to: downstream link types pointing to us → source is upstream
+        for link in cache.get_links_to(&current_id) {
+            if is_downstream_link(&link.link_type) {
+                let added = try_add_edge(
+                    &link.source_id,
+                    &current_id,
+                    &link.link_type,
+                    &link.source_id,
+                    -(current_depth + 1),
+                    cache,
+                    &mut nodes,
+                    &mut edges,
+                    &mut seen_edges,
+                );
+                if added && !visited_up.contains(&link.source_id) {
+                    visited_up.insert(link.source_id.clone());
+                    queue.push_back((link.source_id.clone(), current_depth + 1));
+                }
+            }
+        }
+    }
 
     Ok(FrontendTraceResult {
-        entity_id: source.id.clone(),
-        entity_type,
-        title: source.title.clone(),
-        upstream,
-        downstream,
+        root_id: params.id.clone(),
+        nodes: nodes.into_values().collect(),
+        edges,
     })
 }
 
-/// Trace to an entity — returns same frontend-compatible result
+/// Trace to an entity — returns same graph as trace_from
 #[tauri::command]
 pub async fn trace_to(
     params: TraceParams,
     state: State<'_, AppState>,
 ) -> CommandResult<FrontendTraceResult> {
-    // Same implementation as trace_from — both return upstream + downstream
     trace_from(params, state).await
 }
 
@@ -272,12 +414,21 @@ pub async fn find_orphans(
     Ok(orphans.into_iter().map(|e| e.id).collect())
 }
 
-/// Find circular dependencies
+/// Entity info within a cycle
+#[derive(Debug, Clone, Serialize)]
+pub struct CycleEntity {
+    pub id: String,
+    pub entity_type: String,
+    pub title: String,
+}
+
+/// Find circular dependencies — returns enriched cycle data, filtering out
+/// 2-cycles caused by reciprocal links (e.g. REQ→TEST→REQ via verified_by/verifies)
 #[tauri::command]
 pub async fn find_cycles(
     entity_type: Option<String>,
     state: State<'_, AppState>,
-) -> CommandResult<Vec<Vec<String>>> {
+) -> CommandResult<Vec<Vec<CycleEntity>>> {
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
 
@@ -294,9 +445,29 @@ pub async fn find_cycles(
         _ => None,
     });
 
-    let cycles = service.find_cycles(prefix);
+    let raw_cycles = service.find_cycles(prefix);
 
-    Ok(cycles)
+    // Filter out 2-cycles (almost always reciprocal link pairs, not real circular deps)
+    // and enrich with entity info
+    let enriched: Vec<Vec<CycleEntity>> = raw_cycles
+        .into_iter()
+        .filter(|cycle| cycle.len() > 2)
+        .map(|cycle| {
+            cycle
+                .iter()
+                .map(|id| {
+                    let entity = cache.get_entity(id);
+                    CycleEntity {
+                        id: id.clone(),
+                        entity_type: id.split('-').next().unwrap_or("").to_string(),
+                        title: entity.map(|e| e.title.clone()).unwrap_or_default(),
+                    }
+                })
+                .collect()
+        })
+        .collect();
+
+    Ok(enriched)
 }
 
 /// Add a link between entities with automatic reciprocal link creation

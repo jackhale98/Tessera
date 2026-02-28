@@ -226,12 +226,14 @@ pub fn get_reciprocal_link_type(
         ("component", EntityPrefix::Cmp, EntityPrefix::Test) => Some("tests".to_string()),
         ("component", EntityPrefix::Cmp, EntityPrefix::Feat) => Some("features".to_string()),
         ("component", EntityPrefix::Cmp, EntityPrefix::Risk) => Some("risks".to_string()),
+        ("component", EntityPrefix::Cmp, EntityPrefix::Quot) => Some("quotes".to_string()),
         // Rslt, Ctrl, Work, Ncr, Capa -> CMP: no reciprocal on CMP
         ("component", EntityPrefix::Cmp, _) => None,
 
         // === "assembly" link: many entities -> ASM (reciprocal depends on source) ===
         ("assembly", EntityPrefix::Asm, EntityPrefix::Test) => Some("tests".to_string()),
         ("assembly", EntityPrefix::Asm, EntityPrefix::Risk) => Some("risks".to_string()),
+        ("assembly", EntityPrefix::Asm, EntityPrefix::Quot) => Some("quotes".to_string()),
         // Rslt, Work -> ASM: no reciprocal on ASM
         ("assembly", EntityPrefix::Asm, _) => None,
 
@@ -284,8 +286,11 @@ pub fn get_reciprocal_link_type(
         // === Symmetric ===
         ("related_to", _, _) => Some("related_to".to_string()),
 
-        // === Supplier (no reciprocal) ===
-        ("supplier", _, _) => None,
+        // === Supplier → quotes reciprocal (only from QUOT entities) ===
+        ("supplier", EntityPrefix::Sup, EntityPrefix::Quot) => Some("quotes".to_string()),
+        // NCR/CAPA.supplier → SUP: no reciprocal on SUP
+        ("supplier", EntityPrefix::Sup, _) => None,
+        ("quotes", EntityPrefix::Quot, _) => Some("supplier".to_string()),
 
         // === Hazard reciprocals ===
         ("originates_from", EntityPrefix::Cmp, _) => Some("hazards".to_string()),
@@ -301,6 +306,88 @@ pub fn get_reciprocal_link_type(
         // has an inferred link type. This ensures new entity combinations added
         // to infer_link_type automatically get reciprocals.
         (_, _, _) => infer_link_type(target_prefix, source_prefix),
+    }
+}
+
+/// Classify whether a link type represents a downstream relationship.
+///
+/// A downstream link means the target entity is "downstream" in the engineering
+/// hierarchy (a dependent, product, or verification). An upstream link means the
+/// target is a parent, dependency, or source.
+///
+/// Examples:
+/// - `verified_by` is downstream: the test that verifies is downstream of the requirement
+/// - `verifies` is upstream: the requirement being verified is upstream of the test
+/// - `satisfied_by` is downstream: the component satisfying is downstream of the requirement
+/// - `component` is upstream: the component under test is upstream of the test
+pub fn is_downstream_link(link_type: &str) -> bool {
+    match link_type {
+        // Upstream-pointing links (target is a parent/dependency/source)
+        "verifies" | "satisfies" | "mitigates"
+        | "requirement" | "requirements"
+        | "component" | "assembly" | "process" | "feature"
+        | "derives_from" | "allocated_from"
+        | "from_result" | "capa" | "supplier"
+        | "originates_from" | "caused_by" | "controls_hazard"
+        | "added_by_capa" | "modified_by_capa"
+        | "replaces" | "affects" => false,
+
+        // Everything else is downstream-pointing (target is a child/dependent/product)
+        // Includes: verified_by, satisfied_by, mitigated_by, allocated_to,
+        // risks, tests, features, controls, work_instructions, ncrs,
+        // processes, produces, processes_modified, controls_added,
+        // hazards, causes, controlled_by, derived_by, replaced_by,
+        // related_to, interchangeable_with, etc.
+        _ => true,
+    }
+}
+
+/// A direct field reference on an entity that should produce a reciprocal link
+/// on the target entity.
+#[derive(Debug, Clone)]
+pub struct FieldReferenceRule {
+    /// The YAML field name on the source entity (e.g., "supplier", "component")
+    pub field_name: &'static str,
+    /// The link type to add on the target entity (e.g., "quotes", "features")
+    pub reciprocal_link_type: &'static str,
+}
+
+/// Get the field reference rules for a given entity type.
+///
+/// These define direct fields (outside the `links:` section) that reference
+/// other entities and should have reciprocal links added to the target.
+/// Used by `validate` and `link sync` to detect and fix missing reciprocal links.
+pub fn get_field_reference_rules(source_prefix: EntityPrefix) -> Vec<FieldReferenceRule> {
+    match source_prefix {
+        EntityPrefix::Quot => vec![
+            FieldReferenceRule {
+                field_name: "supplier",
+                reciprocal_link_type: "quotes",
+            },
+            FieldReferenceRule {
+                field_name: "component",
+                reciprocal_link_type: "quotes",
+            },
+            FieldReferenceRule {
+                field_name: "assembly",
+                reciprocal_link_type: "quotes",
+            },
+        ],
+        EntityPrefix::Feat => vec![FieldReferenceRule {
+            field_name: "component",
+            reciprocal_link_type: "features",
+        }],
+        EntityPrefix::Rslt => vec![
+            FieldReferenceRule {
+                field_name: "component",
+                reciprocal_link_type: "results",
+            },
+            FieldReferenceRule {
+                field_name: "assembly",
+                reciprocal_link_type: "results",
+            },
+        ],
+        _ => vec![],
     }
 }
 

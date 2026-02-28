@@ -278,11 +278,18 @@ pub async fn save_entity(
         map.insert("id".to_string(), Value::String(id.clone()));
     }
 
-    // Convert to YAML and save
-    let yaml = serde_yml::to_string(&data)
-        .map_err(|e| CommandError::Other(format!("Failed to serialize entity: {}", e)))?;
-
     let file_path = dir.join(format!("{}.tdt.yaml", id));
+
+    // When updating an existing file, preserve field order by merging into original YAML
+    let yaml = if file_path.exists() {
+        let original_content = std::fs::read_to_string(&file_path)?;
+        merge_yaml_preserving_order(&original_content, &data)
+            .map_err(|e| CommandError::Other(format!("Failed to merge entity data: {}", e)))?
+    } else {
+        serde_yml::to_string(&data)
+            .map_err(|e| CommandError::Other(format!("Failed to serialize entity: {}", e)))?
+    };
+
     std::fs::write(&file_path, yaml)?;
 
     // Sync cache to pick up the new/updated entity
@@ -436,4 +443,48 @@ pub async fn search_entities(
     }
 
     Ok(results)
+}
+
+/// Merge new data into existing YAML while preserving the original field order.
+///
+/// This prevents entity saves from reordering YAML fields, which would create
+/// noisy git diffs when only a single value actually changed.
+fn merge_yaml_preserving_order(original_yaml: &str, new_data: &Value) -> Result<String, String> {
+    let mut original: serde_yml::Value =
+        serde_yml::from_str(original_yaml).map_err(|e| format!("Failed to parse original YAML: {}", e))?;
+
+    let new_yml: serde_yml::Value = {
+        // Convert JSON Value -> JSON string -> YAML Value to handle type conversion
+        let json_str =
+            serde_json::to_string(new_data).map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+        serde_yml::from_str(&json_str).map_err(|e| format!("Failed to convert to YAML: {}", e))?
+    };
+
+    merge_yaml_values(&mut original, &new_yml);
+
+    serde_yml::to_string(&original).map_err(|e| format!("Failed to serialize YAML: {}", e))
+}
+
+/// Recursively merge new YAML values into original, preserving key order.
+fn merge_yaml_values(original: &mut serde_yml::Value, new_val: &serde_yml::Value) {
+    match (original, new_val) {
+        (serde_yml::Value::Mapping(orig_map), serde_yml::Value::Mapping(new_map)) => {
+            // Update existing keys in-place (preserving order)
+            for (key, orig_val) in orig_map.iter_mut() {
+                if let Some(new_v) = new_map.get(key) {
+                    merge_yaml_values(orig_val, new_v);
+                }
+            }
+            // Append any new keys not in the original
+            for (key, new_v) in new_map {
+                if !orig_map.contains_key(key) {
+                    orig_map.insert(key.clone(), new_v.clone());
+                }
+            }
+        }
+        (orig, new_v) => {
+            // For non-mapping types, replace the value directly
+            *orig = new_v.clone();
+        }
+    }
 }

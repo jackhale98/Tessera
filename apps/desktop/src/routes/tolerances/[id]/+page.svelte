@@ -5,7 +5,7 @@
 	import { EntityDetailHeader, LinksSection } from '$lib/components/entities';
 	import EntityHistory from '$lib/components/EntityHistory.svelte';
 	import { StatusBadge } from '$lib/components/common';
-	import { entities, traceability } from '$lib/api';
+	import { entities, stackups, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
 	import type { LinkInfo } from '$lib/api/tauri';
 	import {
@@ -20,7 +20,8 @@
 		BarChart3,
 		ArrowUp,
 		ArrowDown,
-		History
+		History,
+		RefreshCw
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
@@ -31,6 +32,8 @@
 	let loading = $state(true);
 	let linksLoading = $state(true);
 	let error = $state<string | null>(null);
+	let analyzing = $state(false);
+	let analyzeMessage = $state<{ text: string; type: 'success' | 'error' } | null>(null);
 
 	// Type-safe data access
 	const data = $derived(entity?.data ?? {});
@@ -201,6 +204,26 @@
 			console.error('Failed to refresh links:', e);
 		} finally {
 			linksLoading = false;
+		}
+	}
+
+	async function reanalyze() {
+		if (!id) return;
+		analyzing = true;
+		analyzeMessage = null;
+
+		try {
+			await stackups.analyze(id);
+			analyzeMessage = { text: 'Analysis updated with latest feature values', type: 'success' };
+			// Reload entity data to reflect changes
+			entity = await entities.get(id);
+		} catch (e) {
+			analyzeMessage = { text: e instanceof Error ? e.message : String(e), type: 'error' };
+		} finally {
+			analyzing = false;
+			if (analyzeMessage?.type === 'success') {
+				setTimeout(() => { analyzeMessage = null; }, 5000);
+			}
 		}
 	}
 
@@ -414,12 +437,25 @@
 				<!-- Analysis Results -->
 				{#if analysisResults}
 					<Card>
-						<CardHeader>
+						<CardHeader class="flex flex-row items-center justify-between">
 							<CardTitle class="flex items-center gap-2">
 								<BarChart3 class="h-5 w-5" />
 								Analysis Results
 							</CardTitle>
+							<button
+								class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+								onclick={reanalyze}
+								disabled={analyzing}
+							>
+								<RefreshCw class="h-4 w-4 {analyzing ? 'animate-spin' : ''}" />
+								{analyzing ? 'Analyzing...' : 'Re-analyze'}
+							</button>
 						</CardHeader>
+						{#if analyzeMessage}
+							<div class="mx-6 mb-2 rounded-md px-3 py-2 text-sm {analyzeMessage.type === 'success' ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-destructive/10 text-destructive'}">
+								{analyzeMessage.text}
+							</div>
+						{/if}
 						<CardContent class="space-y-6">
 							<!-- Worst Case -->
 							{#if analysisResults.worst_case}
@@ -550,6 +586,31 @@
 									{/if}
 								</div>
 							{/if}
+						</CardContent>
+					</Card>
+				{:else}
+					<Card>
+						<CardHeader class="flex flex-row items-center justify-between">
+							<CardTitle class="flex items-center gap-2">
+								<BarChart3 class="h-5 w-5" />
+								Analysis Results
+							</CardTitle>
+							<button
+								class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+								onclick={reanalyze}
+								disabled={analyzing}
+							>
+								<RefreshCw class="h-4 w-4 {analyzing ? 'animate-spin' : ''}" />
+								{analyzing ? 'Analyzing...' : 'Run Analysis'}
+							</button>
+						</CardHeader>
+						{#if analyzeMessage}
+							<div class="mx-6 mb-2 rounded-md px-3 py-2 text-sm {analyzeMessage.type === 'success' ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-destructive/10 text-destructive'}">
+								{analyzeMessage.text}
+							</div>
+						{/if}
+						<CardContent>
+							<p class="text-sm text-muted-foreground">No analysis results yet. Click Run Analysis to calculate worst-case, RSS, and Monte Carlo results based on current contributors and feature tolerances.</p>
 						</CardContent>
 					</Card>
 				{/if}

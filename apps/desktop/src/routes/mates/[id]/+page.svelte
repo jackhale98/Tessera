@@ -5,10 +5,10 @@
 	import { EntityDetailHeader, LinksSection } from '$lib/components/entities';
 	import EntityHistory from '$lib/components/EntityHistory.svelte';
 	import { StatusBadge } from '$lib/components/common';
-	import { entities, traceability } from '$lib/api';
+	import { entities, mates, traceability } from '$lib/api';
 	import type { EntityData } from '$lib/api/types';
 	import type { LinkInfo } from '$lib/api/tauri';
-	import { Plug, User, Calendar, Tag, CircleDot, ArrowLeftRight, BarChart3, History, AlertTriangle } from 'lucide-svelte';
+	import { Plug, User, Calendar, Tag, CircleDot, ArrowLeftRight, BarChart3, History, AlertTriangle, RefreshCw } from 'lucide-svelte';
 
 	const id = $derived($page.params.id);
 
@@ -18,6 +18,8 @@
 	let loading = $state(true);
 	let linksLoading = $state(true);
 	let error = $state<string | null>(null);
+	let recalculating = $state(false);
+	let recalcMessage = $state<{ text: string; type: 'success' | 'error' } | null>(null);
 
 	// Type-safe data access
 	const data = $derived(entity?.data ?? {});
@@ -101,6 +103,33 @@
 			console.error('Failed to refresh links:', e);
 		} finally {
 			linksLoading = false;
+		}
+	}
+
+	async function recalculate() {
+		if (!id) return;
+		recalculating = true;
+		recalcMessage = null;
+
+		try {
+			const result = await mates.recalculate(id);
+			if (result.error) {
+				recalcMessage = { text: result.error, type: 'error' };
+			} else if (result.changed) {
+				recalcMessage = { text: 'Fit analysis updated with latest feature values', type: 'success' };
+				// Reload entity data to reflect changes
+				entity = await entities.get(id);
+			} else {
+				recalcMessage = { text: 'Fit analysis is already up to date', type: 'success' };
+			}
+		} catch (e) {
+			recalcMessage = { text: e instanceof Error ? e.message : String(e), type: 'error' };
+		} finally {
+			recalculating = false;
+			// Auto-clear success messages after 5s
+			if (recalcMessage?.type === 'success') {
+				setTimeout(() => { recalcMessage = null; }, 5000);
+			}
 		}
 	}
 
@@ -277,12 +306,25 @@
 				<!-- Fit Analysis -->
 				{#if fitAnalysis}
 					<Card>
-						<CardHeader>
+						<CardHeader class="flex flex-row items-center justify-between">
 							<CardTitle class="flex items-center gap-2">
 								<BarChart3 class="h-5 w-5" />
 								Fit Analysis
 							</CardTitle>
+							<button
+								class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+								onclick={recalculate}
+								disabled={recalculating}
+							>
+								<RefreshCw class="h-4 w-4 {recalculating ? 'animate-spin' : ''}" />
+								{recalculating ? 'Recalculating...' : 'Recalculate'}
+							</button>
 						</CardHeader>
+						{#if recalcMessage}
+							<div class="mx-6 mb-2 rounded-md px-3 py-2 text-sm {recalcMessage.type === 'success' ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-destructive/10 text-destructive'}">
+								{recalcMessage.text}
+							</div>
+						{/if}
 						<CardContent class="space-y-6">
 							<!-- Worst Case -->
 							<div>
@@ -358,6 +400,31 @@
 									</div>
 								</div>
 							{/if}
+						</CardContent>
+					</Card>
+				{:else}
+					<Card>
+						<CardHeader class="flex flex-row items-center justify-between">
+							<CardTitle class="flex items-center gap-2">
+								<BarChart3 class="h-5 w-5" />
+								Fit Analysis
+							</CardTitle>
+							<button
+								class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+								onclick={recalculate}
+								disabled={recalculating}
+							>
+								<RefreshCw class="h-4 w-4 {recalculating ? 'animate-spin' : ''}" />
+								{recalculating ? 'Calculating...' : 'Calculate'}
+							</button>
+						</CardHeader>
+						{#if recalcMessage}
+							<div class="mx-6 mb-2 rounded-md px-3 py-2 text-sm {recalcMessage.type === 'success' ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-destructive/10 text-destructive'}">
+								{recalcMessage.text}
+							</div>
+						{/if}
+						<CardContent>
+							<p class="text-sm text-muted-foreground">No fit analysis calculated yet. Click Calculate to evaluate the mate fit based on current feature tolerances.</p>
 						</CardContent>
 					</Card>
 				{/if}

@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { isProjectOpen, entityCounts, projectName, totalEntities } from '$lib/stores/project.js';
 	import { openProject, initProject } from '$lib/stores/project.js';
+	import { traceability } from '$lib/api';
+	import type { CoverageReport } from '$lib/api/types';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import {
 		FileText,
@@ -14,7 +17,8 @@
 		Shield,
 		FolderOpen,
 		FolderPlus,
-		ArrowRight
+		ArrowRight,
+		TrendingUp
 	} from 'lucide-svelte';
 
 	interface StatCard {
@@ -98,6 +102,36 @@
 			await initProject(selected);
 		}
 	}
+
+	let coverage = $state<CoverageReport | null>(null);
+	let coverageLoading = $state(false);
+
+	async function loadCoverage() {
+		if (!$isProjectOpen) return;
+		coverageLoading = true;
+		try {
+			coverage = await traceability.getCoverage();
+		} catch {
+			// Silently fail on dashboard — coverage is supplementary
+		} finally {
+			coverageLoading = false;
+		}
+	}
+
+	const healthScore = $derived(coverage?.health_score ?? 0);
+	const healthStatus = $derived.by(() => {
+		if (healthScore >= 80) return { label: 'Healthy', color: 'text-green-500', bg: 'bg-green-500' };
+		if (healthScore >= 50) return { label: 'Needs Attention', color: 'text-yellow-500', bg: 'bg-yellow-500' };
+		return { label: 'Critical', color: 'text-red-500', bg: 'bg-red-500' };
+	});
+
+	onMount(() => {
+		if ($isProjectOpen) loadCoverage();
+	});
+
+	$effect(() => {
+		if ($isProjectOpen) loadCoverage();
+	});
 </script>
 
 {#if !$isProjectOpen}
@@ -185,16 +219,82 @@
 			</CardContent>
 		</Card>
 
-		<!-- Recent activity placeholder -->
+		<!-- Project Health -->
 		<Card>
-			<CardHeader>
-				<CardTitle>Recent Activity</CardTitle>
-				<CardDescription>Recently modified entities</CardDescription>
+			<CardHeader class="flex flex-row items-center justify-between pb-2">
+				<div>
+					<CardTitle class="flex items-center gap-2">
+						<TrendingUp class="h-5 w-5" />
+						Project Health
+					</CardTitle>
+					<CardDescription>Traceability coverage across your project</CardDescription>
+				</div>
+				<Button variant="ghost" size="sm" onclick={() => goto('/traceability/coverage')}>
+					Details
+					<ArrowRight class="ml-1 h-3 w-3" />
+				</Button>
 			</CardHeader>
 			<CardContent>
-				<div class="flex h-32 items-center justify-center text-muted-foreground">
-					<p class="text-sm">Activity tracking coming soon...</p>
-				</div>
+				{#if coverageLoading}
+					<div class="flex h-24 items-center justify-center">
+						<div class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+					</div>
+				{:else if coverage}
+					<div class="flex items-center gap-6">
+						<!-- Health score circle -->
+						<div class="relative h-20 w-20 shrink-0">
+							<svg class="h-20 w-20 -rotate-90" viewBox="0 0 100 100">
+								<circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="12" class="text-muted" />
+								<circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round"
+									stroke-dasharray="{healthScore * 2.51} 251" class="{healthStatus.color}" />
+							</svg>
+							<div class="absolute inset-0 flex flex-col items-center justify-center">
+								<span class="text-lg font-bold">{healthScore.toFixed(0)}%</span>
+							</div>
+						</div>
+
+						<!-- Metric bars -->
+						<div class="flex-1 space-y-2">
+							<div>
+								<div class="flex items-center justify-between text-xs text-muted-foreground mb-0.5">
+									<span>Requirements Verified</span>
+									<span>{coverage.requirements_verified.covered}/{coverage.requirements_verified.total}</span>
+								</div>
+								<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+									<div class="h-full bg-blue-500 transition-all" style="width: {coverage.requirements_verified.percentage}%"></div>
+								</div>
+							</div>
+							<div>
+								<div class="flex items-center justify-between text-xs text-muted-foreground mb-0.5">
+									<span>Risks Mitigated</span>
+									<span>{coverage.risks_mitigated.covered}/{coverage.risks_mitigated.total}</span>
+								</div>
+								<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+									<div class="h-full bg-red-500 transition-all" style="width: {coverage.risks_mitigated.percentage}%"></div>
+								</div>
+							</div>
+							<div>
+								<div class="flex items-center justify-between text-xs text-muted-foreground mb-0.5">
+									<span>Tests Linked</span>
+									<span>{coverage.tests_linked.covered}/{coverage.tests_linked.total}</span>
+								</div>
+								<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+									<div class="h-full bg-purple-500 transition-all" style="width: {coverage.tests_linked.percentage}%"></div>
+								</div>
+							</div>
+						</div>
+
+						<!-- Health status -->
+						<div class="text-center shrink-0">
+							<div class="h-3 w-3 rounded-full {healthStatus.bg} mx-auto mb-1"></div>
+							<span class="text-xs font-medium {healthStatus.color}">{healthStatus.label}</span>
+						</div>
+					</div>
+				{:else}
+					<div class="flex h-24 items-center justify-center text-muted-foreground">
+						<p class="text-sm">Coverage data not available</p>
+					</div>
+				{/if}
 			</CardContent>
 		</Card>
 	</div>

@@ -150,6 +150,10 @@ pub struct SupplierLinks {
     /// Components this supplier is approved for
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub approved_for: Vec<String>,
+
+    /// Quotes from this supplier (reciprocal of QUOT.supplier)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quotes: Vec<String>,
 }
 
 /// A Supplier entity

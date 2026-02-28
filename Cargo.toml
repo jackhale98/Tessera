@@ -10,8 +10,8 @@ members = [
 version = "0.6.2"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/jackhale98/tdt"
-homepage = "https://github.com/jackhale98/tdt"
+repository = "https://github.com/jackhale98/Tessera"
+homepage = "https://github.com/jackhale98/Tessera"
 authors = ["Jack Hale"]
 
 [workspace.dependencies]

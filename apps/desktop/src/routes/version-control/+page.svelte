@@ -15,6 +15,7 @@
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { isProjectOpen } from '$lib/stores/project.js';
 	import { versionControl } from '$lib/api/index.js';
+	import { goto } from '$app/navigation';
 	import type {
 		GitStatusInfo,
 		UncommittedFile,
@@ -22,7 +23,9 @@
 		GitCommitInfo,
 		BranchInfo,
 		TagInfo,
-		CommitResult
+		CommitResult,
+		CommitDetails,
+		CommitFileInfo
 	} from '$lib/api/index.js';
 	import {
 		GitBranch,
@@ -41,7 +44,11 @@
 		Shield,
 		AlertCircle,
 		Clock,
-		Code
+		Code,
+		ChevronDown,
+		ChevronRight,
+		ExternalLink,
+		Undo2
 	} from 'lucide-svelte';
 
 	// State
@@ -64,6 +71,7 @@
 	let committing = $state(false);
 	let pushing = $state(false);
 	let pulling = $state(false);
+	let discarding = $state(false);
 
 	// Branch form
 	let newBranchName = $state('');
@@ -76,6 +84,13 @@
 	// Diff viewer
 	let expandedDiffs = $state<Record<string, string>>({});
 	let loadingDiffs = $state<Set<string>>(new Set());
+
+	// Commit details
+	let expandedCommit = $state<string | null>(null);
+	let commitDetails = $state<CommitDetails | null>(null);
+	let commitDetailsLoading = $state(false);
+	let commitFileDiffs = $state<Record<string, string>>({});
+	let commitFileDiffLoading = $state<Set<string>>(new Set());
 
 	async function loadData() {
 		if (!$isProjectOpen) return;
@@ -183,6 +198,28 @@
 		}
 	}
 
+	async function handleDiscard() {
+		if (selectedFiles.size === 0) {
+			error = 'Please select files to discard';
+			return;
+		}
+
+		discarding = true;
+		error = null;
+
+		try {
+			await versionControl.discardChanges(Array.from(selectedFiles));
+			showSuccess('Discarded changes to ' + selectedFiles.size + ' file(s)');
+			selectedFiles = new Set();
+			expandedDiffs = {};
+			await loadData();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to discard changes';
+		} finally {
+			discarding = false;
+		}
+	}
+
 	async function handleCheckoutBranch(branch: string) {
 		try {
 			await versionControl.checkoutBranch(branch);
@@ -255,6 +292,80 @@
 			newLoading2.delete(path);
 			loadingDiffs = newLoading2;
 		}
+	}
+
+	async function toggleCommitDetails(hash: string) {
+		if (expandedCommit === hash) {
+			expandedCommit = null;
+			commitDetails = null;
+			commitFileDiffs = {};
+			return;
+		}
+
+		expandedCommit = hash;
+		commitDetailsLoading = true;
+		commitFileDiffs = {};
+
+		try {
+			commitDetails = await versionControl.getCommitDetails(hash);
+		} catch (e) {
+			console.error('Failed to load commit details:', e);
+			commitDetails = null;
+		} finally {
+			commitDetailsLoading = false;
+		}
+	}
+
+	async function toggleCommitFileDiff(commitHash: string, filePath: string) {
+		const key = `${commitHash}:${filePath}`;
+
+		if (commitFileDiffs[key] !== undefined) {
+			const { [key]: _, ...rest } = commitFileDiffs;
+			commitFileDiffs = rest;
+			return;
+		}
+
+		const newLoading = new Set(commitFileDiffLoading);
+		newLoading.add(key);
+		commitFileDiffLoading = newLoading;
+
+		try {
+			const diff = await versionControl.getCommitFileDiff(commitHash, filePath);
+			commitFileDiffs = { ...commitFileDiffs, [key]: diff };
+		} catch (e) {
+			console.error('Failed to load file diff:', e);
+		} finally {
+			const newLoading2 = new Set(commitFileDiffLoading);
+			newLoading2.delete(key);
+			commitFileDiffLoading = newLoading2;
+		}
+	}
+
+	const entityRoutes: Record<string, string> = {
+		REQ: 'requirements',
+		RISK: 'risks',
+		HAZ: 'hazards',
+		TEST: 'verification/tests',
+		RSLT: 'verification/results',
+		CMP: 'components',
+		ASM: 'assemblies',
+		FEAT: 'features',
+		MATE: 'mates',
+		TOL: 'tolerances',
+		PROC: 'manufacturing/processes',
+		CTRL: 'controls',
+		WORK: 'manufacturing/work-instructions',
+		LOT: 'manufacturing/lots',
+		DEV: 'manufacturing/deviations',
+		NCR: 'quality/ncrs',
+		CAPA: 'quality/capas',
+		QUOT: 'procurement/quotes',
+		SUP: 'procurement/suppliers'
+	};
+
+	function navigateToEntity(entityType: string, entityId: string) {
+		const route = entityRoutes[entityType] ?? 'entities';
+		goto(`/${route}/${entityId}`);
 	}
 
 	function showSuccess(message: string) {
@@ -578,6 +689,21 @@
 									{/if}
 									Pull
 								</Button>
+
+								<div class="flex-1"></div>
+
+								<Button
+									variant="destructive"
+									onclick={handleDiscard}
+									disabled={discarding || selectedFiles.size === 0}
+								>
+									{#if discarding}
+										<RefreshCw class="h-4 w-4 mr-2 animate-spin" />
+									{:else}
+										<Undo2 class="h-4 w-4 mr-2" />
+									{/if}
+									Discard ({selectedFiles.size})
+								</Button>
 							</div>
 						</div>
 					{/if}
@@ -588,7 +714,7 @@
 				<CardHeader>
 					<CardTitle class="text-lg">Recent Commits</CardTitle>
 					<CardDescription>
-						Last {recentCommits.length} commits in the repository
+						Last {recentCommits.length} commits in the repository. Click a commit to see changed files.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -599,28 +725,123 @@
 					{:else}
 						<div class="space-y-2">
 							{#each recentCommits as commit}
-								<div class="border rounded-md p-3 hover:bg-accent/50">
-									<div class="flex items-start justify-between gap-2">
-										<div class="flex-1 min-w-0">
-											<div class="font-medium truncate">{commit.message}</div>
-											<div class="text-sm text-muted-foreground flex items-center gap-2 mt-1">
-												<code class="text-xs bg-muted px-1.5 py-0.5 rounded">
-													{commit.short_hash}
-												</code>
-												<span>{commit.author}</span>
-												<span class="flex items-center gap-1">
-													<Clock class="h-3 w-3" />
-													{formatDate(commit.date)}
-												</span>
+								<div class="border rounded-md overflow-hidden">
+									<button
+										class="w-full p-3 text-left hover:bg-accent/50 transition-colors"
+										onclick={() => toggleCommitDetails(commit.hash)}
+									>
+										<div class="flex items-start justify-between gap-2">
+											<div class="flex items-start gap-2 flex-1 min-w-0">
+												{#if expandedCommit === commit.hash}
+													<ChevronDown class="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+												{:else}
+													<ChevronRight class="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+												{/if}
+												<div class="flex-1 min-w-0">
+													<div class="font-medium truncate">{commit.message}</div>
+													<div class="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+														<code class="text-xs bg-muted px-1.5 py-0.5 rounded">
+															{commit.short_hash}
+														</code>
+														<span>{commit.author}</span>
+														<span class="flex items-center gap-1">
+															<Clock class="h-3 w-3" />
+															{formatDate(commit.date)}
+														</span>
+													</div>
+												</div>
 											</div>
+											{#if commit.is_signed}
+												<Badge variant="outline" class="text-green-600 shrink-0">
+													<Shield class="h-3 w-3 mr-1" />
+													Signed
+												</Badge>
+											{/if}
 										</div>
-										{#if commit.is_signed}
-											<Badge variant="outline" class="text-green-600 shrink-0">
-												<Shield class="h-3 w-3 mr-1" />
-												Signed
-											</Badge>
-										{/if}
-									</div>
+									</button>
+
+									{#if expandedCommit === commit.hash}
+										<div class="border-t bg-muted/30 p-4">
+											{#if commitDetailsLoading}
+												<div class="flex items-center justify-center py-4">
+													<div class="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+													<span class="ml-2 text-sm text-muted-foreground">Loading commit details...</span>
+												</div>
+											{:else if commitDetails}
+												<!-- Commit summary -->
+												{#if commitDetails.full_message.includes('\n')}
+													<div class="mb-3 text-sm whitespace-pre-wrap text-muted-foreground bg-background rounded-md p-3 border">
+														{commitDetails.full_message}
+													</div>
+												{/if}
+
+												<div class="flex items-center gap-4 mb-3 text-xs text-muted-foreground">
+													<span class="text-green-600">+{commitDetails.insertions}</span>
+													<span class="text-red-600">-{commitDetails.deletions}</span>
+													<span>{commitDetails.files.length} file{commitDetails.files.length !== 1 ? 's' : ''} changed</span>
+												</div>
+
+												<!-- Changed files -->
+												<div class="space-y-1">
+													{#each commitDetails.files as file}
+														{@const diffKey = `${commit.hash}:${file.path}`}
+														<div class="rounded-md border bg-background">
+															<div class="flex items-center gap-2 p-2">
+																<!-- File status icon -->
+																<span class="text-xs font-medium px-1.5 py-0.5 rounded {
+																	file.change_type === 'added' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+																	file.change_type === 'deleted' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+																	file.change_type === 'renamed' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
+																	'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'
+																}">
+																	{file.change_type[0].toUpperCase()}
+																</span>
+
+																{#if file.entity_id && file.entity_type}
+																	<!-- Entity file: show entity info with click to navigate -->
+																	<button
+																		class="flex items-center gap-1.5 text-sm hover:underline flex-1 min-w-0 text-left"
+																		onclick={(e) => { e.stopPropagation(); navigateToEntity(file.entity_type!, file.entity_id!); }}
+																	>
+																		<Badge variant="outline" class="text-xs shrink-0">{file.entity_type}</Badge>
+																		<span class="truncate">{file.entity_title || file.entity_id}</span>
+																		<ExternalLink class="h-3 w-3 shrink-0 text-muted-foreground" />
+																	</button>
+																{:else}
+																	<!-- Non-entity file -->
+																	<span class="text-sm font-mono truncate flex-1">{file.path}</span>
+																{/if}
+
+																<!-- View diff button -->
+																<Button
+																	variant="ghost"
+																	size="sm"
+																	class="h-7 px-2 shrink-0"
+																	onclick={() => toggleCommitFileDiff(commit.hash, file.path)}
+																>
+																	<Code class="h-3 w-3 mr-1" />
+																	{commitFileDiffs[diffKey] !== undefined ? 'Hide' : 'Diff'}
+																</Button>
+															</div>
+
+															<!-- File diff -->
+															{#if commitFileDiffLoading.has(diffKey)}
+																<div class="border-t p-3 flex items-center justify-center">
+																	<div class="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+																</div>
+															{:else if commitFileDiffs[diffKey] !== undefined}
+																<div class="border-t">
+																	<pre class="p-3 text-xs overflow-x-auto max-h-96 font-mono leading-relaxed">{#each (commitFileDiffs[diffKey] || '').split('\n') as line}{#if line.startsWith('+') && !line.startsWith('+++')}<span class="text-green-600">{line}</span>{'\n'}{:else if line.startsWith('-') && !line.startsWith('---')}<span class="text-red-600">{line}</span>{'\n'}{:else if line.startsWith('@@')}<span class="text-blue-500">{line}</span>{'\n'}{:else}{line}{'\n'}{/if}{/each}</pre>
+																</div>
+															{/if}
+														</div>
+													{/each}
+												</div>
+											{:else}
+												<p class="text-sm text-muted-foreground text-center py-2">Failed to load commit details</p>
+											{/if}
+										</div>
+									{/if}
 								</div>
 							{/each}
 						</div>

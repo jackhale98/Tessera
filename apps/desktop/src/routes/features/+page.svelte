@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { EntityTable } from '$lib/components/entities';
-	import { Card, CardContent, CardHeader, CardTitle, Button, Select } from '$lib/components/ui';
+	import { Card, CardContent, CardHeader, CardTitle, Button } from '$lib/components/ui';
+	import { EntityPicker } from '$lib/components/common';
 	import { entities } from '$lib/api';
 	import { isProjectOpen } from '$lib/stores/project';
 	import type { EntityData } from '$lib/api/types';
@@ -139,20 +140,17 @@
 	</div>
 
 	<!-- Component filter -->
-	{#if componentsData.length > 0}
-		<div class="flex items-center gap-2">
-			<span class="text-sm font-medium text-muted-foreground">Filter by component:</span>
-			<Select bind:value={selectedComponent} class="w-64">
-				<option value="">All Components</option>
-				{#each componentsData as cmp}
-					<option value={cmp.id}>{cmp.title}</option>
-				{/each}
-			</Select>
-			{#if selectedComponent}
-				<Button variant="ghost" size="sm" onclick={() => selectedComponent = ''}>Clear</Button>
-			{/if}
+	<div class="flex items-center gap-2">
+		<span class="text-sm font-medium text-muted-foreground">Filter by component:</span>
+		<div class="w-80">
+			<EntityPicker
+				entityTypes={['CMP']}
+				placeholder="Search by part number or title..."
+				onSelect={(entity) => selectedComponent = entity.id}
+				onClear={() => selectedComponent = ''}
+			/>
 		</div>
-	{/if}
+	</div>
 
 	<!-- Error display -->
 	{#if error}

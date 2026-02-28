@@ -9,6 +9,7 @@ import type {
 	EntityListResult,
 	ListParams,
 	TraceResult,
+	CycleEntity,
 	CoverageReport,
 	RiskMatrix
 } from './types.js';
@@ -633,7 +634,7 @@ export const traceability = {
 		call<DmmResult>('get_dmm', { rowType, colType }),
 	findOrphans: (entityType?: string) => call<string[]>('find_orphans', { entity_type: entityType }),
 	findCycles: (entityType?: string) =>
-		call<string[][]>('find_cycles', { entity_type: entityType }),
+		call<CycleEntity[][]>('find_cycles', { entity_type: entityType }),
 	addLink: (sourceId: string, targetId: string, linkType?: string) =>
 		call<void>('add_link', { sourceId, targetId, linkType }),
 	removeLink: (sourceId: string, targetId: string, linkType: string) =>
@@ -1108,6 +1109,46 @@ export interface GitUserInfo {
 }
 
 // ============================================================================
+// Mate & Stackup Analysis Types
+// ============================================================================
+
+export interface RecalcMateResult {
+	mate: Record<string, unknown>;
+	changed: boolean;
+	error: string | null;
+}
+
+export interface RecalcAllMatesResult {
+	processed: number;
+	changed: number;
+	errors: number;
+}
+
+export interface AnalyzeStackupResult {
+	stackup: Record<string, unknown>;
+	changed: boolean;
+}
+
+/**
+ * Mates API - fit analysis recalculation
+ */
+export const mates = {
+	recalculate: (id: string) => call<RecalcMateResult>('recalc_mate', { id }),
+	recalculateAll: () => call<RecalcAllMatesResult>('recalc_all_mates')
+};
+
+/**
+ * Stackups API - tolerance analysis
+ */
+export const stackups = {
+	analyze: (id: string, monteCarloIterations?: number) =>
+		call<Record<string, unknown>>('analyze_stackup', {
+			id,
+			monteCarloIterations: monteCarloIterations ?? null
+		})
+};
+
+// ============================================================================
 // Version Control Types
 // ============================================================================
 
@@ -1141,6 +1182,27 @@ export interface GitCommitInfo {
 	author_email: string | null;
 	date: string;
 	is_signed: boolean;
+}
+
+export interface CommitFileInfo {
+	path: string;
+	change_type: string;
+	entity_id: string | null;
+	entity_title: string | null;
+	entity_type: string | null;
+}
+
+export interface CommitDetails {
+	hash: string;
+	short_hash: string;
+	full_message: string;
+	author: string;
+	author_email: string | null;
+	date: string;
+	is_signed: boolean;
+	files: CommitFileInfo[];
+	insertions: number;
+	deletions: number;
 }
 
 export interface WorkflowHistory {
@@ -1210,9 +1272,11 @@ export const versionControl = {
 	// Tags
 	listTags: (pattern?: string) => call<TagInfo[]>('list_git_tags', { pattern }),
 
-	// Commit operations
+	// Staging operations
 	stageFiles: (paths: string[]) => call<void>('stage_files', { paths }),
 	stageEntity: (id: string) => call<void>('stage_entity', { id }),
+	unstageFiles: (paths: string[]) => call<void>('unstage_files', { paths }),
+	discardChanges: (paths: string[]) => call<void>('discard_changes', { paths }),
 	commit: (message: string, sign: boolean) =>
 		call<CommitResult>('commit_changes', { message, sign }),
 	push: (branch?: string, setUpstream?: boolean) =>
@@ -1222,6 +1286,11 @@ export const versionControl = {
 
 	// Recent commits
 	getRecentCommits: (limit?: number) => call<GitCommitInfo[]>('get_recent_commits', { limit }),
+
+	// Commit details
+	getCommitDetails: (hash: string) => call<CommitDetails>('get_commit_details', { hash }),
+	getCommitFileDiff: (commitHash: string, filePath: string) =>
+		call<string>('get_commit_file_diff', { commitHash, filePath }),
 
 	// File diff
 	getUncommittedFileDiff: (path: string) => call<string>('get_uncommitted_file_diff', { path })
@@ -1283,6 +1352,8 @@ export const api = {
 	ncrs,
 	capas,
 	lots,
+	mates,
+	stackups,
 	traceability,
 	settings,
 	versionControl,

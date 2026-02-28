@@ -28,6 +28,7 @@
 	let newLinkType = $state('');
 	let adding = $state(false);
 	let addError = $state<string | null>(null);
+	let selectedTypeFilter = $state('');
 
 	// Remove link state
 	let showRemoveDialog = $state(false);
@@ -44,6 +45,20 @@
 
 	// All entity types for the picker — auto-inference means we search everything
 	const allEntityTypes = ['REQ', 'RISK', 'HAZ', 'TEST', 'RSLT', 'CMP', 'ASM', 'FEAT', 'MATE', 'TOL', 'PROC', 'CTRL', 'WORK', 'LOT', 'DEV', 'NCR', 'CAPA', 'QUOT', 'SUP'];
+
+	const entityTypeLabels: Record<string, string> = {
+		REQ: 'Requirements', RISK: 'Risks', HAZ: 'Hazards', TEST: 'Tests', RSLT: 'Results',
+		CMP: 'Components', ASM: 'Assemblies', FEAT: 'Features', MATE: 'Mates', TOL: 'Stackups',
+		PROC: 'Processes', CTRL: 'Controls', WORK: 'Work Instructions', LOT: 'Lots',
+		DEV: 'Deviations', NCR: 'NCRs', CAPA: 'CAPAs', QUOT: 'Quotes', SUP: 'Suppliers'
+	};
+
+	const filteredEntityTypes = $derived(
+		selectedTypeFilter ? [selectedTypeFilter] : allEntityTypes
+	);
+	const pickerPlaceholder = $derived(
+		selectedTypeFilter ? `Search ${entityTypeLabels[selectedTypeFilter] ?? selectedTypeFilter}...` : 'Search all entities...'
+	);
 
 	// Detect REQ→REQ case: source is REQ and selected target is REQ
 	const sourcePrefix = $derived(entityId?.split('-')[0]?.toUpperCase() ?? '');
@@ -85,6 +100,13 @@
 	}
 
 	function handleEntityClear() {
+		selectedEntity = null;
+		newLinkType = '';
+	}
+
+	function handleTypeFilterChange(e: Event) {
+		selectedTypeFilter = (e.target as HTMLSelectElement).value;
+		// Clear selected entity when type filter changes
 		selectedEntity = null;
 		newLinkType = '';
 	}
@@ -174,7 +196,24 @@
 		)
 	);
 
-	const hasLinks = $derived(linksFrom.length > 0 || linksTo.length > 0);
+	// Deduplicate: filter out incoming links that are reciprocals of outgoing links
+	// If entityId→otherId exists as outgoing, otherId→entityId incoming is redundant
+	const outgoingTargets = $derived(new Set(linksFrom.map((l) => l.target_id)));
+	const dedupedLinksTo = $derived(linksTo.filter((l) => !outgoingTargets.has(l.source_id)));
+
+	const groupedDedupedLinksTo = $derived(
+		dedupedLinksTo.reduce(
+			(acc, link) => {
+				const type = link.link_type || 'related';
+				if (!acc[type]) acc[type] = [];
+				acc[type].push(link);
+				return acc;
+			},
+			{} as Record<string, LinkInfo[]>
+		)
+	);
+
+	const hasLinks = $derived(linksFrom.length > 0 || dedupedLinksTo.length > 0);
 </script>
 
 <Card>
@@ -255,14 +294,14 @@
 					</div>
 				{/if}
 
-				<!-- Incoming links (to this entity) -->
-				{#if linksTo.length > 0}
+				<!-- Incoming links (to this entity), excluding reciprocals of outgoing -->
+				{#if dedupedLinksTo.length > 0}
 					<div class="space-y-3">
 						<h4 class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
 							<ArrowLeft class="h-4 w-4" />
-							Incoming Links ({linksTo.length})
+							Incoming Links ({dedupedLinksTo.length})
 						</h4>
-						{#each Object.entries(groupedLinksTo) as [linkType, links]}
+						{#each Object.entries(groupedDedupedLinksTo) as [linkType, links]}
 							<div class="space-y-2">
 								<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 									{formatLinkType(linkType)}
@@ -319,13 +358,29 @@
 			</div>
 			<div class="space-y-4">
 				<div class="space-y-2">
-					<EntityPicker
-						label="Target Entity"
-						entityTypes={allEntityTypes}
-						placeholder="Search all entities..."
-						onSelect={handleEntitySelect}
-						onClear={handleEntityClear}
-					/>
+					<label for="entity-type-filter" class="text-sm font-medium">Entity Type</label>
+					<select
+						id="entity-type-filter"
+						value={selectedTypeFilter}
+						onchange={handleTypeFilterChange}
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<option value="">All Types</option>
+						{#each allEntityTypes as type}
+							<option value={type}>{entityTypeLabels[type] ?? type} ({type})</option>
+						{/each}
+					</select>
+				</div>
+				<div class="space-y-2">
+					{#key selectedTypeFilter}
+						<EntityPicker
+							label="Target Entity"
+							entityTypes={filteredEntityTypes}
+							placeholder={pickerPlaceholder}
+							onSelect={handleEntitySelect}
+							onClear={handleEntityClear}
+						/>
+					{/key}
 				</div>
 				{#if needsLinkTypeChoice}
 					<div class="space-y-2">
@@ -351,7 +406,7 @@
 				{/if}
 			</div>
 			<div class="mt-6 flex justify-end gap-2">
-				<Button variant="outline" onclick={() => { showAddDialog = false; selectedEntity = null; newLinkType = ''; }}>Cancel</Button>
+				<Button variant="outline" onclick={() => { showAddDialog = false; selectedEntity = null; newLinkType = ''; selectedTypeFilter = ''; }}>Cancel</Button>
 				<Button onclick={handleAddLink} disabled={adding || !selectedEntity || (isReqToReq && !newLinkType)}>
 					{#if adding}
 						<Loader2 class="h-4 w-4 mr-2 animate-spin" />

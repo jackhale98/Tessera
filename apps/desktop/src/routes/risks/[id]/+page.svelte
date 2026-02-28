@@ -69,6 +69,14 @@
 	}
 	const initialRisk = $derived(data.initial_risk as InitialRisk | null);
 
+	const hasInitialRatings = $derived(
+		initialRisk != null &&
+			(initialRisk.severity != null || initialRisk.occurrence != null || initialRisk.detection != null)
+	);
+	const hasCurrentRatings = $derived(
+		severity != null || occurrence != null || detection != null
+	);
+
 	async function loadData() {
 		if (!id) return;
 
@@ -248,8 +256,8 @@
 						{/if}
 
 						<!-- Risk Ratings Section -->
-						{#if initialRisk && (initialRisk.severity || initialRisk.occurrence || initialRisk.detection)}
-							<!-- Show both initial and residual when initial data exists -->
+						{#if hasInitialRatings && hasCurrentRatings}
+							<!-- Both initial and residual ratings available -->
 							<div class="mt-6 space-y-4">
 								<!-- Initial Risk (Before Mitigation) -->
 								<div class="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30 p-4">
@@ -260,19 +268,19 @@
 									<div class="grid gap-4 sm:grid-cols-4">
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">Severity</div>
-											<div class="text-xl font-bold">{initialRisk.severity ?? '—'}</div>
+											<div class="text-xl font-bold">{initialRisk?.severity ?? '—'}</div>
 										</div>
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">Occurrence</div>
-											<div class="text-xl font-bold">{initialRisk.occurrence ?? '—'}</div>
+											<div class="text-xl font-bold">{initialRisk?.occurrence ?? '—'}</div>
 										</div>
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">Detection</div>
-											<div class="text-xl font-bold">{initialRisk.detection ?? '—'}</div>
+											<div class="text-xl font-bold">{initialRisk?.detection ?? '—'}</div>
 										</div>
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">RPN</div>
-											<div class="text-xl font-bold text-orange-600">{initialRisk.rpn ?? '—'}</div>
+											<div class="text-xl font-bold text-orange-600">{initialRisk?.rpn ?? '—'}</div>
 										</div>
 									</div>
 								</div>
@@ -287,65 +295,103 @@
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">Severity</div>
 											<div class="text-xl font-bold">{severity ?? '—'}</div>
-											{#if initialRisk.severity && severity && severity < initialRisk.severity}
+											{#if initialRisk?.severity != null && severity != null && severity < initialRisk.severity}
 												<div class="text-xs text-green-600">-{initialRisk.severity - severity}</div>
+											{:else if initialRisk?.severity != null && severity != null && severity > initialRisk.severity}
+												<div class="text-xs text-red-500">+{severity - initialRisk.severity}</div>
 											{/if}
 										</div>
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">Occurrence</div>
 											<div class="text-xl font-bold">{occurrence ?? '—'}</div>
-											{#if initialRisk.occurrence && occurrence && occurrence < initialRisk.occurrence}
+											{#if initialRisk?.occurrence != null && occurrence != null && occurrence < initialRisk.occurrence}
 												<div class="text-xs text-green-600">-{initialRisk.occurrence - occurrence}</div>
+											{:else if initialRisk?.occurrence != null && occurrence != null && occurrence > initialRisk.occurrence}
+												<div class="text-xs text-red-500">+{occurrence - initialRisk.occurrence}</div>
 											{/if}
 										</div>
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">Detection</div>
 											<div class="text-xl font-bold">{detection ?? '—'}</div>
-											{#if initialRisk.detection && detection && detection < initialRisk.detection}
+											{#if initialRisk?.detection != null && detection != null && detection < initialRisk.detection}
 												<div class="text-xs text-green-600">-{initialRisk.detection - detection}</div>
+											{:else if initialRisk?.detection != null && detection != null && detection > initialRisk.detection}
+												<div class="text-xs text-red-500">+{detection - initialRisk.detection}</div>
 											{/if}
 										</div>
 										<div class="text-center">
 											<div class="text-xs text-muted-foreground">RPN</div>
 											<div class={`text-xl font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
-											{#if initialRisk.rpn && rpn && rpn < initialRisk.rpn}
+											{#if initialRisk?.rpn != null && rpn != null && rpn < initialRisk.rpn}
 												<div class="text-xs text-green-600">-{initialRisk.rpn - rpn} ({Math.round((1 - rpn / initialRisk.rpn) * 100)}% reduction)</div>
+											{:else if initialRisk?.rpn != null && rpn != null && rpn > initialRisk.rpn}
+												<div class="text-xs text-red-500">+{rpn - initialRisk.rpn} ({Math.round((rpn / initialRisk.rpn - 1) * 100)}% increase)</div>
 											{/if}
 										</div>
 									</div>
 								</div>
 							</div>
-						{:else}
-							<!-- Show current risk only when no initial data -->
+						{:else if hasInitialRatings}
+							<!-- Only initial ratings available -->
 							<div class="mt-6">
-								<h4 class="mb-3 text-sm font-medium text-muted-foreground">Current Risk Rating</h4>
-								<div class="grid gap-4 sm:grid-cols-4">
-									<div class="rounded-lg border p-4 text-center">
-										<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
-											<Target class="h-4 w-4" />
-											Severity
+								<div class="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30 p-4">
+									<h4 class="mb-3 text-sm font-semibold flex items-center gap-2">
+										<AlertTriangle class="h-4 w-4 text-orange-500" />
+										Initial Risk (Before Mitigation)
+									</h4>
+									<div class="grid gap-4 sm:grid-cols-4">
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Severity</div>
+											<div class="text-xl font-bold">{initialRisk?.severity ?? '—'}</div>
 										</div>
-										<div class="mt-1 text-2xl font-bold">{severity ?? '—'}</div>
-									</div>
-									<div class="rounded-lg border p-4 text-center">
-										<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
-											<Activity class="h-4 w-4" />
-											Occurrence
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Occurrence</div>
+											<div class="text-xl font-bold">{initialRisk?.occurrence ?? '—'}</div>
 										</div>
-										<div class="mt-1 text-2xl font-bold">{occurrence ?? '—'}</div>
-									</div>
-									<div class="rounded-lg border p-4 text-center">
-										<div class="flex items-center justify-center gap-1 text-sm text-muted-foreground">
-											<Eye class="h-4 w-4" />
-											Detection
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Detection</div>
+											<div class="text-xl font-bold">{initialRisk?.detection ?? '—'}</div>
 										</div>
-										<div class="mt-1 text-2xl font-bold">{detection ?? '—'}</div>
-									</div>
-									<div class="rounded-lg border p-4 text-center">
-										<div class="text-sm text-muted-foreground">RPN</div>
-										<div class={`mt-1 text-2xl font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">RPN</div>
+											<div class="text-xl font-bold text-orange-600">{initialRisk?.rpn ?? '—'}</div>
+										</div>
 									</div>
 								</div>
+								<p class="mt-2 text-xs text-muted-foreground">
+									Residual (post-mitigation) ratings have not been assessed yet.
+								</p>
+							</div>
+						{:else if hasCurrentRatings}
+							<!-- Only current/residual ratings available -->
+							<div class="mt-6">
+								<div class="rounded-lg border p-4">
+									<h4 class="mb-3 text-sm font-semibold flex items-center gap-2">
+										<Target class="h-4 w-4" />
+										Residual Risk (After Mitigation)
+									</h4>
+									<div class="grid gap-4 sm:grid-cols-4">
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Severity</div>
+											<div class="text-xl font-bold">{severity ?? '—'}</div>
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Occurrence</div>
+											<div class="text-xl font-bold">{occurrence ?? '—'}</div>
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">Detection</div>
+											<div class="text-xl font-bold">{detection ?? '—'}</div>
+										</div>
+										<div class="text-center">
+											<div class="text-xs text-muted-foreground">RPN</div>
+											<div class={`text-xl font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</div>
+										</div>
+									</div>
+								</div>
+								<p class="mt-2 text-xs text-muted-foreground">
+									No initial (pre-mitigation) risk assessment recorded.
+								</p>
 							</div>
 						{/if}
 					</CardContent>
@@ -480,10 +526,31 @@
 								<span class="text-sm text-muted-foreground">Not assessed</span>
 							{/if}
 						</div>
-						<div class="flex items-center justify-between">
-							<span class="text-sm text-muted-foreground">RPN</span>
-							<span class={`font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</span>
-						</div>
+						{#if hasInitialRatings && hasCurrentRatings}
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">Initial RPN</span>
+								<span class="font-bold text-orange-600">{initialRisk?.rpn ?? '—'}</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">Residual RPN</span>
+								<span class={`font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</span>
+							</div>
+						{:else if hasInitialRatings}
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">Initial RPN</span>
+								<span class="font-bold text-orange-600">{initialRisk?.rpn ?? '—'}</span>
+							</div>
+						{:else if hasCurrentRatings}
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">Residual RPN</span>
+								<span class={`font-bold ${getRpnColor(rpn)}`}>{rpn ?? '—'}</span>
+							</div>
+						{:else}
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">RPN</span>
+								<span class="text-sm text-muted-foreground">Not assessed</span>
+							</div>
+						{/if}
 						<div class="flex items-center justify-between">
 							<span class="text-sm text-muted-foreground">Mitigations</span>
 							<Badge variant={mitigations.length > 0 ? 'default' : 'outline'}>

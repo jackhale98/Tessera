@@ -333,11 +333,15 @@ pub fn run() {
             commands::create_git_branch,
             commands::stage_files,
             commands::stage_entity,
+            commands::unstage_files,
+            commands::discard_changes,
             commands::commit_changes,
             commands::push_changes,
             commands::pull_changes,
             commands::fetch_changes,
             commands::get_recent_commits,
+            commands::get_commit_details,
+            commands::get_commit_file_diff,
             // Cache commands
             commands::sync_cache,
         ])

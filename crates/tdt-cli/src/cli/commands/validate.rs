@@ -7,7 +7,10 @@ use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
-use tdt_core::core::cache::EntityCache;
+use tdt_core::core::cache::{EntityCache, EntityFilter};
+use tdt_core::core::entity::Status;
+use tdt_core::core::links::{add_explicit_link, get_field_reference_rules};
+use tdt_core::core::loader;
 use tdt_core::core::project::Project;
 use tdt_core::core::suspect::get_suspect_links;
 use tdt_core::core::EntityPrefix;
@@ -70,6 +73,9 @@ struct ValidationStats {
     analysis_rerun: usize,
     suspect_links: usize,
     files_with_suspect_links: usize,
+    missing_reciprocal_links: usize,
+    reciprocal_links_fixed: usize,
+    maturity_mismatches: usize,
 }
 
 /// Loader for full Feature entities needed for validation calculations
@@ -432,6 +438,38 @@ pub fn run(args: ValidateArgs) -> Result<()> {
         }
     }
 
+    // === Link Consistency Check ===
+    // Check that field-based references (e.g., QUOT.supplier, FEAT.component) have
+    // reciprocal links on the target entities.
+    if !args.fail_fast || !had_error {
+        let link_issues = check_link_consistency(
+            &project,
+            &files_to_validate,
+            entity_filter,
+            args.fix,
+            args.summary,
+            &mut stats,
+        );
+        if !link_issues.is_empty() && args.strict {
+            had_error = true;
+        }
+    }
+
+    // === Maturity Mismatch Check ===
+    if !args.fail_fast || !had_error {
+        if let Some(ref cache) = cache {
+            let mismatches = check_maturity_mismatches(
+                cache,
+                entity_filter,
+                args.summary,
+                &mut stats,
+            );
+            if !mismatches.is_empty() && args.strict {
+                had_error = true;
+            }
+        }
+    }
+
     // Print summary
     println!();
     println!("{}", style("─".repeat(60)).dim());
@@ -457,6 +495,21 @@ pub fn run(args: ValidateArgs) -> Result<()> {
         );
     }
 
+    if stats.missing_reciprocal_links > 0 {
+        if stats.reciprocal_links_fixed > 0 {
+            println!(
+                "  Missing links:  {} detected, {} fixed",
+                style(stats.missing_reciprocal_links).yellow(),
+                style(stats.reciprocal_links_fixed).green()
+            );
+        } else {
+            println!(
+                "  Missing links:  {} (run with --fix to repair)",
+                style(stats.missing_reciprocal_links).yellow(),
+            );
+        }
+    }
+
     if stats.suspect_links > 0 {
         println!(
             "  Suspect links:  {} in {} file(s)",
@@ -464,6 +517,13 @@ pub fn run(args: ValidateArgs) -> Result<()> {
             style(stats.files_with_suspect_links).yellow()
         );
         println!("                  Run 'tdt link suspect list' to review");
+    }
+
+    if stats.maturity_mismatches > 0 {
+        println!(
+            "  Maturity gaps:  {} (approved/released entities with less-mature dependencies)",
+            style(stats.maturity_mismatches).yellow(),
+        );
     }
 
     println!();
@@ -1151,6 +1211,299 @@ fn check_feature_values(
     }
 
     Ok(issues)
+}
+
+// ============================================================================
+// Maturity Mismatch Check
+// ============================================================================
+
+/// A maturity mismatch: source entity is more mature than a linked target
+struct MaturityMismatch {
+    source_id: String,
+    source_status: Status,
+    target_id: String,
+    target_status: Status,
+    link_type: String,
+}
+
+/// Check that entities don't depend on less-mature targets.
+///
+/// When an entity is promoted to `approved` or `released`, its linked targets
+/// should be at least as mature. Flags cases where `source.status > target.status`,
+/// excluding `Obsolete` sources (obsolete entities are a special case).
+fn check_maturity_mismatches(
+    cache: &EntityCache,
+    entity_filter: Option<EntityPrefix>,
+    summary_only: bool,
+    stats: &mut ValidationStats,
+) -> Vec<MaturityMismatch> {
+    let mut mismatches: Vec<MaturityMismatch> = Vec::new();
+
+    let filter = EntityFilter {
+        prefix: entity_filter,
+        ..Default::default()
+    };
+    let entities = cache.list_entities(&filter);
+
+    for entity in &entities {
+        // Only check entities above Draft and not Obsolete
+        if entity.status <= Status::Draft || entity.status == Status::Obsolete {
+            continue;
+        }
+
+        let links = cache.get_links_from(&entity.id);
+        for link in &links {
+            if let Some(target) = cache.get_entity(&link.target_id) {
+                // Flag if source is more mature than target (excluding obsolete targets)
+                if target.status != Status::Obsolete && entity.status > target.status {
+                    mismatches.push(MaturityMismatch {
+                        source_id: entity.id.clone(),
+                        source_status: entity.status,
+                        target_id: target.id.clone(),
+                        target_status: target.status,
+                        link_type: link.link_type.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    if mismatches.is_empty() {
+        return mismatches;
+    }
+
+    stats.maturity_mismatches = mismatches.len();
+    stats.total_warnings += mismatches.len();
+
+    if !summary_only {
+        println!();
+        println!(
+            "{} Maturity Mismatch: {} gap(s) found",
+            style("!").yellow(),
+            mismatches.len()
+        );
+
+        for mm in &mismatches {
+            println!(
+                "    {} {} ({}) → {} ({}) via {}",
+                style("!").yellow(),
+                truncate_id(&mm.source_id),
+                mm.source_status,
+                truncate_id(&mm.target_id),
+                mm.target_status,
+                mm.link_type,
+            );
+        }
+    }
+
+    mismatches
+}
+
+// ============================================================================
+// Link Consistency Check
+// ============================================================================
+
+/// A missing reciprocal link found during consistency checking
+struct MissingLink {
+    /// Source entity ID (the one with the field reference)
+    source_id: String,
+    /// The field on the source entity
+    field_name: String,
+    /// Target entity ID (the one missing the reciprocal)
+    target_id: String,
+    /// The link type that should exist on the target
+    reciprocal_link_type: String,
+    /// Path to the target entity file (for fixing)
+    target_path: Option<PathBuf>,
+}
+
+/// Check link consistency across all entities.
+///
+/// For each entity type that has field-based references (e.g., QUOT.supplier,
+/// FEAT.component), verify that the target entity has the expected reciprocal
+/// link back to the source. Reports missing links and optionally fixes them.
+fn check_link_consistency(
+    project: &Project,
+    files: &[PathBuf],
+    entity_filter: Option<EntityPrefix>,
+    fix: bool,
+    summary_only: bool,
+    stats: &mut ValidationStats,
+) -> Vec<MissingLink> {
+    let mut missing_links: Vec<MissingLink> = Vec::new();
+
+    // Phase 1: Collect all field references that need reciprocal links
+    for path in files {
+        if !path.to_string_lossy().ends_with(".tdt.yaml") {
+            continue;
+        }
+
+        let prefix =
+            EntityPrefix::from_filename(&path.file_name().unwrap_or_default().to_string_lossy())
+                .or_else(|| EntityPrefix::from_path(path));
+
+        let source_prefix = match prefix {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // Skip if filtering and this type doesn't have rules
+        if let Some(filter) = entity_filter {
+            if source_prefix != filter {
+                continue;
+            }
+        }
+
+        let rules = get_field_reference_rules(source_prefix);
+        if rules.is_empty() {
+            continue;
+        }
+
+        // Read and parse the source entity YAML
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let value: serde_yml::Value = match serde_yml::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        // Extract source entity ID
+        let source_id = match value.get("id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+
+        // Check each field reference rule
+        for rule in &rules {
+            // Get the field value (direct field, not in links)
+            let target_id = match value.get(rule.field_name).and_then(|v| v.as_str()) {
+                Some(id) if !id.is_empty() => id.to_string(),
+                _ => continue,
+            };
+
+            // Determine target entity prefix
+            let target_prefix = match target_id.split('-').next() {
+                Some(p) => match p.parse::<EntityPrefix>() {
+                    Ok(prefix) => prefix,
+                    Err(_) => continue,
+                },
+                None => continue,
+            };
+
+            // Find the target entity file
+            let target_dir = project.root().join(Project::entity_directory(target_prefix));
+            let target_path = loader::find_entity_file(&target_dir, &target_id);
+
+            // Check if the target has the reciprocal link
+            let has_reciprocal = if let Some(ref tp) = target_path {
+                check_has_link(tp, rule.reciprocal_link_type, &source_id)
+            } else {
+                false // Can't find target file, report as missing
+            };
+
+            if !has_reciprocal && target_path.is_some() {
+                missing_links.push(MissingLink {
+                    source_id: source_id.clone(),
+                    field_name: rule.field_name.to_string(),
+                    target_id: target_id.clone(),
+                    reciprocal_link_type: rule.reciprocal_link_type.to_string(),
+                    target_path,
+                });
+            }
+        }
+    }
+
+    if missing_links.is_empty() {
+        return missing_links;
+    }
+
+    stats.missing_reciprocal_links = missing_links.len();
+
+    // Phase 2: Report and optionally fix
+    if !summary_only {
+        println!();
+        println!(
+            "{} Link Consistency: {} missing reciprocal link(s)",
+            style("!").yellow(),
+            missing_links.len()
+        );
+    }
+
+    for ml in &missing_links {
+        if !summary_only {
+            println!(
+                "    {} {}.{} → {} missing {}.links.{}",
+                if fix {
+                    style("→").blue().to_string()
+                } else {
+                    style("!").yellow().to_string()
+                },
+                truncate_id(&ml.source_id),
+                ml.field_name,
+                truncate_id(&ml.target_id),
+                truncate_id(&ml.target_id),
+                ml.reciprocal_link_type
+            );
+        }
+
+        if fix {
+            if let Some(ref target_path) = ml.target_path {
+                match add_explicit_link(target_path, &ml.reciprocal_link_type, &ml.source_id) {
+                    Ok(()) => {
+                        stats.reciprocal_links_fixed += 1;
+                    }
+                    Err(e) => {
+                        if !summary_only {
+                            println!(
+                                "      {} Failed to fix: {}",
+                                style("✗").red(),
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !summary_only && !fix && !missing_links.is_empty() {
+        println!(
+            "    {} Run 'tdt validate --fix' or 'tdt link sync' to repair",
+            style("→").dim()
+        );
+    }
+
+    stats.total_warnings += missing_links.len();
+    missing_links
+}
+
+/// Check if an entity file has a specific link to a given target ID
+fn check_has_link(path: &std::path::Path, link_type: &str, target_id: &str) -> bool {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    let value: serde_yml::Value = match serde_yml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    let links = match value.get("links") {
+        Some(l) => l,
+        None => return false,
+    };
+
+    match links.get(link_type) {
+        Some(serde_yml::Value::Sequence(arr)) => arr
+            .iter()
+            .any(|v| v.as_str().map_or(false, |s| s == target_id)),
+        Some(serde_yml::Value::String(s)) => s == target_id,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
