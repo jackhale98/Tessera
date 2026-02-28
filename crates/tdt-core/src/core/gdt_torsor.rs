@@ -317,9 +317,9 @@ fn compute_bounds_for_control(
                     compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
-            } else if geometry_3d.is_some() {
+            } else if let Some(g) = geometry_3d {
                 // Fallback to simple calculation if no resolved length
-                let length = geometry_3d.unwrap().length.unwrap_or(10.0);
+                let length = g.length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
@@ -338,8 +338,8 @@ fn compute_bounds_for_control(
                     compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
-            } else if geometry_3d.is_some() {
-                let length = geometry_3d.unwrap().length.unwrap_or(10.0);
+            } else if let Some(g) = geometry_3d {
+                let length = g.length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
@@ -358,8 +358,8 @@ fn compute_bounds_for_control(
                     compute_angular_bound_with_length_tolerance(effective_tol, length);
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
-            } else if geometry_3d.is_some() {
-                let length = geometry_3d.unwrap().length.unwrap_or(10.0);
+            } else if let Some(g) = geometry_3d {
+                let length = g.length.unwrap_or(10.0);
                 let angular_bound = effective_tol / length;
                 bounds.alpha = Some([-angular_bound, angular_bound]);
                 bounds.beta = Some([-angular_bound, angular_bound]);
@@ -642,9 +642,7 @@ pub fn check_stale_bounds(
     match stored {
         Some(stored_bounds) => {
             if !bounds_approx_equal(stored_bounds, computed, epsilon) {
-                Some(format!(
-                    "stored torsor_bounds differs from computed (use 'tdt feat compute-bounds' to update)"
-                ))
+                Some("stored torsor_bounds differs from computed (use 'tdt feat compute-bounds' to update)".to_string())
             } else {
                 None
             }

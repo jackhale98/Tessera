@@ -497,7 +497,7 @@ fn remove_link_from_yaml(
         // If array is now empty, remove the entire key
         if arr.is_empty() {
             if let Some(links_map) = links.as_mapping_mut() {
-                links_map.remove(&serde_yml::Value::String(link_type.to_string()));
+                links_map.remove(serde_yml::Value::String(link_type.to_string()));
             }
         }
     } else if let Some(existing_id) = link_value.as_str() {
@@ -507,7 +507,7 @@ fn remove_link_from_yaml(
             removed = true;
             // Remove the key entirely if it's now null
             if let Some(links_map) = links.as_mapping_mut() {
-                links_map.remove(&serde_yml::Value::String(link_type.to_string()));
+                links_map.remove(serde_yml::Value::String(link_type.to_string()));
             }
         }
     }
@@ -523,7 +523,7 @@ fn remove_link_from_yaml(
     if let Some(links_map) = value.get("links").and_then(|l| l.as_mapping()) {
         if links_map.is_empty() {
             if let Some(root_map) = value.as_mapping_mut() {
-                root_map.remove(&serde_yml::Value::String("links".to_string()));
+                root_map.remove(serde_yml::Value::String("links".to_string()));
             }
         }
     }

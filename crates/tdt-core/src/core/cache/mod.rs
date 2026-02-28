@@ -495,17 +495,17 @@ impl EntityCache {
 
     /// Get comprehensive requirement statistics via SQL (fast)
     pub fn requirement_stats(&self) -> CachedRequirementStats {
-        let mut stats = CachedRequirementStats::default();
-
-        // Total and type breakdown
-        stats.total = self
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM entities WHERE prefix = 'REQ'",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap_or(0) as usize;
+        let mut stats = CachedRequirementStats {
+            total: self
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM entities WHERE prefix = 'REQ'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0) as usize,
+            ..Default::default()
+        };
 
         // Count by type (entity_type stores 'input' or 'output' for requirements)
         if let Ok(mut stmt) = self.conn.prepare(

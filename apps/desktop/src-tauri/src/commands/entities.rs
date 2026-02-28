@@ -5,7 +5,7 @@ use crate::error::{CommandError, CommandResult};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::Path;
 use tauri::State;
 use tdt_core::core::{
     cache::EntityFilter,
@@ -23,8 +23,8 @@ pub struct EntityData {
     pub author: String,
     pub created: String,
     pub tags: Vec<String>,
-    /// Full entity data as JSON for detailed view
-    pub data: Value,
+    /// Full entity data as JSON for detailed view (None when include_data is false)
+    pub data: Option<Value>,
 }
 
 /// List result for any entity type
@@ -43,6 +43,9 @@ pub struct ListEntitiesParams {
     pub tags: Option<Vec<String>>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    /// When true, include full YAML data for each entity (requires file reads).
+    /// When false/absent, only cache metadata is returned (faster).
+    pub include_data: Option<bool>,
 }
 
 fn prefix_from_string(s: &str) -> Option<EntityPrefix> {
@@ -71,30 +74,7 @@ fn prefix_from_string(s: &str) -> Option<EntityPrefix> {
     }
 }
 
-fn entity_dir_name(prefix: EntityPrefix) -> &'static str {
-    match prefix {
-        EntityPrefix::Req => "requirements",
-        EntityPrefix::Risk => "risks",
-        EntityPrefix::Test => "verification/protocols",
-        EntityPrefix::Rslt => "verification/results",
-        EntityPrefix::Cmp => "bom/components",
-        EntityPrefix::Asm => "bom/assemblies",
-        EntityPrefix::Feat => "tolerances/features",
-        EntityPrefix::Mate => "tolerances/mates",
-        EntityPrefix::Tol => "tolerances/stackups",
-        EntityPrefix::Proc => "manufacturing/processes",
-        EntityPrefix::Ctrl => "manufacturing/controls",
-        EntityPrefix::Work => "manufacturing/work_instructions",
-        EntityPrefix::Lot => "manufacturing/lots",
-        EntityPrefix::Dev => "manufacturing/deviations",
-        EntityPrefix::Ncr => "manufacturing/ncrs",
-        EntityPrefix::Capa => "manufacturing/capas",
-        EntityPrefix::Quot => "bom/quotes",
-        EntityPrefix::Sup => "bom/suppliers",
-        EntityPrefix::Haz => "risks/hazards",
-        EntityPrefix::Act => "actions",
-    }
-}
+use super::entity_dir_name;
 
 /// List entities of any type from the cache
 #[tauri::command]
@@ -141,6 +121,7 @@ pub async fn list_entities(
 
     // Apply pagination
     let offset = params.offset.unwrap_or(0);
+    let include_data = params.include_data.unwrap_or(false);
     let dir = project.root().join(entity_dir_name(prefix));
 
     let items: Vec<EntityData> = entities
@@ -148,8 +129,12 @@ pub async fn list_entities(
         .skip(offset)
         .take(params.limit.unwrap_or(100))
         .map(|e| {
-            // Load full entity data for entity-specific fields
-            let data = load_entity_json(&dir, &e.id).unwrap_or(Value::Null);
+            // Only load full entity data when explicitly requested
+            let data = if include_data {
+                Some(load_entity_json(&dir, &e.id).unwrap_or(Value::Null))
+            } else {
+                None
+            };
 
             EntityData {
                 id: e.id.clone(),
@@ -176,7 +161,7 @@ pub async fn get_entity(
     let project = state.project.lock().unwrap();
     let cache = state.cache.lock().unwrap();
 
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let _project = project.as_ref().ok_or(CommandError::NoProject)?;
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
     // Get from cache first for metadata
@@ -189,10 +174,17 @@ pub async fn get_entity(
             .map_err(|_| CommandError::InvalidInput(format!("Invalid entity ID: {}", id)))?;
 
         let prefix = entity_id.prefix();
-        let dir = project.root().join(entity_dir_name(prefix));
 
-        // Load the full entity from file
-        let data = load_entity_json(&dir, &id)?;
+        // Use cached file_path for direct read instead of directory walking
+        let data = if cached.file_path.exists() {
+            let content = std::fs::read_to_string(&cached.file_path)?;
+            serde_yml::from_str(&content)
+                .map_err(|e| CommandError::Other(format!("Failed to parse entity: {}", e)))?
+        } else {
+            // Fallback to directory-based lookup if cached path is stale
+            let dir = _project.root().join(entity_dir_name(prefix));
+            load_entity_json(&dir, &id)?
+        };
 
         Ok(Some(EntityData {
             id: cached.id.clone(),
@@ -202,7 +194,7 @@ pub async fn get_entity(
             author: cached.author.clone(),
             created: cached.created.to_rfc3339(),
             tags: cached.tags.clone(),
-            data,
+            data: Some(data),
         }))
     } else {
         Ok(None)
@@ -210,7 +202,7 @@ pub async fn get_entity(
 }
 
 /// Load entity from file and return as JSON Value
-fn load_entity_json(dir: &PathBuf, id: &str) -> CommandResult<Value> {
+fn load_entity_json(dir: &Path, id: &str) -> CommandResult<Value> {
     let file_path = loader::find_entity_file(dir, id)
         .ok_or_else(|| CommandError::NotFound(format!("Entity file not found: {}", id)))?;
 

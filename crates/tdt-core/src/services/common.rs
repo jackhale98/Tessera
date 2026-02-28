@@ -170,7 +170,7 @@ impl CommonFilter {
 
     /// Check if an entity's tags match the filter
     pub fn matches_tags(&self, entity_tags: &[String]) -> bool {
-        self.tags.as_ref().map_or(true, |filter_tags| {
+        self.tags.as_ref().is_none_or(|filter_tags| {
             filter_tags.iter().any(|ft| {
                 entity_tags
                     .iter()
@@ -181,7 +181,7 @@ impl CommonFilter {
 
     /// Check if a text field matches the search filter
     pub fn matches_search(&self, texts: &[&str]) -> bool {
-        self.search.as_ref().map_or(true, |search| {
+        self.search.as_ref().is_none_or(|search| {
             let search_lower = search.to_lowercase();
             texts
                 .iter()
@@ -191,7 +191,7 @@ impl CommonFilter {
 
     /// Check if a creation date is within the recent_days filter
     pub fn matches_recent(&self, created: &chrono::DateTime<chrono::Utc>) -> bool {
-        self.recent_days.map_or(true, |days| {
+        self.recent_days.is_none_or(|days| {
             let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
             *created >= cutoff
         })

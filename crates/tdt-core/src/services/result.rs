@@ -408,9 +408,8 @@ impl<'a> ResultService<'a> {
                 self.project.root().join(&cached.file_path)
             };
             if path.exists() {
-                match crate::yaml::parse_yaml_file::<Result>(&path) {
-                    Ok(result) => return Ok(Some(result)),
-                    Err(_) => {} // Fall through to directory scan
+                if let Ok(result) = crate::yaml::parse_yaml_file::<Result>(&path) {
+                    return Ok(Some(result));
                 }
             }
         }

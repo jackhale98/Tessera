@@ -79,7 +79,8 @@ pub struct PathArgs {
 }
 
 /// Configuration key categories for organized display
-const CONFIG_CATEGORIES: &[(&str, &[(&str, &str, &str)])] = &[
+type ConfigCategory = (&'static str, &'static [(&'static str, &'static str, &'static str)]);
+const CONFIG_CATEGORIES: &[ConfigCategory] = &[
     (
         "General",
         &[

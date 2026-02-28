@@ -107,6 +107,7 @@ pub enum QuoteSortField {
 
 /// Input for creating a new quote
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CreateQuote {
     /// Quote title
     pub title: String,
@@ -154,24 +155,6 @@ pub struct CreateQuote {
     pub tags: Vec<String>,
 }
 
-impl Default for CreateQuote {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            author: String::new(),
-            supplier: String::new(),
-            component: None,
-            assembly: None,
-            quote_ref: None,
-            description: None,
-            currency: Currency::default(),
-            moq: None,
-            lead_time_days: None,
-            tooling_cost: None,
-            tags: Vec::new(),
-        }
-    }
-}
 
 /// Input for updating an existing quote
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -678,8 +661,10 @@ impl<'a> QuoteService<'a> {
     pub fn stats(&self) -> ServiceResult<QuoteStats> {
         let quotes = self.load_all()?;
 
-        let mut stats = QuoteStats::default();
-        stats.total = quotes.len();
+        let mut stats = QuoteStats {
+            total: quotes.len(),
+            ..Default::default()
+        };
 
         for quote in &quotes {
             // Count by quote status

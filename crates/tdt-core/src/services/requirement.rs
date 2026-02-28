@@ -439,7 +439,7 @@ impl<'a> RequirementService<'a> {
     /// Get a requirement by ID, returning an error if not found
     pub fn get_required(&self, id: &str) -> ServiceResult<Requirement> {
         self.get(id)?
-            .ok_or_else(|| ServiceError::NotFound(id.to_string()).into())
+            .ok_or_else(|| ServiceError::NotFound(id.to_string()))
     }
 
     /// Create a new requirement
@@ -530,7 +530,7 @@ impl<'a> RequirementService<'a> {
         if !force {
             let references = self.find_references(&requirement.id)?;
             if !references.is_empty() {
-                return Err(ServiceError::HasReferences.into());
+                return Err(ServiceError::HasReferences);
             }
         }
 
@@ -554,7 +554,7 @@ impl<'a> RequirementService<'a> {
             return Ok((path, req));
         }
 
-        Err(ServiceError::NotFound(id.to_string()).into())
+        Err(ServiceError::NotFound(id.to_string()))
     }
 
     /// Find entities that reference this requirement
@@ -594,25 +594,22 @@ impl<'a> RequirementService<'a> {
         }
 
         // Orphans filter
-        if filter.orphans_only {
-            if !req.links.satisfied_by.is_empty() || !req.links.verified_by.is_empty() {
+        if filter.orphans_only
+            && (!req.links.satisfied_by.is_empty() || !req.links.verified_by.is_empty()) {
                 return false;
             }
-        }
 
         // Needs review filter
-        if filter.needs_review {
-            if req.status != Status::Draft && req.status != Status::Review {
+        if filter.needs_review
+            && req.status != Status::Draft && req.status != Status::Review {
                 return false;
             }
-        }
 
         // Unverified filter
-        if filter.unverified_only {
-            if !req.links.verified_by.is_empty() {
+        if filter.unverified_only
+            && !req.links.verified_by.is_empty() {
                 return false;
             }
-        }
 
         // Common filters
         if !filter.common.matches_status(&req.status) {
@@ -713,8 +710,10 @@ impl<'a> RequirementService<'a> {
     pub fn stats_full(&self) -> ServiceResult<RequirementStats> {
         let requirements = self.load_all()?;
 
-        let mut stats = RequirementStats::default();
-        stats.total = requirements.len();
+        let mut stats = RequirementStats {
+            total: requirements.len(),
+            ..Default::default()
+        };
 
         for req in &requirements {
             match req.req_type {

@@ -8,8 +8,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 use tauri::State;
+use tdt_core::core::identity::EntityId;
 use tdt_core::core::workflow::ApprovalRecord;
 use tdt_core::core::Git;
+
+use super::entity_dir_name;
 
 // ============================================================================
 // Types
@@ -207,11 +210,18 @@ pub async fn get_git_status(state: State<'_, AppState>) -> CommandResult<GitStat
                     "modified"
                 };
 
-                // Extract the file path (skip the status prefix)
-                let path = line.get(3..).unwrap_or(&line).trim().to_string();
+                // Extract the file path from porcelain format "XY path" or "?? path"
+                let path = line
+                    .splitn(2, ' ')
+                    .nth(1)
+                    .unwrap_or(&line)
+                    .trim_start()
+                    .to_string();
 
-                // Try to extract entity info from .tdt.yaml files
-                let (entity_id, entity_title) = if path.ends_with(".tdt.yaml") {
+                // Try to extract entity info from .tdt.yaml or .pdt.yaml files
+                let (entity_id, entity_title) = if path.ends_with(".tdt.yaml")
+                    || path.ends_with(".pdt.yaml")
+                {
                     extract_entity_info_from_path(project.root(), &path, cache)
                 } else {
                     (None, None)
@@ -654,7 +664,7 @@ pub async fn stage_files(paths: Vec<String>, state: State<'_, AppState>) -> Comm
 
     let git = Git::new(project.root());
 
-    let path_refs: Vec<&Path> = paths.iter().map(|p| Path::new(p)).collect();
+    let path_refs: Vec<&Path> = paths.iter().map(Path::new).collect();
     git.stage_files(&path_refs)
         .map_err(|e| CommandError::Other(format!("Failed to stage files: {}", e)))?;
 
@@ -873,7 +883,7 @@ struct RejectionRecord {
     timestamp: DateTime<Utc>,
 }
 
-/// Find an entity file by ID
+/// Find an entity file by ID, using cache first then constructing the path
 fn find_entity_file(
     root: &Path,
     id: &str,
@@ -891,41 +901,18 @@ fn find_entity_file(
         let lookup_id = full_id.as_deref().unwrap_or(id);
 
         if let Some(entity) = cache.get_entity(lookup_id) {
-            return Ok(entity.file_path);
+            let path = entity.file_path.clone();
+            if path.exists() {
+                return Ok(path);
+            }
         }
     }
 
-    // Fallback: filesystem search based on prefix
-    let search_dirs: Vec<(&str, &str)> = vec![
-        ("REQ-", "requirements"),
-        ("RISK-", "risks"),
-        ("TEST-", "verification"),
-        ("RSLT-", "verification"),
-        ("CMP-", "bom/components"),
-        ("ASM-", "bom/assemblies"),
-        ("SUP-", "procurement/suppliers"),
-        ("QUOTE-", "procurement/quotes"),
-        ("PROC-", "manufacturing/processes"),
-        ("CTRL-", "manufacturing/controls"),
-        ("WORK-", "manufacturing/work_instructions"),
-        ("LOT-", "manufacturing/lots"),
-        ("DEV-", "manufacturing/deviations"),
-        ("NCR-", "manufacturing/ncrs"),
-        ("CAPA-", "manufacturing/capas"),
-        ("FEAT-", "tolerances/features"),
-        ("MATE-", "tolerances/mates"),
-        ("TOL-", "tolerances/stackups"),
-        ("HAZ-", "safety/hazards"),
-    ];
-
-    for (prefix, base_dir) in &search_dirs {
-        if id.starts_with(prefix) {
-            let dir = root.join(base_dir);
-            if dir.exists() {
-                if let Some(found) = search_dir_for_entity(&dir, id) {
-                    return Ok(found);
-                }
-            }
+    // Fallback: construct path from prefix + entity_dir_name (no directory walking)
+    if let Ok(entity_id) = id.parse::<EntityId>() {
+        let dir = root.join(entity_dir_name(entity_id.prefix()));
+        if let Some(found) = tdt_core::core::loader::find_entity_file(&dir, id) {
+            return Ok(found);
         }
     }
 
@@ -935,46 +922,28 @@ fn find_entity_file(
     )))
 }
 
-/// Recursively search a directory for an entity file by ID
-fn search_dir_for_entity(dir: &Path, id: &str) -> Option<std::path::PathBuf> {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return None,
-    };
-
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_dir() {
-            // Recurse into subdirectory
-            if let Some(found) = search_dir_for_entity(&path, id) {
-                return Some(found);
-            }
-        } else if path.is_file() && path.to_string_lossy().ends_with(".tdt.yaml") {
-            // Check if this file contains the entity ID
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if content.contains(&format!("id: {}", id))
-                    || content.contains(&format!("id: \"{}\"", id))
-                {
-                    return Some(path);
+/// Extract entity info from a file path, using cache first
+fn extract_entity_info_from_path(
+    root: &Path,
+    relative_path: &str,
+    cache: Option<&tdt_core::core::cache::EntityCache>,
+) -> (Option<String>, Option<String>) {
+    // Try to extract entity ID from filename (e.g., "REQ-01KC8FF...tdt.yaml" → "REQ-01KC8FF...")
+    if let Some(filename) = std::path::Path::new(relative_path).file_name() {
+        let fname = filename.to_string_lossy();
+        if let Some(id_part) = fname.strip_suffix(".tdt.yaml").or_else(|| fname.strip_suffix(".pdt.yaml")) {
+            // Try cache lookup first
+            if let Some(cache) = cache {
+                if let Some(entity) = cache.get_entity(id_part) {
+                    return (Some(entity.id.clone()), Some(entity.title.clone()));
                 }
             }
         }
     }
 
-    None
-}
-
-/// Extract entity info from a file path
-fn extract_entity_info_from_path(
-    root: &Path,
-    relative_path: &str,
-    _cache: Option<&tdt_core::core::cache::EntityCache>,
-) -> (Option<String>, Option<String>) {
+    // Fallback: read file only if cache miss
     let full_path = root.join(relative_path);
-
-    // Try to read the file and extract ID
     if let Ok(content) = std::fs::read_to_string(&full_path) {
-        // Quick parse for id and title
         let mut entity_id = None;
         let mut entity_title = None;
 
@@ -988,7 +957,7 @@ fn extract_entity_info_from_path(
                 entity_title = line
                     .get(6..)
                     .map(|s| s.trim().trim_matches('"').to_string());
-                break; // Title usually comes after id
+                break;
             }
         }
 
@@ -1013,4 +982,69 @@ fn truncate_id(id: &str) -> String {
     } else {
         id.to_string()
     }
+}
+
+/// Get diff for an uncommitted file
+#[tauri::command]
+pub async fn get_uncommitted_file_diff(
+    path: String,
+    state: State<'_, AppState>,
+) -> CommandResult<String> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let root = project.root();
+
+    // Try git diff for tracked files (both staged and unstaged)
+    let output = Command::new("git")
+        .args(["diff", "HEAD", "--", &path])
+        .current_dir(root)
+        .output()
+        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+
+    let diff = String::from_utf8_lossy(&output.stdout).to_string();
+
+    if !diff.is_empty() {
+        return Ok(diff);
+    }
+
+    // If no diff from HEAD, try staged diff
+    let output = Command::new("git")
+        .args(["diff", "--cached", "--", &path])
+        .current_dir(root)
+        .output()
+        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+
+    let diff = String::from_utf8_lossy(&output.stdout).to_string();
+
+    if !diff.is_empty() {
+        return Ok(diff);
+    }
+
+    // For untracked files, read content as "new file" diff
+    let full_path = root.join(&path);
+    if full_path.exists() {
+        let content = std::fs::read_to_string(&full_path)
+            .map_err(|e| CommandError::Io(format!("Cannot read file: {}", e)))?;
+
+        let mut diff_output = format!("--- /dev/null\n+++ b/{}\n@@ -0,0 +1,{} @@\n", path, content.lines().count());
+        for line in content.lines() {
+            diff_output.push('+');
+            diff_output.push_str(line);
+            diff_output.push('\n');
+        }
+        return Ok(diff_output);
+    }
+
+    Ok(String::new())
+}
+
+/// Sync the entity cache (frontend can trigger after branch switch, pull, etc.)
+#[tauri::command]
+pub async fn sync_cache(state: State<'_, AppState>) -> CommandResult<()> {
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        cache.sync().map_err(|e| CommandError::Other(format!("Cache sync failed: {}", e)))?;
+    }
+    Ok(())
 }

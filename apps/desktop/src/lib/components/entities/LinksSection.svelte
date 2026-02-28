@@ -25,7 +25,7 @@
 
 	let showAddDialog = $state(false);
 	let selectedEntity = $state<EntitySearchResult | null>(null);
-	let newLinkType = $state('verified_by');
+	let newLinkType = $state('');
 	let adding = $state(false);
 	let addError = $state<string | null>(null);
 
@@ -35,32 +35,41 @@
 	let removing = $state(false);
 	let removeError = $state<string | null>(null);
 
-	// Link type options with their target entity types
-	const linkTypeOptions = [
-		{ value: 'verified_by', label: 'Verified By', entityTypes: ['TEST', 'RSLT'], description: 'Tests that verify this entity' },
-		{ value: 'mitigated_by', label: 'Mitigated By', entityTypes: ['CTRL', 'CMP'], description: 'Controls or components that mitigate risk' },
-		{ value: 'related_to', label: 'Related To', entityTypes: ['REQ', 'RISK', 'CMP', 'ASM', 'TEST', 'HAZ', 'FEAT', 'PROC', 'CTRL'], description: 'General relationship' },
-		{ value: 'affects', label: 'Affects', entityTypes: ['FEAT', 'CMP', 'ASM', 'REQ'], description: 'Entities affected by this one' },
-		{ value: 'satisfied_by', label: 'Satisfied By', entityTypes: ['CMP', 'ASM', 'FEAT'], description: 'Components that satisfy requirements' },
-		{ value: 'allocated_to', label: 'Allocated To', entityTypes: ['CMP', 'ASM'], description: 'Components this is allocated to' }
+	// REQ→REQ link type options (only shown when both source and target are REQ)
+	const reqToReqLinkTypes = [
+		{ value: 'derives_from', label: 'Derives From', description: 'This requirement derives from the target' },
+		{ value: 'allocated_to', label: 'Allocated To', description: 'This requirement is allocated to the target' },
+		{ value: 'related_to', label: 'Related To', description: 'General relationship' }
 	];
 
-	// Get entity types for the currently selected link type
-	const currentEntityTypes = $derived(
-		linkTypeOptions.find((opt) => opt.value === newLinkType)?.entityTypes ?? ['REQ', 'RISK', 'TEST', 'CMP']
-	);
+	// All entity types for the picker — auto-inference means we search everything
+	const allEntityTypes = ['REQ', 'RISK', 'HAZ', 'TEST', 'RSLT', 'CMP', 'ASM', 'FEAT', 'MATE', 'TOL', 'PROC', 'CTRL', 'WORK', 'LOT', 'DEV', 'NCR', 'CAPA', 'QUOT', 'SUP'];
+
+	// Detect REQ→REQ case: source is REQ and selected target is REQ
+	const sourcePrefix = $derived(entityId?.split('-')[0]?.toUpperCase() ?? '');
+	const targetPrefix = $derived(selectedEntity?.prefix?.toUpperCase() ?? '');
+	const isReqToReq = $derived(sourcePrefix === 'REQ' && targetPrefix === 'REQ');
+	const needsLinkTypeChoice = $derived(isReqToReq && selectedEntity !== null);
 
 	async function handleAddLink() {
 		if (!entityId || !selectedEntity) return;
+
+		// For REQ→REQ, require explicit link type selection
+		if (isReqToReq && !newLinkType) {
+			addError = 'Please select a link type for REQ→REQ links';
+			return;
+		}
 
 		adding = true;
 		addError = null;
 
 		try {
-			await traceability.addLink(entityId, selectedEntity.id, newLinkType);
+			// Pass undefined for auto-inference, or explicit type for REQ→REQ
+			const linkType = isReqToReq ? newLinkType : undefined;
+			await traceability.addLink(entityId, selectedEntity.id, linkType);
 			showAddDialog = false;
 			selectedEntity = null;
-			newLinkType = 'verified_by';
+			newLinkType = '';
 			onLinksChanged?.();
 		} catch (e) {
 			addError = e instanceof Error ? e.message : 'Failed to add link';
@@ -71,10 +80,13 @@
 
 	function handleEntitySelect(entity: EntitySearchResult) {
 		selectedEntity = entity;
+		// Reset link type when entity changes
+		newLinkType = '';
 	}
 
 	function handleEntityClear() {
 		selectedEntity = null;
+		newLinkType = '';
 	}
 
 	function initiateRemoveLink(sourceId: string, targetId: string, linkType: string, title: string) {
@@ -105,13 +117,6 @@
 		showRemoveDialog = false;
 		linkToRemove = null;
 		removeError = null;
-	}
-
-	function handleLinkTypeChange(e: Event) {
-		const target = e.target as HTMLSelectElement;
-		newLinkType = target.value;
-		// Clear selected entity when link type changes since entity types change
-		selectedEntity = null;
 	}
 
 	function getEntityRoute(id: string): string {
@@ -309,42 +314,45 @@
 			<div class="mb-4">
 				<h2 class="text-lg font-semibold">Add Link</h2>
 				<p class="text-sm text-muted-foreground mt-1">
-					Connect this entity to another entity in the project
+					Search for an entity to link. The link type will be automatically determined.
 				</p>
 			</div>
 			<div class="space-y-4">
 				<div class="space-y-2">
-					<label for="link-type" class="text-sm font-medium">Link Type</label>
-					<select
-						id="link-type"
-						value={newLinkType}
-						onchange={handleLinkTypeChange}
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					>
-						{#each linkTypeOptions as option}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
-					<p class="text-xs text-muted-foreground">
-						{linkTypeOptions.find((opt) => opt.value === newLinkType)?.description ?? ''}
-					</p>
-				</div>
-				<div class="space-y-2">
 					<EntityPicker
 						label="Target Entity"
-						entityTypes={currentEntityTypes}
-						placeholder="Search {currentEntityTypes.join(', ')} entities..."
+						entityTypes={allEntityTypes}
+						placeholder="Search all entities..."
 						onSelect={handleEntitySelect}
 						onClear={handleEntityClear}
 					/>
 				</div>
+				{#if needsLinkTypeChoice}
+					<div class="space-y-2">
+						<label for="req-link-type" class="text-sm font-medium">Link Type (REQ → REQ)</label>
+						<select
+							id="req-link-type"
+							value={newLinkType}
+							onchange={(e) => { newLinkType = (e.target as HTMLSelectElement).value; }}
+							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<option value="">Select link type...</option>
+							{#each reqToReqLinkTypes as option}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+						<p class="text-xs text-muted-foreground">
+							{reqToReqLinkTypes.find((opt) => opt.value === newLinkType)?.description ?? 'Requirement-to-requirement links require an explicit type'}
+						</p>
+					</div>
+				{/if}
 				{#if addError}
 					<p class="text-sm text-destructive">{addError}</p>
 				{/if}
 			</div>
 			<div class="mt-6 flex justify-end gap-2">
-				<Button variant="outline" onclick={() => { showAddDialog = false; selectedEntity = null; }}>Cancel</Button>
-				<Button onclick={handleAddLink} disabled={adding || !selectedEntity}>
+				<Button variant="outline" onclick={() => { showAddDialog = false; selectedEntity = null; newLinkType = ''; }}>Cancel</Button>
+				<Button onclick={handleAddLink} disabled={adding || !selectedEntity || (isReqToReq && !newLinkType)}>
 					{#if adding}
 						<Loader2 class="h-4 w-4 mr-2 animate-spin" />
 					{/if}

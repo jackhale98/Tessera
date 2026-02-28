@@ -40,7 +40,8 @@
 		FileQuestion,
 		Shield,
 		AlertCircle,
-		Clock
+		Clock,
+		Code
 	} from 'lucide-svelte';
 
 	// State
@@ -71,6 +72,10 @@
 
 	// Tag filter
 	let tagFilter = $state('');
+
+	// Diff viewer
+	let expandedDiffs = $state<Record<string, string>>({});
+	let loadingDiffs = $state<Set<string>>(new Set());
 
 	async function loadData() {
 		if (!$isProjectOpen) return;
@@ -227,6 +232,29 @@
 
 	function deselectAllFiles() {
 		selectedFiles = new Set();
+	}
+
+	async function toggleDiff(path: string) {
+		if (expandedDiffs[path] !== undefined) {
+			const { [path]: _, ...rest } = expandedDiffs;
+			expandedDiffs = rest;
+			return;
+		}
+
+		const newLoading = new Set(loadingDiffs);
+		newLoading.add(path);
+		loadingDiffs = newLoading;
+
+		try {
+			const diff = await versionControl.getUncommittedFileDiff(path);
+			expandedDiffs = { ...expandedDiffs, [path]: diff };
+		} catch (e) {
+			console.error('Failed to load diff:', e);
+		} finally {
+			const newLoading2 = new Set(loadingDiffs);
+			newLoading2.delete(path);
+			loadingDiffs = newLoading2;
+		}
 	}
 
 	function showSuccess(message: string) {
@@ -441,37 +469,59 @@
 									</Button>
 								</div>
 							</div>
-							<div class="border rounded-md max-h-64 overflow-y-auto">
+							<div class="border rounded-md max-h-96 overflow-y-auto">
 								{#each gitStatus?.uncommitted_files || [] as file}
 									{@const StatusIcon = getStatusIcon(file.status)}
-									<button
-										type="button"
-										class="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent cursor-pointer border-b last:border-b-0 text-left"
-										onclick={() => toggleFileSelection(file.path)}
-									>
-										<input
-											type="checkbox"
-											checked={selectedFiles.has(file.path)}
-											class="h-4 w-4"
-											onclick={(e) => e.stopPropagation()}
-											onchange={() => toggleFileSelection(file.path)}
-										/>
-										<StatusIcon class="h-4 w-4 {getStatusColor(file.status)}" />
-										<div class="flex-1 min-w-0">
-											<div class="truncate text-sm">{file.path}</div>
-											{#if file.entity_id}
-												<div class="text-xs text-muted-foreground truncate">
-													{file.entity_id}
-													{#if file.entity_title}
-														: {file.entity_title}
+									<div class="border-b last:border-b-0">
+										<div class="flex items-center">
+											<button
+												type="button"
+												class="flex-1 px-3 py-2 flex items-center gap-3 hover:bg-accent cursor-pointer text-left"
+												onclick={() => toggleFileSelection(file.path)}
+											>
+												<input
+													type="checkbox"
+													checked={selectedFiles.has(file.path)}
+													class="h-4 w-4"
+													onclick={(e) => e.stopPropagation()}
+													onchange={() => toggleFileSelection(file.path)}
+												/>
+												<StatusIcon class="h-4 w-4 {getStatusColor(file.status)}" />
+												<div class="flex-1 min-w-0">
+													<div class="truncate text-sm">{file.path}</div>
+													{#if file.entity_id}
+														<div class="text-xs text-muted-foreground truncate">
+															{file.entity_id}
+															{#if file.entity_title}
+																: {file.entity_title}
+															{/if}
+														</div>
 													{/if}
 												</div>
-											{/if}
+												<Badge variant="outline" class="capitalize text-xs">
+													{file.status}
+												</Badge>
+											</button>
+											<button
+												type="button"
+												class="px-2 py-2 hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+												title="View diff"
+												onclick={(e) => { e.stopPropagation(); toggleDiff(file.path); }}
+											>
+												{#if loadingDiffs.has(file.path)}
+													<RefreshCw class="h-4 w-4 animate-spin" />
+												{:else}
+													<Code class="h-4 w-4" />
+												{/if}
+											</button>
 										</div>
-										<Badge variant="outline" class="capitalize text-xs">
-											{file.status}
-										</Badge>
-									</button>
+										{#if expandedDiffs[file.path] !== undefined}
+											<div class="px-3 pb-3">
+												<pre class="text-xs font-mono bg-muted rounded-md p-3 overflow-x-auto max-h-64 overflow-y-auto">{#each expandedDiffs[file.path].split('\n') as line}{#if line.startsWith('+') && !line.startsWith('+++')}<span class="text-green-500">{line}</span>{:else if line.startsWith('-') && !line.startsWith('---')}<span class="text-red-500">{line}</span>{:else if line.startsWith('@@')}<span class="text-blue-400">{line}</span>{:else}{line}{/if}
+{/each}</pre>
+											</div>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>

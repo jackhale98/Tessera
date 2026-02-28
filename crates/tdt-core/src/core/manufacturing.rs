@@ -233,10 +233,12 @@ pub fn create_execution_steps_from_routing(
         .iter()
         .filter_map(|proc_id| {
             processes.get(proc_id).map(|proc| {
-                let mut step = ExecutionStep::default();
-                step.process = Some(proc_id.clone());
-                step.process_revision = Some(proc.entity_revision);
-                step.status = ExecutionStatus::Pending;
+                let mut step = ExecutionStep {
+                    process: Some(proc_id.clone()),
+                    process_revision: Some(proc.entity_revision),
+                    status: ExecutionStatus::Pending,
+                    ..Default::default()
+                };
 
                 // Auto-populate work instructions from process links
                 step.work_instructions_used = proc

@@ -339,39 +339,32 @@ impl<'a> TraceabilityService<'a> {
 
     /// Get coverage report for the project
     pub fn get_coverage(&self) -> CoverageReport {
-        let mut report = CoverageReport::default();
+        let requirements_verified = self.calculate_coverage(EntityPrefix::Req, "verified_by");
+        let requirements_satisfied = self.calculate_coverage(EntityPrefix::Req, "satisfied_by");
+        let risks_mitigated = self.calculate_coverage(EntityPrefix::Risk, "mitigated_by");
+        let risks_verified = self.calculate_coverage(EntityPrefix::Risk, "verified_by");
+        let tests_linked = self.calculate_coverage(EntityPrefix::Test, "verifies");
+        let components_with_suppliers = self.calculate_supplier_coverage(EntityPrefix::Cmp);
 
-        // Requirements verified by tests
-        report.requirements_verified = self.calculate_coverage(EntityPrefix::Req, "verified_by");
-
-        // Requirements satisfied by design outputs
-        report.requirements_satisfied = self.calculate_coverage(EntityPrefix::Req, "satisfied_by");
-
-        // Risks mitigated
-        report.risks_mitigated = self.calculate_coverage(EntityPrefix::Risk, "mitigated_by");
-
-        // Risks verified
-        report.risks_verified = self.calculate_coverage(EntityPrefix::Risk, "verified_by");
-
-        // Tests linked to requirements
-        report.tests_linked = self.calculate_coverage(EntityPrefix::Test, "verifies");
-
-        // Components with suppliers
-        report.components_with_suppliers = self.calculate_supplier_coverage(EntityPrefix::Cmp);
-
-        // Calculate health score (weighted average)
         let weights = [
-            (report.requirements_verified.percentage, 0.25),
-            (report.requirements_satisfied.percentage, 0.20),
-            (report.risks_mitigated.percentage, 0.20),
-            (report.risks_verified.percentage, 0.15),
-            (report.tests_linked.percentage, 0.15),
-            (report.components_with_suppliers.percentage, 0.05),
+            (requirements_verified.percentage, 0.25),
+            (requirements_satisfied.percentage, 0.20),
+            (risks_mitigated.percentage, 0.20),
+            (risks_verified.percentage, 0.15),
+            (tests_linked.percentage, 0.15),
+            (components_with_suppliers.percentage, 0.05),
         ];
+        let health_score = weights.iter().map(|(p, w)| p * w).sum();
 
-        report.health_score = weights.iter().map(|(p, w)| p * w).sum();
-
-        report
+        CoverageReport {
+            requirements_verified,
+            requirements_satisfied,
+            risks_mitigated,
+            risks_verified,
+            tests_linked,
+            components_with_suppliers,
+            health_score,
+        }
     }
 
     /// Calculate coverage for a specific entity type and link type

@@ -373,14 +373,13 @@ impl<'a> DeviationService<'a> {
         }
 
         // Active only filter
-        if filter.active_only {
-            if !matches!(
+        if filter.active_only
+            && !matches!(
                 dev.dev_status,
                 DevStatus::Pending | DevStatus::Approved | DevStatus::Active
             ) {
                 return false;
             }
-        }
 
         // Recent days filter
         if let Some(days) = filter.recent_days {

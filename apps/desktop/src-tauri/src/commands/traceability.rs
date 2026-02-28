@@ -9,35 +9,10 @@ use tdt_core::core::{
     identity::EntityPrefix,
 };
 use tdt_core::services::{
-    CoverageReport, DesignStructureMatrix, TraceDirection, TraceOptions, TraceResult,
-    TraceabilityService,
+    CoverageReport, DesignStructureMatrix, TraceabilityService,
 };
 
-/// Get directory name for an entity prefix
-fn entity_dir_name(prefix: EntityPrefix) -> &'static str {
-    match prefix {
-        EntityPrefix::Req => "requirements",
-        EntityPrefix::Risk => "risks",
-        EntityPrefix::Test => "verification/protocols",
-        EntityPrefix::Rslt => "verification/results",
-        EntityPrefix::Cmp => "bom/components",
-        EntityPrefix::Asm => "bom/assemblies",
-        EntityPrefix::Feat => "tolerances/features",
-        EntityPrefix::Mate => "tolerances/mates",
-        EntityPrefix::Tol => "tolerances/stackups",
-        EntityPrefix::Proc => "manufacturing/processes",
-        EntityPrefix::Ctrl => "manufacturing/controls",
-        EntityPrefix::Work => "manufacturing/work_instructions",
-        EntityPrefix::Lot => "manufacturing/lots",
-        EntityPrefix::Dev => "manufacturing/deviations",
-        EntityPrefix::Ncr => "manufacturing/ncrs",
-        EntityPrefix::Capa => "manufacturing/capas",
-        EntityPrefix::Quot => "bom/quotes",
-        EntityPrefix::Sup => "bom/suppliers",
-        EntityPrefix::Haz => "risks/hazards",
-        EntityPrefix::Act => "actions",
-    }
-}
+use super::entity_dir_name;
 
 /// Link information for frontend
 #[derive(Debug, Clone, Serialize)]
@@ -129,60 +104,91 @@ pub async fn get_links_to(id: String, state: State<'_, AppState>) -> CommandResu
     Ok(enriched)
 }
 
-/// Trace from an entity (find downstream)
+/// Frontend-compatible trace link
+#[derive(Debug, Clone, Serialize)]
+pub struct FrontendTraceLink {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub title: String,
+    pub status: String,
+    pub link_type: String,
+}
+
+/// Frontend-compatible trace result
+#[derive(Debug, Clone, Serialize)]
+pub struct FrontendTraceResult {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub title: String,
+    pub upstream: Vec<FrontendTraceLink>,
+    pub downstream: Vec<FrontendTraceLink>,
+}
+
+/// Trace from an entity — returns frontend-compatible result with upstream and downstream links
 #[tauri::command]
 pub async fn trace_from(
     params: TraceParams,
     state: State<'_, AppState>,
-) -> CommandResult<TraceResult> {
-    let project = state.project.lock().unwrap();
+) -> CommandResult<FrontendTraceResult> {
     let cache = state.cache.lock().unwrap();
-
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
     let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
 
-    let service = TraceabilityService::new(project, cache);
+    // Get source entity info from cache
+    let source = cache
+        .get_entity(&params.id)
+        .ok_or_else(|| CommandError::NotFound(format!("Entity not found: {}", params.id)))?;
 
-    let options = TraceOptions {
-        direction: Some(TraceDirection::Forward),
-        max_depth: params.depth,
-        link_types: params.link_types,
-        entity_types: None,
-        include_source: true,
-    };
+    let entity_type = source.id.split('-').next().unwrap_or("").to_string();
 
-    let result = service
-        .trace_from(&params.id, &options)
-        .map_err(|e| CommandError::Other(e.to_string()))?;
-    Ok(result)
+    // Get downstream links (FROM source)
+    let links_from = cache.get_links_from(&params.id);
+    let downstream: Vec<FrontendTraceLink> = links_from
+        .iter()
+        .filter_map(|link| {
+            let target = cache.get_entity(&link.target_id)?;
+            Some(FrontendTraceLink {
+                entity_id: target.id.clone(),
+                entity_type: target.id.split('-').next().unwrap_or("").to_string(),
+                title: target.title.clone(),
+                status: format!("{:?}", target.status).to_lowercase(),
+                link_type: link.link_type.clone(),
+            })
+        })
+        .collect();
+
+    // Get upstream links (TO source)
+    let links_to = cache.get_links_to(&params.id);
+    let upstream: Vec<FrontendTraceLink> = links_to
+        .iter()
+        .filter_map(|link| {
+            let source_entity = cache.get_entity(&link.source_id)?;
+            Some(FrontendTraceLink {
+                entity_id: source_entity.id.clone(),
+                entity_type: source_entity.id.split('-').next().unwrap_or("").to_string(),
+                title: source_entity.title.clone(),
+                status: format!("{:?}", source_entity.status).to_lowercase(),
+                link_type: link.link_type.clone(),
+            })
+        })
+        .collect();
+
+    Ok(FrontendTraceResult {
+        entity_id: source.id.clone(),
+        entity_type,
+        title: source.title.clone(),
+        upstream,
+        downstream,
+    })
 }
 
-/// Trace to an entity (find upstream)
+/// Trace to an entity — returns same frontend-compatible result
 #[tauri::command]
 pub async fn trace_to(
     params: TraceParams,
     state: State<'_, AppState>,
-) -> CommandResult<TraceResult> {
-    let project = state.project.lock().unwrap();
-    let cache = state.cache.lock().unwrap();
-
-    let project = project.as_ref().ok_or(CommandError::NoProject)?;
-    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
-
-    let service = TraceabilityService::new(project, cache);
-
-    let options = TraceOptions {
-        direction: Some(TraceDirection::Backward),
-        max_depth: params.depth,
-        link_types: params.link_types,
-        entity_types: None,
-        include_source: true,
-    };
-
-    let result = service
-        .trace_to(&params.id, &options)
-        .map_err(|e| CommandError::Other(e.to_string()))?;
-    Ok(result)
+) -> CommandResult<FrontendTraceResult> {
+    // Same implementation as trace_from — both return upstream + downstream
+    trace_from(params, state).await
 }
 
 /// Get coverage report
@@ -331,7 +337,7 @@ pub async fn add_link(
     // Use explicit link type if provided, otherwise infer
     if let Some(explicit_type) = link_type {
         links::add_explicit_link(&source_path, &explicit_type, &target_id)
-            .map_err(|e| CommandError::Other(e))?;
+            .map_err(CommandError::Other)?;
         actual_link_type = explicit_type;
     } else {
         actual_link_type = links::add_inferred_link(
@@ -340,7 +346,7 @@ pub async fn add_link(
             &target_id,
             target_entity_id.prefix(),
         )
-        .map_err(|e| CommandError::Other(e))?;
+        .map_err(CommandError::Other)?;
     }
 
     // Now add the reciprocal link on the target entity
@@ -402,7 +408,7 @@ pub async fn remove_link(
 
     // Remove the link from source entity
     links::remove_explicit_link(&source_path, &link_type, &target_id)
-        .map_err(|e| CommandError::Other(e))?;
+        .map_err(CommandError::Other)?;
 
     // Now remove the reciprocal link from the target entity
     if let Some(reciprocal_type) = links::get_reciprocal_link_type(

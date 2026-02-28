@@ -1221,7 +1221,17 @@ export const versionControl = {
 	fetch: () => call<void>('fetch_changes'),
 
 	// Recent commits
-	getRecentCommits: (limit?: number) => call<GitCommitInfo[]>('get_recent_commits', { limit })
+	getRecentCommits: (limit?: number) => call<GitCommitInfo[]>('get_recent_commits', { limit }),
+
+	// File diff
+	getUncommittedFileDiff: (path: string) => call<string>('get_uncommitted_file_diff', { path })
+};
+
+/**
+ * Cache management API
+ */
+export const cache = {
+	sync: () => call<void>('sync_cache')
 };
 
 export const settings = {
@@ -1275,7 +1285,8 @@ export const api = {
 	lots,
 	traceability,
 	settings,
-	versionControl
+	versionControl,
+	cache
 };
 
 export default api;

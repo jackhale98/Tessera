@@ -12,10 +12,18 @@
 		Textarea,
 		Select
 	} from '$lib/components/ui';
+	import { EntityPicker } from '$lib/components/common';
 	import { entities } from '$lib/api';
 	import { refreshProject, projectAuthor, isProjectOpen } from '$lib/stores/project';
-	import { ArrowLeft, Plus, X } from 'lucide-svelte';
+	import { ArrowLeft, Plus, X, Search } from 'lucide-svelte';
 	import type { EntityData } from '$lib/api/types';
+
+	interface EntitySearchResult {
+		id: string;
+		title: string;
+		status: string;
+		prefix: string;
+	}
 
 	let title = $state('');
 	let mateType = $state('clearance');
@@ -25,44 +33,46 @@
 	let newTag = $state('');
 
 	// Component and feature selection
-	let components = $state<EntityData[]>([]);
 	let featuresA = $state<EntityData[]>([]);
 	let featuresB = $state<EntityData[]>([]);
 	let componentAId = $state('');
 	let componentBId = $state('');
 	let featureAId = $state('');
 	let featureBId = $state('');
-	let loadingComponents = $state(true);
 	let loadingFeaturesA = $state(false);
 	let loadingFeaturesB = $state(false);
+	let featureSearchA = $state('');
+	let featureSearchB = $state('');
 
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
-	async function loadComponents() {
-		if (!$isProjectOpen) return;
-		loadingComponents = true;
-		try {
-			const result = await entities.list('CMP');
-			components = result.items;
-		} catch (e) {
-			console.error('Failed to load components:', e);
-		} finally {
-			loadingComponents = false;
+	function handleComponentSelect(entity: EntitySearchResult, target: 'A' | 'B') {
+		if (target === 'A') {
+			componentAId = entity.id;
+			featureAId = '';
+			loadFeaturesForComponent(entity.id, 'A');
+		} else {
+			componentBId = entity.id;
+			featureBId = '';
+			loadFeaturesForComponent(entity.id, 'B');
+		}
+	}
+
+	function handleComponentClear(target: 'A' | 'B') {
+		if (target === 'A') {
+			componentAId = '';
+			featuresA = [];
+			featureAId = '';
+		} else {
+			componentBId = '';
+			featuresB = [];
+			featureBId = '';
 		}
 	}
 
 	async function loadFeaturesForComponent(componentId: string, target: 'A' | 'B') {
-		if (!componentId) {
-			if (target === 'A') {
-				featuresA = [];
-				featureAId = '';
-			} else {
-				featuresB = [];
-				featureBId = '';
-			}
-			return;
-		}
+		if (!componentId) return;
 
 		if (target === 'A') {
 			loadingFeaturesA = true;
@@ -71,8 +81,7 @@
 		}
 
 		try {
-			const result = await entities.list('FEAT');
-			// Filter features by component
+			const result = await entities.list('FEAT', { include_data: true } as any);
 			const filtered = result.items.filter(f => {
 				const data = f.data ?? {};
 				return data.component === componentId;
@@ -95,6 +104,31 @@
 			}
 		}
 	}
+
+	// Filtered features based on search
+	const filteredFeaturesA = $derived(
+		featureSearchA
+			? featuresA.filter(f => {
+				const search = featureSearchA.toLowerCase();
+				return f.title.toLowerCase().includes(search) ||
+					f.id.toLowerCase().includes(search) ||
+					((f.data as Record<string, unknown>)?.feature_type as string ?? '').toLowerCase().includes(search) ||
+					((f.data as Record<string, unknown>)?.description as string ?? '').toLowerCase().includes(search);
+			})
+			: featuresA
+	);
+
+	const filteredFeaturesB = $derived(
+		featureSearchB
+			? featuresB.filter(f => {
+				const search = featureSearchB.toLowerCase();
+				return f.title.toLowerCase().includes(search) ||
+					f.id.toLowerCase().includes(search) ||
+					((f.data as Record<string, unknown>)?.feature_type as string ?? '').toLowerCase().includes(search) ||
+					((f.data as Record<string, unknown>)?.description as string ?? '').toLowerCase().includes(search);
+			})
+			: featuresB
+	);
 
 	function addTag() {
 		if (newTag.trim() && !tags.includes(newTag.trim())) {
@@ -134,26 +168,7 @@
 		}
 	}
 
-	onMount(() => {
-		loadComponents();
-	});
-
-	$effect(() => {
-		if ($isProjectOpen) loadComponents();
-	});
-
-	// Load features when component selection changes
-	$effect(() => {
-		if (componentAId) {
-			loadFeaturesForComponent(componentAId, 'A');
-		}
-	});
-
-	$effect(() => {
-		if (componentBId) {
-			loadFeaturesForComponent(componentBId, 'B');
-		}
-	});
+	// Features are loaded when components are selected via handleComponentSelect
 </script>
 
 <div class="space-y-6">
@@ -200,28 +215,57 @@
 					<CardHeader><CardTitle>Feature A (Hole/Bore)</CardTitle></CardHeader>
 					<CardContent class="space-y-4">
 						<p class="text-sm text-muted-foreground">Select the internal feature (typically a hole or bore)</p>
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div class="space-y-2">
-								<Label for="component-a">Component *</Label>
-								<Select id="component-a" bind:value={componentAId} disabled={loadingComponents}>
-									<option value="">Select a component...</option>
-									{#each components as comp}
-										<option value={comp.id}>{comp.title} ({comp.id.slice(0, 12)}...)</option>
-									{/each}
-								</Select>
-							</div>
-							<div class="space-y-2">
-								<Label for="feature-a">Feature *</Label>
-								<Select id="feature-a" bind:value={featureAId} disabled={!componentAId || loadingFeaturesA}>
-									<option value="">{loadingFeaturesA ? 'Loading...' : componentAId ? 'Select a feature...' : 'Select component first'}</option>
-									{#each featuresA as feat}
-										<option value={feat.id}>{feat.title}</option>
-									{/each}
-								</Select>
-								{#if componentAId && featuresA.length === 0 && !loadingFeaturesA}
-									<p class="text-xs text-muted-foreground">No features found for this component</p>
-								{/if}
-							</div>
+						<div class="space-y-4">
+							<EntityPicker
+								label="Component *"
+								entityTypes={['CMP']}
+								placeholder="Search components..."
+								onSelect={(entity) => handleComponentSelect(entity, 'A')}
+								onClear={() => handleComponentClear('A')}
+							/>
+							{#if componentAId}
+								<div class="space-y-2">
+									<Label for="feature-a">Feature *</Label>
+									{#if loadingFeaturesA}
+										<p class="text-sm text-muted-foreground">Loading features...</p>
+									{:else if featuresA.length === 0}
+										<p class="text-xs text-muted-foreground">No features found for this component</p>
+									{:else}
+										<div class="relative">
+											<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+											<Input
+												bind:value={featureSearchA}
+												placeholder="Search features by title, type..."
+												class="pl-9"
+											/>
+										</div>
+										<div class="border rounded-md max-h-48 overflow-y-auto">
+											{#each filteredFeaturesA as feat}
+												{@const data = feat.data as Record<string, unknown> | null}
+												{@const dims = (data?.dimensions as Array<Record<string, unknown>> | undefined)?.[0]}
+												<button
+													type="button"
+													class="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-accent border-b last:border-b-0 {featureAId === feat.id ? 'bg-accent' : ''}"
+													onclick={() => { featureAId = feat.id; }}
+												>
+													<div class="min-w-0 flex-1">
+														<div class="font-medium text-sm">{feat.title}</div>
+														<div class="text-xs text-muted-foreground">
+															{(data?.feature_type as string) ?? 'external'}
+															{#if dims}
+																| {dims.nominal}{dims.units ? ` ${dims.units}` : ''}
+															{/if}
+														</div>
+													</div>
+													{#if featureAId === feat.id}
+														<span class="text-primary text-xs font-medium">Selected</span>
+													{/if}
+												</button>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					</CardContent>
 				</Card>
@@ -230,28 +274,57 @@
 					<CardHeader><CardTitle>Feature B (Shaft/Pin)</CardTitle></CardHeader>
 					<CardContent class="space-y-4">
 						<p class="text-sm text-muted-foreground">Select the external feature (typically a shaft or pin)</p>
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div class="space-y-2">
-								<Label for="component-b">Component *</Label>
-								<Select id="component-b" bind:value={componentBId} disabled={loadingComponents}>
-									<option value="">Select a component...</option>
-									{#each components as comp}
-										<option value={comp.id}>{comp.title} ({comp.id.slice(0, 12)}...)</option>
-									{/each}
-								</Select>
-							</div>
-							<div class="space-y-2">
-								<Label for="feature-b">Feature *</Label>
-								<Select id="feature-b" bind:value={featureBId} disabled={!componentBId || loadingFeaturesB}>
-									<option value="">{loadingFeaturesB ? 'Loading...' : componentBId ? 'Select a feature...' : 'Select component first'}</option>
-									{#each featuresB as feat}
-										<option value={feat.id}>{feat.title}</option>
-									{/each}
-								</Select>
-								{#if componentBId && featuresB.length === 0 && !loadingFeaturesB}
-									<p class="text-xs text-muted-foreground">No features found for this component</p>
-								{/if}
-							</div>
+						<div class="space-y-4">
+							<EntityPicker
+								label="Component *"
+								entityTypes={['CMP']}
+								placeholder="Search components..."
+								onSelect={(entity) => handleComponentSelect(entity, 'B')}
+								onClear={() => handleComponentClear('B')}
+							/>
+							{#if componentBId}
+								<div class="space-y-2">
+									<Label for="feature-b">Feature *</Label>
+									{#if loadingFeaturesB}
+										<p class="text-sm text-muted-foreground">Loading features...</p>
+									{:else if featuresB.length === 0}
+										<p class="text-xs text-muted-foreground">No features found for this component</p>
+									{:else}
+										<div class="relative">
+											<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+											<Input
+												bind:value={featureSearchB}
+												placeholder="Search features by title, type..."
+												class="pl-9"
+											/>
+										</div>
+										<div class="border rounded-md max-h-48 overflow-y-auto">
+											{#each filteredFeaturesB as feat}
+												{@const data = feat.data as Record<string, unknown> | null}
+												{@const dims = (data?.dimensions as Array<Record<string, unknown>> | undefined)?.[0]}
+												<button
+													type="button"
+													class="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-accent border-b last:border-b-0 {featureBId === feat.id ? 'bg-accent' : ''}"
+													onclick={() => { featureBId = feat.id; }}
+												>
+													<div class="min-w-0 flex-1">
+														<div class="font-medium text-sm">{feat.title}</div>
+														<div class="text-xs text-muted-foreground">
+															{(data?.feature_type as string) ?? 'external'}
+															{#if dims}
+																| {dims.nominal}{dims.units ? ` ${dims.units}` : ''}
+															{/if}
+														</div>
+													</div>
+													{#if featureBId === feat.id}
+														<span class="text-primary text-xs font-medium">Selected</span>
+													{/if}
+												</button>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					</CardContent>
 				</Card>

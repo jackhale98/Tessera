@@ -37,7 +37,7 @@
 	let error = $state<string | null>(null);
 
 	// Features for this component
-	let features = $state<Array<{ id: string; title: string; feature_type: string; status: string }>>([]);
+	let features = $state<Array<{ id: string; title: string; feature_type: string; status: string; dimension?: { nominal: number; plus_tol?: number; minus_tol?: number; units?: string } }>>([]);
 	let featuresLoading = $state(false);
 	let addFeatureDialogOpen = $state(false);
 
@@ -191,16 +191,25 @@
 
 		featuresLoading = true;
 		try {
-			// Get all features and filter by component ID
-			const result = await entities.list('FEAT', { limit: 100 });
+			// Get all features with data and filter by component ID
+			const result = await entities.list('FEAT', { limit: 100, include_data: true } as any);
 			features = result.items
 				.filter((f) => f.data?.component === id)
-				.map((f) => ({
-					id: f.id,
-					title: f.title,
-					feature_type: (f.data?.feature_type as string) ?? 'external',
-					status: f.status
-				}));
+				.map((f) => {
+					const dims = (f.data?.dimensions as Array<Record<string, unknown>> | undefined)?.[0];
+					return {
+						id: f.id,
+						title: f.title,
+						feature_type: (f.data?.feature_type as string) ?? 'external',
+						status: f.status,
+						dimension: dims ? {
+							nominal: dims.nominal as number,
+							plus_tol: dims.plus_tol as number | undefined,
+							minus_tol: dims.minus_tol as number | undefined,
+							units: dims.units as string | undefined
+						} : undefined
+					};
+				});
 		} catch (e) {
 			console.error('Failed to load features:', e);
 		} finally {
@@ -497,6 +506,12 @@
 												<p class="font-medium">{feature.title}</p>
 												<p class="text-xs text-muted-foreground capitalize">
 													{feature.feature_type}
+													{#if feature.dimension}
+														<span class="mx-1">|</span>
+														<span class="font-mono">
+															{feature.dimension.nominal}{#if feature.dimension.plus_tol !== undefined} +{feature.dimension.plus_tol}/{feature.dimension.minus_tol}{/if}{#if feature.dimension.units} {feature.dimension.units}{/if}
+														</span>
+													{/if}
 												</p>
 											</div>
 										</div>

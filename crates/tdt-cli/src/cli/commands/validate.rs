@@ -804,12 +804,12 @@ fn check_mate_values(
         .map(|a| &a.fit_result)
         .unwrap_or(&expected_analysis.fit_result);
 
-    let type_matches = match (&mate.mate_type, actual_fit) {
-        (MateType::Clearance, FitResult::Clearance) => true,
-        (MateType::Interference, FitResult::Interference) => true,
-        (MateType::Transition, FitResult::Transition) => true,
-        _ => false,
-    };
+    let type_matches = matches!(
+        (&mate.mate_type, actual_fit),
+        (MateType::Clearance, FitResult::Clearance)
+            | (MateType::Interference, FitResult::Interference)
+            | (MateType::Transition, FitResult::Transition)
+    );
 
     if !type_matches {
         issues.push(format!(

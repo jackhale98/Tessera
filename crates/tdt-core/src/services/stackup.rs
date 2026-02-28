@@ -500,7 +500,7 @@ impl<'a> StackupService<'a> {
     pub fn add_contributor(&self, id: &str, input: AddContributorInput) -> ServiceResult<Stackup> {
         let (_, mut stackup) = self.find_stackup(id)?;
 
-        let feature_ref = input.feature_id.map(|fid| FeatureRef::new(fid));
+        let feature_ref = input.feature_id.map(FeatureRef::new);
 
         let contributor = Contributor {
             name: input.name,

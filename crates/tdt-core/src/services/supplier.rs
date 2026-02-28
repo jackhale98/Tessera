@@ -83,6 +83,7 @@ pub enum SupplierSortField {
 
 /// Input for creating a new supplier
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CreateSupplier {
     /// Company name
     pub name: String,
@@ -119,21 +120,6 @@ pub struct CreateSupplier {
     pub tags: Vec<String>,
 }
 
-impl Default for CreateSupplier {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            author: String::new(),
-            short_name: None,
-            website: None,
-            payment_terms: None,
-            currency: Currency::default(),
-            notes: None,
-            capabilities: Vec::new(),
-            tags: Vec::new(),
-        }
-    }
-}
 
 /// Input for updating an existing supplier
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -574,8 +560,10 @@ impl<'a> SupplierService<'a> {
     pub fn stats(&self) -> ServiceResult<SupplierStats> {
         let suppliers = self.load_all()?;
 
-        let mut stats = SupplierStats::default();
-        stats.total = suppliers.len();
+        let mut stats = SupplierStats {
+            total: suppliers.len(),
+            ..Default::default()
+        };
 
         for sup in &suppliers {
             // Count by status

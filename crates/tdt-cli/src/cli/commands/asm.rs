@@ -25,6 +25,8 @@ use tdt_core::services::{
     CreateAssembly, SortDirection, UpdateAssembly,
 };
 
+type BomCostRow = (String, String, u32, f64, f64, String, f64, String);
+
 #[derive(Subcommand, Debug)]
 pub enum AsmCommands {
     /// List assemblies with filtering
@@ -1525,8 +1527,8 @@ fn run_cost(args: CostArgs) -> Result<()> {
             } else {
                 // No quote used - check if quotes are available but unselected
                 if let Some(cmp_quotes) = component_quotes.get(&line.component_id) {
-                    if !cmp_quotes.is_empty() {
-                        if !unselected_warnings
+                    if !cmp_quotes.is_empty()
+                        && !unselected_warnings
                             .iter()
                             .any(|(id, _, _)| id == &line.component_id)
                         {
@@ -1536,7 +1538,6 @@ fn run_cost(args: CostArgs) -> Result<()> {
                                 cmp_quotes.len(),
                             ));
                         }
-                    }
                 }
             }
         }
@@ -1598,10 +1599,11 @@ fn run_cost(args: CostArgs) -> Result<()> {
 
     // Calculate costs recursively
     // breakdown: (id, title, bom_qty, unit_price, line_cost, price_source, nre, source_asm)
-    let mut breakdown: Vec<(String, String, u32, f64, f64, String, f64, String)> = Vec::new();
+    let mut breakdown: Vec<BomCostRow> = Vec::new();
     let mut visited = std::collections::HashSet::new();
     visited.insert(assembly.id.to_string());
 
+    #[allow(clippy::too_many_arguments)]
     fn calculate_bom_cost(
         bom: &[tdt_core::entities::assembly::BomItem],
         subassemblies: &[String],
@@ -1609,7 +1611,7 @@ fn run_cost(args: CostArgs) -> Result<()> {
         assembly_map: &std::collections::HashMap<String, &Assembly>,
         quote_map: &std::collections::HashMap<String, &Quote>,
         component_quotes: &std::collections::HashMap<String, Vec<&Quote>>,
-        breakdown: &mut Vec<(String, String, u32, f64, f64, String, f64, String)>,
+        breakdown: &mut Vec<BomCostRow>,
         unselected_warnings: &mut Vec<(String, String, usize)>,
         expired_warnings: &mut Vec<(String, String, String)>,
         nre_items: &mut Vec<(String, String, f64)>,

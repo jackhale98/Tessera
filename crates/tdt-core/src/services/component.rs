@@ -313,7 +313,7 @@ impl<'a> ComponentService<'a> {
     /// Get a component by ID, returning an error if not found
     pub fn get_required(&self, id: &str) -> ServiceResult<Component> {
         self.get(id)?
-            .ok_or_else(|| ServiceError::NotFound(id.to_string()).into())
+            .ok_or_else(|| ServiceError::NotFound(id.to_string()))
     }
 
     /// Get a component by part number
@@ -331,8 +331,7 @@ impl<'a> ComponentService<'a> {
             return Err(ServiceError::AlreadyExists(format!(
                 "Component with part number '{}' already exists ({})",
                 input.part_number, existing.id
-            ))
-            .into());
+            )));
         }
 
         let id = EntityId::new(EntityPrefix::Cmp);
@@ -388,8 +387,7 @@ impl<'a> ComponentService<'a> {
                         return Err(ServiceError::AlreadyExists(format!(
                             "Component with part number '{}' already exists ({})",
                             new_pn, existing.id
-                        ))
-                        .into());
+                        )));
                     }
                 }
             }
@@ -453,12 +451,12 @@ impl<'a> ComponentService<'a> {
         if !force {
             // Check if used in any assembly
             if !component.links.used_in.is_empty() {
-                return Err(ServiceError::HasReferences.into());
+                return Err(ServiceError::HasReferences);
             }
 
             let references = self.find_references(&component.id)?;
             if !references.is_empty() {
-                return Err(ServiceError::HasReferences.into());
+                return Err(ServiceError::HasReferences);
             }
         }
 
@@ -551,8 +549,7 @@ impl<'a> ComponentService<'a> {
             return Err(ServiceError::AlreadyExists(format!(
                 "Process {} already in routing",
                 process_id
-            ))
-            .into());
+            )));
         }
         manufacturing.routing.push(process_id.to_string());
         component.entity_revision += 1;
@@ -573,15 +570,13 @@ impl<'a> ComponentService<'a> {
                 return Err(ServiceError::NotFound(format!(
                     "Process {} not in routing",
                     process_id
-                ))
-                .into());
+                )));
             }
         } else {
             return Err(ServiceError::NotFound(format!(
                 "Process {} not in routing (no routing defined)",
                 process_id
-            ))
-            .into());
+            )));
         }
 
         component.entity_revision += 1;
@@ -612,7 +607,7 @@ impl<'a> ComponentService<'a> {
         if let Some((path, cmp)) = loader::load_entity::<Component>(&dir, id)? {
             return Ok((path, cmp));
         }
-        Err(ServiceError::NotFound(id.to_string()).into())
+        Err(ServiceError::NotFound(id.to_string()))
     }
 
     /// Find entities that reference this component
@@ -765,8 +760,10 @@ impl<'a> ComponentService<'a> {
     pub fn stats(&self) -> ServiceResult<ComponentStats> {
         let components = self.load_all()?;
 
-        let mut stats = ComponentStats::default();
-        stats.total = components.len();
+        let mut stats = ComponentStats {
+            total: components.len(),
+            ..Default::default()
+        };
 
         for cmp in &components {
             match cmp.make_buy {

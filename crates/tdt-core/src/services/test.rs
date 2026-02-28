@@ -104,6 +104,7 @@ pub enum TestSortField {
 
 /// Input for creating a new test
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CreateTest {
     /// Test title
     pub title: String,
@@ -147,23 +148,6 @@ pub struct CreateTest {
     pub tags: Vec<String>,
 }
 
-impl Default for CreateTest {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            author: String::new(),
-            test_type: TestType::default(),
-            test_level: None,
-            test_method: None,
-            objective: String::new(),
-            description: None,
-            category: None,
-            priority: Priority::default(),
-            estimated_duration: None,
-            tags: Vec::new(),
-        }
-    }
-}
 
 /// Input for updating an existing test
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -452,9 +436,8 @@ impl<'a> TestService<'a> {
                 self.project.root().join(&cached.file_path)
             };
             if path.exists() {
-                match crate::yaml::parse_yaml_file::<Test>(&path) {
-                    Ok(test) => return Ok(Some(test)),
-                    Err(_) => {} // Fall through to directory scan
+                if let Ok(test) = crate::yaml::parse_yaml_file::<Test>(&path) {
+                    return Ok(Some(test));
                 }
             }
         }
@@ -828,8 +811,10 @@ impl<'a> TestService<'a> {
     pub fn stats(&self) -> ServiceResult<TestStats> {
         let tests = self.load_all()?;
 
-        let mut stats = TestStats::default();
-        stats.total = tests.len();
+        let mut stats = TestStats {
+            total: tests.len(),
+            ..Default::default()
+        };
 
         for test in &tests {
             // Count by type

@@ -74,6 +74,7 @@ pub enum WorkInstructionSortField {
 
 /// Input for creating a new work instruction
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CreateWorkInstruction {
     /// Work instruction title
     pub title: String,
@@ -106,20 +107,6 @@ pub struct CreateWorkInstruction {
     pub tags: Vec<String>,
 }
 
-impl Default for CreateWorkInstruction {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            author: String::new(),
-            document_number: None,
-            revision: None,
-            description: None,
-            process: None,
-            estimated_duration_minutes: None,
-            tags: Vec::new(),
-        }
-    }
-}
 
 /// Input for updating an existing work instruction
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -561,8 +548,10 @@ impl<'a> WorkInstructionService<'a> {
     pub fn stats(&self) -> ServiceResult<WorkInstructionStats> {
         let instructions = self.load_all()?;
 
-        let mut stats = WorkInstructionStats::default();
-        stats.total = instructions.len();
+        let mut stats = WorkInstructionStats {
+            total: instructions.len(),
+            ..Default::default()
+        };
 
         for wi in &instructions {
             // Count by status

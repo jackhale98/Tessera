@@ -98,6 +98,7 @@ pub enum ProcessSortField {
 
 /// Input for creating a new process
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CreateProcess {
     /// Process title
     pub title: String,
@@ -138,22 +139,6 @@ pub struct CreateProcess {
     pub tags: Vec<String>,
 }
 
-impl Default for CreateProcess {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            author: String::new(),
-            process_type: ProcessType::default(),
-            operation_number: None,
-            description: None,
-            cycle_time_minutes: None,
-            setup_time_minutes: None,
-            operator_skill: SkillLevel::default(),
-            require_signature: false,
-            tags: Vec::new(),
-        }
-    }
-}
 
 /// Input for updating an existing process
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -601,8 +586,10 @@ impl<'a> ProcessService<'a> {
     pub fn stats(&self) -> ServiceResult<ProcessStats> {
         let processes = self.load_all()?;
 
-        let mut stats = ProcessStats::default();
-        stats.total = processes.len();
+        let mut stats = ProcessStats {
+            total: processes.len(),
+            ..Default::default()
+        };
 
         let mut cycle_times: Vec<f64> = Vec::new();
         let mut setup_times: Vec<f64> = Vec::new();

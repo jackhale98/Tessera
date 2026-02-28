@@ -99,6 +99,7 @@ pub enum ControlSortField {
 
 /// Input for creating a new control
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CreateControl {
     /// Control title
     pub title: String,
@@ -135,21 +136,6 @@ pub struct CreateControl {
     pub tags: Vec<String>,
 }
 
-impl Default for CreateControl {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            author: String::new(),
-            control_type: ControlType::default(),
-            control_category: ControlCategory::default(),
-            description: None,
-            characteristic: None,
-            process: None,
-            feature: None,
-            tags: Vec::new(),
-        }
-    }
-}
 
 /// Input for updating an existing control
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -543,8 +529,10 @@ impl<'a> ControlService<'a> {
     pub fn stats(&self) -> ServiceResult<ControlStats> {
         let controls = self.load_all()?;
 
-        let mut stats = ControlStats::default();
-        stats.total = controls.len();
+        let mut stats = ControlStats {
+            total: controls.len(),
+            ..Default::default()
+        };
 
         for ctrl in &controls {
             // Count by type

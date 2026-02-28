@@ -39,6 +39,8 @@ pub enum VisualizationMode {
     Svg,
 }
 
+type StackupResultRow = (String, String, Option<String>, Option<f64>, Option<f64>);
+
 #[derive(Subcommand, Debug)]
 pub enum TolCommands {
     /// List stackups with filtering
@@ -1645,7 +1647,7 @@ fn run_analyze_all(args: &AnalyzeArgs) -> Result<()> {
     let mut analyzed = 0;
     let mut skipped = 0;
     let mut errors = 0;
-    let mut results_summary: Vec<(String, String, Option<String>, Option<f64>, Option<f64>)> =
+    let mut results_summary: Vec<StackupResultRow> =
         Vec::new();
 
     println!(

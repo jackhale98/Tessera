@@ -343,9 +343,8 @@ impl<'a> FeatureService<'a> {
                 self.project.root().join(&cached.file_path)
             };
             if path.exists() {
-                match crate::yaml::parse_yaml_file::<Feature>(&path) {
-                    Ok(feature) => return Ok(Some(feature)),
-                    Err(_) => {} // Fall through to directory scan
+                if let Ok(feature) = crate::yaml::parse_yaml_file::<Feature>(&path) {
+                    return Ok(Some(feature));
                 }
             }
         }

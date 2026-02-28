@@ -481,11 +481,11 @@ impl EntityCache {
                     } else if let Some(subasm_obj) = subasm.as_mapping() {
                         // Object format: {id: "ASM-...", quantity: N}
                         if let Some(subasm_id) = subasm_obj
-                            .get(&serde_yml::Value::String("id".to_string()))
+                            .get(serde_yml::Value::String("id".to_string()))
                             .and_then(|v| v.as_str())
                         {
                             let quantity = subasm_obj
-                                .get(&serde_yml::Value::String("quantity".to_string()))
+                                .get(serde_yml::Value::String("quantity".to_string()))
                                 .and_then(|v| v.as_u64())
                                 .unwrap_or(1) as u32;
                             self.insert_link(source_id, subasm_id, "contains_subassembly")?;

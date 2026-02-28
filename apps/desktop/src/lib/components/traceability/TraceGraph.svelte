@@ -42,22 +42,22 @@
 			REQ: 'requirements',
 			RISK: 'risks',
 			HAZ: 'hazards',
-			TEST: 'tests',
-			RSLT: 'results',
+			TEST: 'verification/tests',
+			RSLT: 'verification/results',
 			CMP: 'components',
 			ASM: 'assemblies',
 			FEAT: 'features',
 			MATE: 'mates',
 			TOL: 'tolerances',
-			PROC: 'processes',
+			PROC: 'manufacturing/processes',
 			CTRL: 'controls',
-			WORK: 'work-instructions',
-			LOT: 'lots',
-			DEV: 'deviations',
-			NCR: 'ncrs',
-			CAPA: 'capas',
-			QUOT: 'quotes',
-			SUP: 'suppliers'
+			WORK: 'manufacturing/work-instructions',
+			LOT: 'manufacturing/lots',
+			DEV: 'manufacturing/deviations',
+			NCR: 'quality/ncrs',
+			CAPA: 'quality/capas',
+			QUOT: 'procurement/quotes',
+			SUP: 'procurement/suppliers'
 		};
 		return routes[prefix] ?? 'entities';
 	}

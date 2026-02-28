@@ -326,6 +326,7 @@ pub fn run() {
             commands::get_entity_history,
             commands::get_entity_workflow_history,
             commands::get_entity_file_diff,
+            commands::get_uncommitted_file_diff,
             commands::list_git_branches,
             commands::list_git_tags,
             commands::checkout_git_branch,
@@ -337,6 +338,8 @@ pub fn run() {
             commands::pull_changes,
             commands::fetch_changes,
             commands::get_recent_commits,
+            // Cache commands
+            commands::sync_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

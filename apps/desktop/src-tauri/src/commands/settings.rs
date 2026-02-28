@@ -131,7 +131,7 @@ impl TryFrom<TeamMemberDto> for TeamMember {
             name: dto.name,
             email: dto.email,
             username: dto.username,
-            roles: roles.map_err(|e| e)?,
+            roles: roles?,
             active: dto.active,
             signing_format,
         })
@@ -179,7 +179,7 @@ impl TryFrom<TeamRosterDto> for TeamRoster {
         Ok(TeamRoster {
             version: dto.version,
             members: members?,
-            approval_matrix: approval_matrix.map_err(|e| e)?,
+            approval_matrix: approval_matrix?,
         })
     }
 }

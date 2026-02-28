@@ -78,6 +78,7 @@ pub enum AssemblySortField {
 
 /// Input for creating a new assembly
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CreateAssembly {
     /// Assembly part number
     pub part_number: String,
@@ -109,20 +110,6 @@ pub struct CreateAssembly {
     pub tags: Vec<String>,
 }
 
-impl Default for CreateAssembly {
-    fn default() -> Self {
-        Self {
-            part_number: String::new(),
-            title: String::new(),
-            author: String::new(),
-            revision: None,
-            description: None,
-            bom: Vec::new(),
-            subassemblies: Vec::new(),
-            tags: Vec::new(),
-        }
-    }
-}
 
 /// Input for updating an existing assembly
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -784,8 +771,10 @@ impl<'a> AssemblyService<'a> {
     pub fn stats(&self) -> ServiceResult<AssemblyStats> {
         let assemblies = self.load_all()?;
 
-        let mut stats = AssemblyStats::default();
-        stats.total = assemblies.len();
+        let mut stats = AssemblyStats {
+            total: assemblies.len(),
+            ..Default::default()
+        };
 
         // Build set of all subassembly IDs
         let subasm_ids: HashSet<String> = assemblies
@@ -1449,7 +1438,7 @@ impl<'a> AssemblyService<'a> {
                         .iter()
                         .filter(|pb| pb.min_qty <= purchase_qty)
                         .map(|pb| pb.min_qty)
-                        .last();
+                        .next_back();
                     return (Some(price), Some(quote_id.clone()), tier);
                 }
             }
@@ -1463,7 +1452,7 @@ impl<'a> AssemblyService<'a> {
                     .iter()
                     .filter(|pb| pb.min_qty <= purchase_qty)
                     .map(|pb| pb.min_qty)
-                    .last();
+                    .next_back();
                 return (Some(price), Some(quote.id.to_string()), tier);
             }
         }

@@ -618,7 +618,7 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
             let yaml = serde_yml::to_string(&hazard).into_diagnostic()?;
             print!("{}", yaml);
         }
-        OutputFormat::Auto | _ => {
+        _ => {
             let short_id = short_ids
                 .get_short_id(&hazard.id.to_string())
                 .unwrap_or_else(|| hazard.id.to_string());

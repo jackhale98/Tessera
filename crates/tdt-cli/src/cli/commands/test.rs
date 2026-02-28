@@ -758,7 +758,7 @@ fn build_test_sort(args: &ListArgs) -> (TestSortField, SortDirection) {
 }
 
 /// Sort cached tests based on CLI args
-fn sort_cached_tests(tests: &mut Vec<CachedTest>, args: &ListArgs) {
+fn sort_cached_tests(tests: &mut [CachedTest], args: &ListArgs) {
     match args.sort {
         ListColumn::Id => tests.sort_by(|a, b| a.id.cmp(&b.id)),
         ListColumn::Type => tests.sort_by(|a, b| {

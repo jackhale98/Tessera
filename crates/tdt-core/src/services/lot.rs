@@ -312,11 +312,10 @@ impl<'a> LotService<'a> {
             }
 
             // Active only filter
-            if filter.active_only {
-                if lot.lot_status != LotStatus::InProgress && lot.lot_status != LotStatus::OnHold {
+            if filter.active_only
+                && lot.lot_status != LotStatus::InProgress && lot.lot_status != LotStatus::OnHold {
                     return false;
                 }
-            }
 
             // Recent filter
             if let Some(days) = filter.recent_days {

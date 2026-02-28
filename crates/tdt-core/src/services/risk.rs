@@ -312,34 +312,31 @@ impl<'a> RiskService<'a> {
     /// Get a risk by ID, returning an error if not found
     pub fn get_required(&self, id: &str) -> ServiceResult<Risk> {
         self.get(id)?
-            .ok_or_else(|| ServiceError::NotFound(id.to_string()).into())
+            .ok_or_else(|| ServiceError::NotFound(id.to_string()))
     }
 
     /// Create a new risk
     pub fn create(&self, input: CreateRisk) -> ServiceResult<Risk> {
         // Validate severity/occurrence/detection values
         if let Some(s) = input.severity {
-            if s < 1 || s > 10 {
+            if !(1..=10).contains(&s) {
                 return Err(ServiceError::InvalidInput(
                     "Severity must be between 1 and 10".to_string(),
-                )
-                .into());
+                ));
             }
         }
         if let Some(o) = input.occurrence {
-            if o < 1 || o > 10 {
+            if !(1..=10).contains(&o) {
                 return Err(ServiceError::InvalidInput(
                     "Occurrence must be between 1 and 10".to_string(),
-                )
-                .into());
+                ));
             }
         }
         if let Some(d) = input.detection {
-            if d < 1 || d > 10 {
+            if !(1..=10).contains(&d) {
                 return Err(ServiceError::InvalidInput(
                     "Detection must be between 1 and 10".to_string(),
-                )
-                .into());
+                ));
             }
         }
 
@@ -440,29 +437,26 @@ impl<'a> RiskService<'a> {
         }
 
         if let Some(severity) = input.severity {
-            if severity < 1 || severity > 10 {
+            if !(1..=10).contains(&severity) {
                 return Err(ServiceError::InvalidInput(
                     "Severity must be between 1 and 10".to_string(),
-                )
-                .into());
+                ));
             }
             risk.severity = Some(severity);
         }
         if let Some(occurrence) = input.occurrence {
-            if occurrence < 1 || occurrence > 10 {
+            if !(1..=10).contains(&occurrence) {
                 return Err(ServiceError::InvalidInput(
                     "Occurrence must be between 1 and 10".to_string(),
-                )
-                .into());
+                ));
             }
             risk.occurrence = Some(occurrence);
         }
         if let Some(detection) = input.detection {
-            if detection < 1 || detection > 10 {
+            if !(1..=10).contains(&detection) {
                 return Err(ServiceError::InvalidInput(
                     "Detection must be between 1 and 10".to_string(),
-                )
-                .into());
+                ));
             }
             risk.detection = Some(detection);
         }
@@ -494,7 +488,7 @@ impl<'a> RiskService<'a> {
         if !force {
             let references = self.find_references(&risk.id)?;
             if !references.is_empty() {
-                return Err(ServiceError::HasReferences.into());
+                return Err(ServiceError::HasReferences);
             }
         }
 
@@ -509,8 +503,8 @@ impl<'a> RiskService<'a> {
         let (path, mut risk) = self.find_risk(id)?;
 
         // Store initial risk if this is first mitigation and we have S/O/D
-        if risk.mitigations.is_empty() && risk.initial_risk.is_none() {
-            if risk.severity.is_some() && risk.occurrence.is_some() && risk.detection.is_some() {
+        if risk.mitigations.is_empty() && risk.initial_risk.is_none()
+            && risk.severity.is_some() && risk.occurrence.is_some() && risk.detection.is_some() {
                 risk.initial_risk = Some(InitialRisk {
                     severity: risk.severity,
                     occurrence: risk.occurrence,
@@ -518,7 +512,6 @@ impl<'a> RiskService<'a> {
                     rpn: risk.rpn,
                 });
             }
-        }
 
         risk.mitigations.push(mitigation);
         risk.revision += 1;
@@ -542,8 +535,7 @@ impl<'a> RiskService<'a> {
                 "Mitigation index {} out of range (0-{})",
                 mitigation_index,
                 risk.mitigations.len().saturating_sub(1)
-            ))
-            .into());
+            )));
         }
 
         risk.mitigations[mitigation_index].status = Some(status);
@@ -575,7 +567,7 @@ impl<'a> RiskService<'a> {
         if let Some((path, risk)) = loader::load_entity::<Risk>(&dir, id)? {
             return Ok((path, risk));
         }
-        Err(ServiceError::NotFound(id.to_string()).into())
+        Err(ServiceError::NotFound(id.to_string()))
     }
 
     /// Find entities that reference this risk
@@ -748,8 +740,10 @@ impl<'a> RiskService<'a> {
     pub fn stats(&self) -> ServiceResult<RiskStats> {
         let risks = self.load_all()?;
 
-        let mut stats = RiskStats::default();
-        stats.total = risks.len();
+        let mut stats = RiskStats {
+            total: risks.len(),
+            ..Default::default()
+        };
 
         for risk in &risks {
             match risk.risk_type {

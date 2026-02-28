@@ -337,7 +337,7 @@ pub struct ListConfig<E, C, S> {
     /// Convert cached entity to table row
     pub cached_to_row: fn(&C, &ShortIdIndex) -> TableRow,
     /// Optional function to sort cached entities
-    pub cached_sort: Option<fn(&mut Vec<C>, S, SortDirection)>,
+    pub cached_sort: Option<fn(&mut [C], S, SortDirection)>,
 }
 
 /// Common list arguments extracted from CLI args

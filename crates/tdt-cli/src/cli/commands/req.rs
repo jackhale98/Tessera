@@ -775,7 +775,7 @@ fn build_req_sort(args: &ListArgs) -> (RequirementSortField, SortDirection) {
 
 /// Sort cached requirements by service sort field and direction
 fn sort_cached_requirements_by_field(
-    reqs: &mut Vec<tdt_core::core::CachedRequirement>,
+    reqs: &mut [tdt_core::core::CachedRequirement],
     field: RequirementSortField,
     dir: SortDirection,
 ) {
