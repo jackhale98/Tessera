@@ -21,5 +21,5 @@
 	{@render children()}
 </MainLayout>
 
-<!-- Global command palette (Cmd+K) -->
+<!-- Global command palette (Cmd+Shift+K) -->
 <CommandPalette />

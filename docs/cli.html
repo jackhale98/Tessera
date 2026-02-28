@@ -1,9 +1,10 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tessera – Engineering Design Toolkit</title>
+  <title>CLI Reference – Tessera Design Toolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -298,20 +299,14 @@
       background: var(--accent-glow);
     }
 
-    /* Hero Split Visual */
-    .hero-split {
+    .hero-code {
       margin-top: 60px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      animation: fadeInUp 0.6s ease-out 0.4s backwards;
-    }
-
-    .hero-split-panel {
       background: var(--bg-secondary);
       border: 1px solid var(--border);
       border-radius: 12px;
       overflow: hidden;
+      animation: fadeInUp 0.6s ease-out 0.4s backwards;
+      max-width: 100%;
     }
 
     .hero-code-header {
@@ -334,17 +329,23 @@
     .code-dot.yellow { background: #febc2e; }
     .code-dot.green { background: #28c840; }
 
-    .hero-code-title {
-      color: var(--text-secondary);
-      font-size: 13px;
-      font-family: 'IBM Plex Sans', sans-serif;
-      margin-left: auto;
+    .hero-code pre {
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.7;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 0;
+      white-space: pre;
+      word-break: normal;
+      overflow-wrap: normal;
     }
 
-    .hero-split-panel img {
-      width: 100%;
-      display: block;
-    }
+    .hero-code .comment { color: var(--text-muted); }
+    .hero-code .cmd { color: var(--accent); }
+    .hero-code .output { color: var(--text-secondary); }
+    .hero-code .symbol { color: var(--warning); }
+    .hero-code .value { color: var(--info); }
 
     @keyframes fadeInUp {
       from {
@@ -355,6 +356,24 @@
         opacity: 1;
         transform: translateY(0);
       }
+    }
+
+    /* Hero Demo GIF */
+    .hero-demo {
+      position: relative;
+    }
+
+    .demo-gif {
+      width: 100%;
+      border-radius: 0 0 8px 8px;
+      display: block;
+    }
+
+    .hero-code-title {
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-family: 'IBM Plex Sans', sans-serif;
+      margin-left: auto;
     }
 
     /* Scrolling Marquee */
@@ -391,7 +410,11 @@
       100% { transform: translateX(-50%); }
     }
 
-    /* Section Styles */
+    /* Features */
+    .features {
+      background: var(--bg-secondary);
+    }
+
     .section-header {
       text-align: center;
       margin-bottom: 64px;
@@ -418,11 +441,6 @@
       color: var(--text-secondary);
       max-width: 600px;
       margin: 0 auto;
-    }
-
-    /* Features */
-    .features {
-      background: var(--bg-secondary);
     }
 
     .features-grid {
@@ -489,297 +507,6 @@
     .feature-card p {
       color: var(--text-secondary);
       font-size: 15px;
-    }
-
-    /* Desktop Showcase */
-    .desktop-section {
-      background: var(--bg-primary);
-    }
-
-    .beta-badge {
-      display: inline-block;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--warning);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      background: rgba(210, 153, 34, 0.15);
-      border: 1px solid rgba(210, 153, 34, 0.3);
-      padding: 3px 10px;
-      border-radius: 4px;
-      vertical-align: middle;
-      margin-left: 12px;
-    }
-
-    .screenshot-gallery {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
-    }
-
-    .screenshot-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      overflow: hidden;
-      transition: all 0.3s;
-    }
-
-    .screenshot-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-4px);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-    }
-
-    .screenshot-wide {
-      grid-column: 1 / -1;
-    }
-
-    .window-frame {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
-      background: var(--bg-elevated);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .window-title {
-      color: var(--text-secondary);
-      font-size: 13px;
-      font-family: 'IBM Plex Sans', sans-serif;
-      margin-left: auto;
-    }
-
-    .screenshot-card img {
-      width: 100%;
-      display: block;
-    }
-
-    .screenshot-caption {
-      padding: 16px 20px;
-      font-size: 14px;
-      color: var(--text-secondary);
-      border-top: 1px solid var(--border);
-    }
-
-    .desktop-cta {
-      text-align: center;
-      margin-top: 48px;
-    }
-
-    .desktop-cta-note {
-      display: block;
-      margin-top: 12px;
-      font-size: 14px;
-      color: var(--text-muted);
-    }
-
-    /* CLI Showcase */
-    .cli-section {
-      background: var(--bg-secondary);
-    }
-
-    .demo-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 24px;
-      justify-content: center;
-    }
-
-    .demo-tab {
-      padding: 10px 20px;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text-secondary);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .demo-tab:hover {
-      border-color: var(--accent);
-      color: var(--text-primary);
-    }
-
-    .demo-tab.active {
-      background: var(--accent-glow);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .demo-container {
-      position: relative;
-    }
-
-    .demo-panel {
-      display: none;
-    }
-
-    .demo-panel.active {
-      display: block;
-      animation: fadeIn 0.3s ease-out;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    .demo-terminal {
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
-    }
-
-    .terminal-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 18px;
-      background: var(--bg-elevated);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .terminal-title {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-left: 12px;
-    }
-
-    .demo-gif {
-      width: 100%;
-      border-radius: 0 0 8px 8px;
-      display: block;
-    }
-
-    .demo-caption {
-      text-align: center;
-      color: var(--text-secondary);
-      margin-top: 16px;
-      font-size: 14px;
-    }
-
-    .demo-placeholder {
-      padding: 60px 24px;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 14px;
-    }
-
-    .demo-placeholder code {
-      background: var(--bg-elevated);
-      padding: 4px 8px;
-      border-radius: 4px;
-      color: var(--accent);
-    }
-
-    /* Workflow Cards */
-    .workflow-showcase {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
-      margin-top: 48px;
-    }
-
-    .workflow-item {
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-      transition: all 0.3s;
-      min-width: 0;
-      overflow: hidden;
-    }
-
-    .workflow-item:hover {
-      border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    }
-
-    .workflow-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .workflow-icon {
-      width: 40px;
-      height: 40px;
-      background: var(--accent-glow);
-      border: 1px solid var(--border-accent);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--accent);
-      flex-shrink: 0;
-    }
-
-    .workflow-icon svg {
-      width: 20px;
-      height: 20px;
-    }
-
-    .workflow-header h3 {
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .workflow-desc {
-      color: var(--text-secondary);
-      font-size: 14px;
-      margin-bottom: 16px;
-      line-height: 1.5;
-    }
-
-    .workflow-code {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .workflow-code pre {
-      padding: 16px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      line-height: 1.6;
-      overflow-x: auto;
-      margin: 0;
-      white-space: pre;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .workflow-code .comment { color: var(--text-muted); }
-    .workflow-code .cmd { color: var(--accent); }
-    .workflow-code .output { color: var(--text-secondary); }
-    .workflow-code .symbol { color: var(--warning); }
-
-    .cli-link {
-      text-align: center;
-      margin-top: 48px;
-    }
-
-    .cli-link a {
-      color: var(--accent);
-      text-decoration: none;
-      font-size: 16px;
-      font-weight: 600;
-      transition: opacity 0.2s;
-    }
-
-    .cli-link a:hover {
-      opacity: 0.8;
     }
 
     /* Entity Types */
@@ -850,6 +577,97 @@
       font-size: 12px;
       color: var(--text-muted);
     }
+
+    /* Workflows Section */
+    .workflows-section {
+      background: var(--bg-primary);
+    }
+
+    .workflow-showcase {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .workflow-item {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      transition: all 0.3s;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .workflow-item:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .workflow-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .workflow-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--accent-glow);
+      border: 1px solid var(--border-accent);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .workflow-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .workflow-header h3 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .workflow-desc {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .workflow-code {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .workflow-code pre {
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      margin: 0;
+      white-space: pre;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .workflow-code .comment { color: var(--text-muted); }
+    .workflow-code .cmd { color: var(--accent); }
+    .workflow-code .output { color: var(--text-secondary); }
+    .workflow-code .symbol { color: var(--warning); }
+    .workflow-code .highlight { color: var(--accent); }
+    .workflow-code .status-approved { color: var(--success); }
+    .workflow-code .status-draft { color: var(--warning); }
+    .workflow-code .priority-high { color: #ff7b72; }
 
     /* Installation */
     .install-section {
@@ -956,14 +774,219 @@
       overflow-x: auto;
     }
 
-    .install-note {
-      margin-top: 24px;
+    /* Visualization Section */
+    .viz-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .viz-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: all 0.3s;
+    }
+
+    .viz-item:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .viz-item.viz-wide {
+      grid-column: 1 / -1;
+    }
+
+    .viz-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       padding: 16px 20px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .viz-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .viz-cmd {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
       background: var(--accent-glow);
-      border: 1px solid var(--border-accent);
-      border-radius: 8px;
-      font-size: 14px;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+
+    .viz-terminal {
+      padding: 20px;
+      background: var(--bg-primary);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .viz-terminal pre {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 0;
+      white-space: pre;
+    }
+
+    /* Demo Section */
+    .demo-section {
+      background: var(--bg-secondary);
+    }
+
+    .demo-terminal {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+    }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 18px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 12px;
+    }
+
+    .terminal-body {
+      padding: 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .terminal-line {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .terminal-prompt {
+      color: var(--accent);
+      user-select: none;
+    }
+
+    .terminal-cmd {
+      color: var(--text-primary);
+    }
+
+    .terminal-output {
       color: var(--text-secondary);
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+
+    .terminal-output.table {
+      white-space: pre;
+      font-size: 12px;
+    }
+
+    .terminal-output .header {
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+    }
+
+    .terminal-output .highlight {
+      color: var(--accent);
+    }
+
+    .terminal-output .status-approved { color: var(--success); }
+    .terminal-output .status-draft { color: var(--warning); }
+    .terminal-output .priority-high { color: #ff7b72; }
+    .terminal-output .priority-critical { color: #f85149; }
+
+    /* Demo Tabs */
+    .demo-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 24px;
+      justify-content: center;
+    }
+
+    .demo-tab {
+      padding: 10px 20px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .demo-tab:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .demo-tab.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .demo-container {
+      position: relative;
+    }
+
+    .demo-panel {
+      display: none;
+    }
+
+    .demo-panel.active {
+      display: block;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .demo-caption {
+      text-align: center;
+      color: var(--text-secondary);
+      margin-top: 16px;
+      font-size: 14px;
+    }
+
+    .demo-placeholder {
+      padding: 60px 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .demo-placeholder code {
+      background: var(--bg-elevated);
+      padding: 4px 8px;
+      border-radius: 4px;
+      color: var(--accent);
     }
 
     /* Footer */
@@ -1080,14 +1103,6 @@
       .features-grid {
         grid-template-columns: repeat(2, 1fr);
       }
-
-      .screenshot-gallery {
-        grid-template-columns: 1fr;
-      }
-
-      .screenshot-wide {
-        grid-column: auto;
-      }
     }
 
     /* Responsive - Mobile */
@@ -1131,9 +1146,14 @@
         justify-content: center;
       }
 
-      .hero-split {
-        grid-template-columns: 1fr;
+      .hero-code {
         margin-top: 40px;
+        border-radius: 8px;
+      }
+
+      .hero-code pre {
+        font-size: 11px;
+        padding: 12px;
       }
 
       .hero-badge {
@@ -1173,11 +1193,6 @@
 
       .feature-card h3 {
         font-size: 18px;
-      }
-
-      .screenshot-gallery {
-        grid-template-columns: 1fr;
-        gap: 16px;
       }
 
       .entity-group {
@@ -1234,6 +1249,39 @@
         line-height: 1.4;
       }
 
+      .viz-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+
+      .viz-item.viz-wide {
+        grid-column: auto;
+      }
+
+      .viz-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 12px 16px;
+      }
+
+      .viz-header h3 {
+        font-size: 14px;
+      }
+
+      .viz-cmd {
+        font-size: 10px;
+      }
+
+      .viz-terminal {
+        padding: 12px;
+      }
+
+      .viz-terminal pre {
+        font-size: 9px;
+        line-height: 1.4;
+      }
+
       .install-content h2 {
         font-size: 24px;
       }
@@ -1241,6 +1289,19 @@
       .code-block pre {
         font-size: 11px;
         padding: 12px;
+      }
+
+      .terminal-body {
+        padding: 12px;
+        font-size: 10px;
+      }
+
+      .terminal-output.table {
+        font-size: 9px;
+      }
+
+      .demo-terminal {
+        border-radius: 12px;
       }
 
       .footer-content {
@@ -1284,9 +1345,38 @@
         font-size: 14px;
       }
 
+      .terminal-body {
+        font-size: 9px;
+      }
+
       .workflow-code pre {
         font-size: 8px;
         padding: 8px;
+      }
+
+      .viz-terminal pre {
+        font-size: 8px;
+      }
+
+      .viz-header h3 {
+        font-size: 13px;
+      }
+    }
+
+    /* Ensure horizontal scroll for code on mobile */
+    @media (max-width: 768px) {
+      pre {
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .demo-terminal {
+        max-width: 100%;
+        overflow: hidden;
+      }
+
+      .terminal-body {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
       }
     }
   </style>
@@ -1295,6 +1385,7 @@
   <div class="grid-bg"></div>
 
   <!-- Navigation -->
+
   <nav>
     <div class="container">
       <a href="index.html" class="logo">
@@ -1304,9 +1395,9 @@
         <span class="logo-text">Tessera</span>
       </a>
       <div class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#desktop">Desktop</a>
-        <a href="cli.html">CLI</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#desktop">Desktop</a>
+        <a href="cli.html" class="active">CLI</a>
         <a href="tutorial.html">Tutorial</a>
         <a href="reports.html">Reports</a>
         <a href="manufacturing.html">Manufacturing</a>
@@ -1328,10 +1419,11 @@
   </nav>
 
   <!-- Mobile Menu -->
+
   <div class="mobile-menu" id="mobileMenu">
     <a href="index.html" onclick="closeMobileMenu()">Home</a>
-    <a href="#features" onclick="closeMobileMenu()">Features</a>
-    <a href="#desktop" onclick="closeMobileMenu()">Desktop App</a>
+    <a href="index.html#features" onclick="closeMobileMenu()">Features</a>
+    <a href="index.html#desktop" onclick="closeMobileMenu()">Desktop App</a>
     <a href="cli.html" onclick="closeMobileMenu()">CLI Reference</a>
     <a href="tutorial.html" onclick="closeMobileMenu()">Tutorial</a>
     <a href="reports.html" onclick="closeMobileMenu()">Reports</a>
@@ -1345,96 +1437,55 @@
   </div>
 
   <!-- Hero -->
+
   <section class="hero">
     <div class="container">
       <div class="hero-content">
-        <div class="hero-badge">Open Source &middot; MIT License</div>
+        <div class="hero-badge">Open Source • MIT License</div>
         <h1>Tessera<br><span>Design Toolkit</span></h1>
-        <p class="hero-desc">Manage engineering artifacts as plain-text YAML files with full traceability. Use the powerful CLI or the desktop GUI &mdash; your choice, same project files.</p>
+        <p class="hero-desc">A powerful CLI toolkit for managing product development artifacts as plain-text YAML files. Version control your requirements, risks, tests, BOMs, and more with full traceability.</p>
         <div class="hero-actions">
           <a href="#install" class="btn btn-primary">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Install CLI
+            Install Now
           </a>
-          <a href="https://github.com/jackhale98/Tessera/releases" class="btn btn-secondary">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            Try Desktop App (Beta)
+          <a href="tutorial.html" class="btn btn-secondary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Start Tutorial
           </a>
           <a href="https://github.com/jackhale98/Tessera" class="btn btn-secondary">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-            View on GitHub
+            View Documentation
           </a>
         </div>
       </div>
 
-      <!-- Split Visual: CLI + GUI side by side -->
-      <div class="hero-split">
-        <div class="hero-split-panel">
-          <div class="hero-code-header">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="hero-code-title">Terminal</span>
-          </div>
-          <img src="quickstart.gif" alt="Tessera CLI Quick Start" onerror="this.style.display='none'">
+      <div class="hero-code">
+        <div class="hero-code-header">
+          <div class="code-dot red"></div>
+          <div class="code-dot yellow"></div>
+          <div class="code-dot green"></div>
+          <span class="hero-code-title">Quick Start</span>
         </div>
-        <div class="hero-split-panel">
-          <div class="hero-code-header">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="hero-code-title">Desktop App</span>
-          </div>
-          <img src="screenshots/dashboard.png" alt="Tessera Desktop Dashboard">
+        <div class="hero-demo">
+          <img src="quickstart.gif" alt="Tessera Quick Start Demo" class="demo-gif" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+          <pre style="display:none;"><span class="comment"># Initialize a new Tessera project</span>
+<span class="symbol">$</span> <span class="cmd">tdt init</span>
+<span class="output">✓ Initialized Tessera project</span>
+
+<span class="comment"># Create your first requirement</span>
+<span class="symbol">$</span> <span class="cmd">tdt req new -t input --title "Temp"</span>
+<span class="output">✓ Created requirement <span class="value">REQ@1</span></span>
+
+<span class="comment"># List all requirements</span>
+<span class="symbol">$</span> <span class="cmd">tdt req list</span></pre>
         </div>
       </div>
     </div>
+
   </section>
 
-  <!-- Scrolling Marquee -->
-  <div class="marquee-section">
-    <div class="marquee">
-      <div class="marquee-item"><span>REQ</span> Requirements</div>
-      <div class="marquee-item"><span>RISK</span> FMEA</div>
-      <div class="marquee-item"><span>TEST</span> Verification</div>
-      <div class="marquee-item"><span>RSLT</span> Results</div>
-      <div class="marquee-item"><span>CMP</span> Components</div>
-      <div class="marquee-item"><span>ASM</span> Assemblies</div>
-      <div class="marquee-item"><span>FEAT</span> Features</div>
-      <div class="marquee-item"><span>MATE</span> Mates</div>
-      <div class="marquee-item"><span>TOL</span> Tolerances</div>
-      <div class="marquee-item"><span>PROC</span> Processes</div>
-      <div class="marquee-item"><span>CTRL</span> Controls</div>
-      <div class="marquee-item"><span>WORK</span> Instructions</div>
-      <div class="marquee-item"><span>LOT</span> Lots</div>
-      <div class="marquee-item"><span>NCR</span> Non-Conformance</div>
-      <div class="marquee-item"><span>CAPA</span> Corrective Action</div>
-      <div class="marquee-item"><span>DEV</span> Deviations</div>
-      <div class="marquee-item"><span>QUOT</span> Quotes</div>
-      <div class="marquee-item"><span>SUP</span> Suppliers</div>
-      <!-- Duplicate for seamless loop -->
-      <div class="marquee-item"><span>REQ</span> Requirements</div>
-      <div class="marquee-item"><span>RISK</span> FMEA</div>
-      <div class="marquee-item"><span>TEST</span> Verification</div>
-      <div class="marquee-item"><span>RSLT</span> Results</div>
-      <div class="marquee-item"><span>CMP</span> Components</div>
-      <div class="marquee-item"><span>ASM</span> Assemblies</div>
-      <div class="marquee-item"><span>FEAT</span> Features</div>
-      <div class="marquee-item"><span>MATE</span> Mates</div>
-      <div class="marquee-item"><span>TOL</span> Tolerances</div>
-      <div class="marquee-item"><span>PROC</span> Processes</div>
-      <div class="marquee-item"><span>CTRL</span> Controls</div>
-      <div class="marquee-item"><span>WORK</span> Instructions</div>
-      <div class="marquee-item"><span>LOT</span> Lots</div>
-      <div class="marquee-item"><span>NCR</span> Non-Conformance</div>
-      <div class="marquee-item"><span>CAPA</span> Corrective Action</div>
-      <div class="marquee-item"><span>DEV</span> Deviations</div>
-      <div class="marquee-item"><span>QUOT</span> Quotes</div>
-      <div class="marquee-item"><span>SUP</span> Suppliers</div>
-    </div>
-  </div>
-
   <!-- Features -->
+
   <section id="features" class="features">
     <div class="container">
       <div class="section-header">
@@ -1527,113 +1578,23 @@
     </div>
   </section>
 
-  <!-- Desktop App Showcase -->
-  <section id="desktop" class="desktop-section">
+  <!-- Demo -->
+
+  <section id="demo" class="demo-section">
     <div class="container">
       <div class="section-header">
-        <div class="section-tag">// Desktop App</div>
-        <h2 class="section-title">Visual Engineering Management <span class="beta-badge">Beta</span></h2>
-        <p class="section-desc">Bring your project data to life with interactive dashboards, traceability graphs, and visual workflows.</p>
+        <div class="section-tag">// Live Demo</div>
+        <h2 class="section-title">See It in Action</h2>
+        <p class="section-desc">Watch Tessera's powerful command-line workflows in action.</p>
       </div>
 
-      <div class="screenshot-gallery">
-        <!-- Dashboard -->
-        <div class="screenshot-card">
-          <div class="window-frame">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="window-title">Dashboard</span>
-          </div>
-          <img src="screenshots/dashboard.png" alt="Tessera Desktop Dashboard">
-          <div class="screenshot-caption">Project overview with entity counts and health metrics</div>
-        </div>
-
-        <!-- Traceability -->
-        <div class="screenshot-card screenshot-wide">
-          <div class="window-frame">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="window-title">Traceability Graph</span>
-          </div>
-          <img src="screenshots/traceability.png" alt="Visual Traceability Graph">
-          <div class="screenshot-caption">Interactive traceability graph showing requirement-to-test coverage</div>
-        </div>
-
-        <!-- FMEA -->
-        <div class="screenshot-card">
-          <div class="window-frame">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="window-title">FMEA Worksheet</span>
-          </div>
-          <img src="screenshots/fmea.png" alt="FMEA Worksheet">
-          <div class="screenshot-caption">FMEA worksheet with risk distribution analysis</div>
-        </div>
-
-        <!-- RVM -->
-        <div class="screenshot-card screenshot-wide">
-          <div class="window-frame">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="window-title">Requirements Verification Matrix</span>
-          </div>
-          <img src="screenshots/rvm.png" alt="Requirements Verification Matrix">
-          <div class="screenshot-caption">Full RVM with verification status tracking across all requirements</div>
-        </div>
-
-        <!-- Version Control -->
-        <div class="screenshot-card">
-          <div class="window-frame">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="window-title">Version Control</span>
-          </div>
-          <img src="screenshots/version_control.png" alt="Built-in Git Integration">
-          <div class="screenshot-caption">Built-in git integration with commit history and diffs</div>
-        </div>
-
-        <!-- Quote -->
-        <div class="screenshot-card">
-          <div class="window-frame">
-            <div class="code-dot red"></div>
-            <div class="code-dot yellow"></div>
-            <div class="code-dot green"></div>
-            <span class="window-title">Quote Management</span>
-          </div>
-          <img src="screenshots/quote.png" alt="Quote Management">
-          <div class="screenshot-caption">Quote management with supplier price breaks</div>
-        </div>
-      </div>
-
-      <div class="desktop-cta">
-        <a href="https://github.com/jackhale98/Tessera/releases" class="btn btn-primary">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Download Desktop App (Beta)
-        </a>
-        <span class="desktop-cta-note">Works on the same .pdt.yaml project files as the CLI</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- CLI Showcase -->
-  <section id="cli" class="cli-section">
-    <div class="container">
-      <div class="section-header">
-        <div class="section-tag">// Command Line</div>
-        <h2 class="section-title">Built for the Command Line</h2>
-        <p class="section-desc">Tessera follows Unix philosophy. Compose commands, pipe outputs, and integrate with your existing tools.</p>
-      </div>
-
-      <!-- Demo Tabs -->
       <div class="demo-tabs">
         <button class="demo-tab active" onclick="showDemo('quickstart')">Quick Start</button>
+        <button class="demo-tab" onclick="showDemo('interactive')">Interactive Mode</button>
         <button class="demo-tab" onclick="showDemo('traceability')">Traceability</button>
         <button class="demo-tab" onclick="showDemo('tolerance')">Tolerance</button>
+        <button class="demo-tab" onclick="showDemo('fmea')">FMEA</button>
+        <button class="demo-tab" onclick="showDemo('search')">Search & Tags</button>
       </div>
 
       <div class="demo-container">
@@ -1648,6 +1609,19 @@
             <img src="quickstart.gif" alt="Quick Start Demo" class="demo-gif" onerror="this.parentElement.innerHTML += '<div class=\'demo-placeholder\'>Run <code>vhs demos/quickstart.tape</code> to generate this demo</div>'; this.remove();">
           </div>
           <p class="demo-caption">Initialize a project, create requirements, and validate your data in seconds.</p>
+        </div>
+
+        <div id="demo-interactive" class="demo-panel">
+          <div class="demo-terminal">
+            <div class="terminal-header">
+              <div class="code-dot red"></div>
+              <div class="code-dot yellow"></div>
+              <div class="code-dot green"></div>
+              <span class="terminal-title">Interactive Wizard</span>
+            </div>
+            <img src="interactive.gif" alt="Interactive Mode Demo" class="demo-gif" onerror="this.parentElement.innerHTML += '<div class=\'demo-placeholder\'>Run <code>vhs demos/interactive.tape</code> to generate this demo</div>'; this.remove();">
+          </div>
+          <p class="demo-caption">Schema-driven prompts guide you through creating entities with all required fields.</p>
         </div>
 
         <div id="demo-traceability" class="demo-panel">
@@ -1675,89 +1649,38 @@
           </div>
           <p class="demo-caption">Perform worst-case, RSS, and Monte Carlo tolerance stackup analysis.</p>
         </div>
-      </div>
 
-      <!-- Workflow Cards -->
-      <div class="workflow-showcase">
-        <div class="workflow-item">
-          <div class="workflow-header">
-            <div class="workflow-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <div id="demo-fmea" class="demo-panel">
+          <div class="demo-terminal">
+            <div class="terminal-header">
+              <div class="code-dot red"></div>
+              <div class="code-dot yellow"></div>
+              <div class="code-dot green"></div>
+              <span class="terminal-title">FMEA Risk Analysis</span>
             </div>
-            <h3>Pipeable Output</h3>
+            <img src="fmea.gif" alt="FMEA Demo" class="demo-gif" onerror="this.parentElement.innerHTML += '<div class=\'demo-placeholder\'>Run <code>vhs demos/fmea.tape</code> to generate this demo</div>'; this.remove();">
           </div>
-          <p class="workflow-desc">Every list command supports multiple output formats for scripting and automation.</p>
-          <div class="workflow-code">
-            <pre><span class="comment"># Get IDs for piping to other commands</span>
-<span class="symbol">$</span> <span class="cmd">tdt req list --output id</span>
-
-<span class="comment"># Export to JSON for other tools</span>
-<span class="symbol">$</span> <span class="cmd">tdt risk list --output json | jq '...'</span>
-
-<span class="comment"># Export to CSV for spreadsheets</span>
-<span class="symbol">$</span> <span class="cmd">tdt cmp list --output csv > parts.csv</span></pre>
-          </div>
+          <p class="demo-caption">Create and analyze failure modes with severity, occurrence, and detection ratings.</p>
         </div>
 
-        <div class="workflow-item">
-          <div class="workflow-header">
-            <div class="workflow-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"/><polygon points="18 2 22 6 12 16 8 16 8 12 18 2"/></svg>
+        <div id="demo-search" class="demo-panel">
+          <div class="demo-terminal">
+            <div class="terminal-header">
+              <div class="code-dot red"></div>
+              <div class="code-dot yellow"></div>
+              <div class="code-dot green"></div>
+              <span class="terminal-title">Search & Tags</span>
             </div>
-            <h3>Short IDs</h3>
+            <img src="recent-tags.gif" alt="Search and Tags Demo" class="demo-gif" onerror="this.parentElement.innerHTML += '<div class=\'demo-placeholder\'>Run <code>vhs demos/recent-tags.tape</code> to generate this demo</div>'; this.remove();">
           </div>
-          <p class="workflow-desc">Use memorable short IDs instead of 26-character ULIDs. Local and conflict-free.</p>
-          <div class="workflow-code">
-            <pre><span class="comment"># Short IDs work everywhere</span>
-<span class="symbol">$</span> <span class="cmd">tdt req show REQ@1</span>
-<span class="symbol">$</span> <span class="cmd">tdt link add REQ@1 TEST@3</span>
-<span class="symbol">$</span> <span class="cmd">tdt risk edit RISK@2</span></pre>
-          </div>
+          <p class="demo-caption">Search across all entities, manage tags, and view recent activity.</p>
         </div>
-
-        <div class="workflow-item">
-          <div class="workflow-header">
-            <div class="workflow-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            </div>
-            <h3>Powerful Filters</h3>
-          </div>
-          <p class="workflow-desc">Filter entities by any field, find orphans, search text, and combine with sorting.</p>
-          <div class="workflow-code">
-            <pre><span class="comment"># Critical unverified requirements</span>
-<span class="symbol">$</span> <span class="cmd">tdt req list --priority critical --orphans</span>
-
-<span class="comment"># High RPN risks</span>
-<span class="symbol">$</span> <span class="cmd">tdt risk list --by-rpn --category thermal</span></pre>
-          </div>
-        </div>
-
-        <div class="workflow-item">
-          <div class="workflow-header">
-            <div class="workflow-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            </div>
-            <h3>Cross-Entity Piping</h3>
-          </div>
-          <p class="workflow-desc">Pipe IDs between commands for powerful cross-entity queries.</p>
-          <div class="workflow-code">
-            <pre><span class="comment"># NCRs linked to a component</span>
-<span class="symbol">$</span> <span class="cmd">tdt ncr list --linked-to CMP@1</span>
-
-<span class="comment"># Pipe BOM to find linked risks</span>
-<span class="symbol">$</span> <span class="cmd">tdt asm bom ASM@1 -f short-id \
-  | tdt risk list --linked-to -</span></pre>
-          </div>
-        </div>
-      </div>
-
-      <div class="cli-link">
-        <a href="cli.html">Explore All CLI Features &rarr;</a>
       </div>
     </div>
   </section>
 
   <!-- Entity Types -->
+
   <section id="entities">
     <div class="container">
       <div class="section-header">
@@ -1946,42 +1869,354 @@
         </div>
       </div>
     </div>
+
+  </section>
+
+  <!-- Engineering Visualizations -->
+
+  <section id="visualizations" class="demo-section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">// Visualizations</div>
+        <h2 class="section-title">Engineering Analysis at a Glance</h2>
+        <p class="section-desc">Complex analyses rendered as clear, actionable terminal output.</p>
+      </div>
+
+      <div class="viz-grid">
+        <!-- Tolerance Analysis -->
+        <div class="viz-item">
+          <div class="viz-header">
+            <h3><a href="tolerance.html" style="color: inherit; text-decoration: none;">Tolerance Stackup Analysis</a></h3>
+            <code class="viz-cmd">tdt tol analyze TOL@1</code>
+          </div>
+          <div class="viz-terminal">
+            <pre>⚙ Analyzing stackup <span style="color: var(--accent)">TOL@1</span> with 2 contributors...
+<span style="color: var(--success)">✓</span> Analysis complete
+
+   Target: Clearance = <span style="color: var(--info)">0.05</span> (LSL: 0.02, USL: 0.08)
+
+   <span style="color: var(--text-primary); font-weight: bold">Worst-Case</span> Analysis:
+     Range: 0.03 to 0.076
+     Margin: 0.004
+     Result: <span style="color: var(--warning)">marginal</span>
+
+   <span style="color: var(--text-primary); font-weight: bold">RSS (Statistical)</span> Analysis:
+     Mean: 0.053
+     ±3σ: 0.0163
+     Cp: <span style="color: var(--info)">1.67</span>, Cpk: <span style="color: var(--info)">1.65</span>
+     Yield: <span style="color: var(--success)">99.99%</span>
+
+   <span style="color: var(--text-primary); font-weight: bold">Monte Carlo</span> (10000 iterations):
+     Mean: 0.053
+     Std Dev: 0.0055
+     95% CI: 0.042 to 0.064
+     Pp: <span style="color: var(--info)">1.64</span>, Ppk: <span style="color: var(--info)">1.62</span>
+     Yield: <span style="color: var(--success)">100.00%</span></pre>
+          </div>
+        </div>
+
+        <!-- Histogram -->
+        <div class="viz-item">
+          <div class="viz-header">
+            <h3><a href="tolerance.html" style="color: inherit; text-decoration: none;">Distribution Histogram</a></h3>
+            <code class="viz-cmd">tdt tol analyze TOL@1 --histogram</code>
+          </div>
+          <div class="viz-terminal">
+            <pre>   <span style="color: var(--text-primary); font-weight: bold">Distribution Histogram</span> (10000 samples, 15 bins):
+
+   0.025 │<span style="color: #f85149">░░░</span>                                           │    89 <span style="color: var(--info)">◄LSL</span>
+   0.030 │<span style="color: var(--success)">██████</span>                                        │   156
+   0.035 │<span style="color: var(--success)">████████████</span>                                  │   312
+   0.040 │<span style="color: var(--success)">██████████████████████</span>                        │   589
+   0.045 │<span style="color: var(--success)">██████████████████████████████████</span>            │   891
+   0.050 │<span style="color: var(--success)">██████████████████████████████████████████████</span>│  1247
+   0.055 │<span style="color: var(--success)">████████████████████████████████████████████</span>  │  1156
+   0.060 │<span style="color: var(--success)">██████████████████████████████████</span>            │   923
+   0.065 │<span style="color: var(--success)">██████████████████████</span>                        │   612
+   0.070 │<span style="color: var(--success)">███████████</span>                                   │   298
+   0.075 │<span style="color: var(--success)">████</span>                                          │   112 <span style="color: var(--info)">◄USL</span>
+         └──────────────────────────────────────────────┘
+   <span style="color: var(--text-muted)">Legend:</span> LSL=0.020  USL=0.080  (<span style="color: var(--success)">█</span> in-spec, <span style="color: #f85149">░</span> out-of-spec)</pre>
+          </div>
+        </div>
+
+        <!-- Process Flow -->
+        <div class="viz-item">
+          <div class="viz-header">
+            <h3><a href="https://github.com/jackhale98/Tessera/blob/main/docs/process.md" target="_blank" rel="noopener" style="color: inherit; text-decoration: none;">Process Flow Diagram</a></h3>
+            <code class="viz-cmd">tdt proc flow --controls</code>
+          </div>
+          <div class="viz-terminal">
+            <pre><span style="color: var(--accent); font-weight: bold">Process Flow</span>
+<span style="color: var(--text-muted)">────────────────────────────────────────────────</span>
+
+[<span style="color: var(--info); font-weight: bold">OP-010</span>] <span style="color: var(--text-primary); font-weight: bold">Material Prep</span> <span style="color: var(--text-muted)">(PROC@1)</span>
+  <span style="color: var(--text-muted)">│</span> <span style="color: var(--text-muted)">Type: machining | Cycle: 5 min | Setup: 15 min</span>
+  <span style="color: var(--text-muted)">│</span> Equipment: CNC Mill
+  <span style="color: var(--text-muted)">│</span> Controls: <span style="color: var(--warning)">CTRL@1</span> "Tool Calibration"
+  <span style="color: var(--info)">▼</span>
+[<span style="color: var(--info); font-weight: bold">OP-020</span>] <span style="color: var(--text-primary); font-weight: bold">Rough Machining</span> <span style="color: var(--text-muted)">(PROC@2)</span>
+  <span style="color: var(--text-muted)">│</span> <span style="color: var(--text-muted)">Type: machining | Cycle: 30 min</span>
+  <span style="color: var(--text-muted)">│</span> Equipment: 5-Axis CNC
+  <span style="color: var(--text-muted)">│</span> Controls: <span style="color: var(--warning)">CTRL@2</span> "Dimensional Check"
+  <span style="color: var(--info)">▼</span>
+[<span style="color: var(--info); font-weight: bold">OP-030</span>] <span style="color: var(--text-primary); font-weight: bold">Finish Machining</span> <span style="color: var(--text-muted)">(PROC@3)</span>
+  <span style="color: var(--text-muted)">│</span> <span style="color: var(--text-muted)">Type: machining | Cycle: 20 min</span>
+  <span style="color: var(--text-muted)">│</span> Equipment: 5-Axis CNC
+  <span style="color: var(--info)">▼</span>
+[<span style="color: var(--info); font-weight: bold">OP-040</span>] <span style="color: var(--text-primary); font-weight: bold">Final Inspection</span> <span style="color: var(--text-muted)">(PROC@4)</span>
+  <span style="color: var(--text-muted)">│</span> <span style="color: var(--text-muted)">Type: inspection | Cycle: 10 min</span>
+  <span style="color: var(--text-muted)">│</span> Equipment: CMM
+
+<span style="color: var(--info)">4</span> processes in flow</pre>
+          </div>
+        </div>
+
+        <!-- BOM Cost Rollup -->
+        <div class="viz-item">
+          <div class="viz-header">
+            <h3><a href="https://github.com/jackhale98/Tessera/blob/main/docs/assembly.md" target="_blank" rel="noopener" style="color: inherit; text-decoration: none;">BOM Cost Rollup</a></h3>
+            <code class="viz-cmd">tdt asm bom ASM@1 --cost</code>
+          </div>
+          <div class="viz-terminal">
+            <pre><span style="color: var(--text-primary); font-weight: bold">Assembly BOM: Linear Actuator</span> <span style="color: var(--text-muted)">(ASM@1)</span>
+
+<span style="color: var(--text-muted)">ID        COMPONENT              QTY    UNIT $    TOTAL</span>
+<span style="color: var(--text-muted)">────────────────────────────────────────────────────────</span>
+<span style="color: var(--info)">CMP@1</span>     Housing                  1    <span style="color: var(--text-secondary)">$45.00</span>    <span style="color: var(--text-primary)">$45.00</span>
+<span style="color: var(--info)">CMP@2</span>     Lead Screw               1    <span style="color: var(--text-secondary)">$32.50</span>    <span style="color: var(--text-primary)">$32.50</span>
+<span style="color: var(--info)">CMP@3</span>     Nut Assembly             1    <span style="color: var(--text-secondary)">$18.75</span>    <span style="color: var(--text-primary)">$18.75</span>
+<span style="color: var(--info)">CMP@4</span>     Bearing (deep groove)    2     <span style="color: var(--text-secondary)">$8.25</span>    <span style="color: var(--text-primary)">$16.50</span>
+<span style="color: var(--info)">CMP@5</span>     End Cap                  2     <span style="color: var(--text-secondary)">$6.00</span>    <span style="color: var(--text-primary)">$12.00</span>
+<span style="color: var(--info)">CMP@6</span>     Fasteners (M4x12)        8     <span style="color: var(--text-secondary)">$0.15</span>     <span style="color: var(--text-primary)">$1.20</span>
+<span style="color: var(--text-muted)">────────────────────────────────────────────────────────</span>
+          <span style="color: var(--text-primary); font-weight: bold">TOTAL (15 items)</span>           <span style="color: var(--success); font-weight: bold">$125.95</span></pre>
+          </div>
+        </div>
+
+        <!-- Requirements Verification Matrix -->
+        <div class="viz-item viz-wide">
+          <div class="viz-header">
+            <h3><a href="reports.html" style="color: inherit; text-decoration: none;">Requirements Verification Matrix</a></h3>
+            <code class="viz-cmd">tdt trace matrix --rvm</code>
+          </div>
+          <div class="viz-terminal">
+            <pre><span style="color: var(--text-primary); font-weight: bold">Requirements Verification Matrix</span>
+════════════════════════════════════════════════════════════════════════════
+<span style="color: var(--text-primary); font-weight: bold">REQ          TITLE                            STATUS       VERIFIED BY</span>
+────────────────────────────────────────────────────────────────────────────
+<span style="color: var(--info)">REQ@1</span>        Operating Temperature Range      <span style="color: var(--success)">verified</span>     TEST@1, TEST@4
+<span style="color: var(--info)">REQ@2</span>        Stroke Length ≥100mm             <span style="color: var(--success)">verified</span>     TEST@2
+<span style="color: var(--info)">REQ@3</span>        Positioning Accuracy ±0.01mm     <span style="color: var(--success)">verified</span>     TEST@3
+<span style="color: var(--info)">REQ@4</span>        Load Capacity 50N                <span style="color: var(--warning)">unverified</span>   <span style="color: var(--text-muted)">-</span>
+<span style="color: var(--info)">REQ@5</span>        MTBF ≥10000 hours                <span style="color: var(--success)">verified</span>     TEST@5
+<span style="color: var(--info)">REQ@6</span>        IP54 Ingress Protection          <span style="color: var(--warning)">unverified</span>   <span style="color: var(--text-muted)">-</span>
+────────────────────────────────────────────────────────────────────────────
+Coverage: <span style="color: var(--info)">67%</span> (4/6)</pre>
+          </div>
+        </div>
+
+        <!-- Design Structure Matrix -->
+        <div class="viz-item viz-wide">
+          <div class="viz-header">
+            <h3><a href="https://github.com/jackhale98/Tessera/blob/main/docs/dsm.md" target="_blank" rel="noopener" style="color: inherit; text-decoration: none;">Design Structure Matrix</a></h3>
+            <code class="viz-cmd">tdt dsm --cluster</code>
+          </div>
+          <div class="viz-terminal">
+            <pre><span style="color: var(--info); font-weight: bold">Design Structure Matrix (Clustered)</span>
+
+             <span style="color: var(--text-muted)">CMP@1   CMP@2   CMP@3   CMP@4   CMP@5   CMP@6</span>
+             <span style="color: var(--text-muted)">------- ------- ------- ------- ------- -------</span>
+<span style="color: var(--text-primary)">CMP@1</span>        <span style="color: var(--text-muted)">■</span>       <span style="color: var(--success)">M</span>       <span style="color: var(--success)">M</span>       ·       ·       ·
+<span style="color: var(--text-primary)">CMP@2</span>        <span style="color: var(--success)">M</span>       <span style="color: var(--text-muted)">■</span>       <span style="color: var(--success)">M</span>,<span style="color: #d2a8ff">T</span>     <span style="color: #d2a8ff">T</span>       ·       ·
+<span style="color: var(--text-primary)">CMP@3</span>        <span style="color: var(--success)">M</span>       <span style="color: var(--success)">M</span>,<span style="color: #d2a8ff">T</span>     <span style="color: var(--text-muted)">■</span>       <span style="color: var(--success)">M</span>       ·       ·
+<span style="color: var(--text-primary)">CMP@4</span>        ·       <span style="color: #d2a8ff">T</span>       <span style="color: var(--success)">M</span>       <span style="color: var(--text-muted)">■</span>       <span style="color: #79c0ff">P</span>       <span style="color: #79c0ff">P</span>
+<span style="color: var(--text-primary)">CMP@5</span>        ·       ·       ·       <span style="color: #79c0ff">P</span>       <span style="color: var(--text-muted)">■</span>       <span style="color: var(--warning)">R</span>
+<span style="color: var(--text-primary)">CMP@6</span>        ·       ·       ·       <span style="color: #79c0ff">P</span>       <span style="color: var(--warning)">R</span>       <span style="color: var(--text-muted)">■</span>
+
+<span style="color: var(--text-primary); font-weight: bold">Legend:</span> <span style="color: var(--success)">M</span> = Mate  <span style="color: #d2a8ff">T</span> = Tolerance  <span style="color: #79c0ff">P</span> = Process  <span style="color: var(--warning)">R</span> = Requirement
+
+<span style="color: var(--text-primary); font-weight: bold">Summary:</span> 6 components, 5 mate, 3 tolerance, 3 process, 1 requirement</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Power User Features -->
+
+  <section id="power-user" class="workflows-section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">// Power User</div>
+        <h2 class="section-title">Built for the Command Line</h2>
+        <p class="section-desc">Tessera follows Unix philosophy. Compose commands, pipe outputs, and integrate with your existing tools.</p>
+      </div>
+
+      <div class="workflow-showcase">
+        <!-- Output Formats -->
+        <div class="workflow-item">
+          <div class="workflow-header">
+            <div class="workflow-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <h3>Pipeable Output Formats</h3>
+          </div>
+          <p class="workflow-desc">Every list command supports multiple output formats for scripting and automation.</p>
+          <div class="workflow-code">
+            <pre><span class="comment"># Get IDs for piping to other commands</span>
+<span class="symbol">$</span> <span class="cmd">tdt req list --output id</span>
+<span class="output">REQ-01KCA9X3JQFT8BHK2VCN5M9A
+REQ-01KCA9X3JQFT8BHK2VCN5M9B
+...</span>
+
+<span class="comment"># Export to JSON for other tools</span>
+<span class="symbol">$</span> <span class="cmd">tdt risk list --output json | jq '.[] | select(.rpn > 100)'</span>
+
+<span class="comment"># Export to CSV for spreadsheets</span>
+<span class="symbol">$</span> <span class="cmd">tdt cmp list --output csv > parts.csv</span></pre>
+          </div>
+        </div>
+
+        <!-- Short IDs -->
+        <div class="workflow-item">
+          <div class="workflow-header">
+            <div class="workflow-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"/><polygon points="18 2 22 6 12 16 8 16 8 12 18 2"/></svg>
+            </div>
+            <h3>Short ID Aliases</h3>
+          </div>
+          <p class="workflow-desc">Use memorable short IDs instead of 26-character ULIDs. Local to your machine, so they won't conflict across team members.</p>
+          <div class="workflow-code">
+            <pre><span class="comment"># Short IDs work everywhere</span>
+<span class="symbol">$</span> <span class="cmd">tdt req show REQ@1</span>
+<span class="symbol">$</span> <span class="cmd">tdt link add REQ@1 TEST@3</span>
+<span class="symbol">$</span> <span class="cmd">tdt risk edit RISK@2</span>
+
+<span class="comment"># Chain commands with short-id output</span>
+<span class="symbol">$</span> <span class="cmd">tdt req list --orphans -f short-id | xargs -I{} tdt req show {}</span></pre>
+          </div>
+        </div>
+
+        <!-- Shell Completions -->
+        <div class="workflow-item">
+          <div class="workflow-header">
+            <div class="workflow-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8l4 4-4 4"/><line x1="12" y1="16" x2="18" y2="16"/></svg>
+            </div>
+            <h3>Shell Completions</h3>
+          </div>
+          <p class="workflow-desc">Tab completion for bash, zsh, fish, and PowerShell. Completes commands, flags, and entity IDs.</p>
+          <div class="workflow-code">
+            <pre><span class="comment"># Generate completions for your shell</span>
+<span class="symbol">$</span> <span class="cmd">tdt completions bash > ~/.local/share/bash-completion/completions/tdt</span>
+<span class="symbol">$</span> <span class="cmd">tdt completions zsh > ~/.zfunc/_tdt</span>
+<span class="symbol">$</span> <span class="cmd">tdt completions fish > ~/.config/fish/completions/tdt.fish</span></pre>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="workflow-item">
+          <div class="workflow-header">
+            <div class="workflow-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            </div>
+            <h3>Powerful Filters</h3>
+          </div>
+          <p class="workflow-desc">Filter entities by any field, find orphans, search text, and combine with sorting.</p>
+          <div class="workflow-code">
+            <pre><span class="comment"># Find critical requirements not yet verified</span>
+<span class="symbol">$</span> <span class="cmd">tdt req list --priority critical --orphans</span>
+
+<span class="comment"># Components in a specific assembly</span>
+<span class="symbol">$</span> <span class="cmd">tdt cmp list --assembly ASM@1</span>
+
+<span class="comment"># High RPN risks by category</span>
+<span class="symbol">$</span> <span class="cmd">tdt risk list --by-rpn --category thermal</span>
+
+<span class="comment"># Quick counts</span>
+<span class="symbol">$</span> <span class="cmd">tdt test list --count</span></pre>
+          </div>
+        </div>
+
+        <!-- Cross-Entity Piping -->
+        <div class="workflow-item">
+          <div class="workflow-header">
+            <div class="workflow-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </div>
+            <h3>Cross-Entity Piping</h3>
+          </div>
+          <p class="workflow-desc">Filter any entity type by its links to another. Pipe IDs between commands for powerful cross-entity queries.</p>
+          <div class="workflow-code">
+            <pre><span class="comment"># Find NCRs linked to a specific component</span>
+<span class="symbol">$</span> <span class="cmd">tdt ncr list --linked-to CMP@1</span>
+
+<span class="comment"># Pipe assembly BOM to find linked risks</span>
+<span class="symbol">$</span> <span class="cmd">tdt asm bom ASM@1 -f short-id | tdt risk list --linked-to -</span>
+
+<span class="comment"># Filter by link type with --via</span>
+<span class="symbol">$</span> <span class="cmd">tdt test list --linked-to REQ@1 --via verified_by</span></pre>
+          </div>
+        </div>
+
+        <!-- Bulk Operations -->
+        <div class="workflow-item">
+          <div class="workflow-header">
+            <div class="workflow-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </div>
+            <h3>Bulk Operations</h3>
+          </div>
+          <p class="workflow-desc">Process multiple entities at once with CSV import, bulk status changes, and pipeline operations.</p>
+          <div class="workflow-code">
+            <pre><span class="comment"># Import from CSV</span>
+<span class="symbol">$</span> <span class="cmd">tdt import req requirements.csv</span>
+
+<span class="comment"># Bulk status update via pipeline</span>
+<span class="symbol">$</span> <span class="cmd">tdt req list --status draft -f id | tdt bulk set-status approved</span>
+
+<span class="comment"># Generate all RPN values</span>
+<span class="symbol">$</span> <span class="cmd">tdt validate --fix</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- Installation -->
+
   <section id="install" class="install-section">
     <div class="container">
       <div class="install-grid">
         <div class="install-content">
           <div class="section-tag">// Getting Started</div>
           <h2>Up and Running in Minutes</h2>
-          <p>Install the CLI with a single command, download the desktop app, and initialize your first project.</p>
+          <p>Install Tessera with a single command and initialize your first project. Works on macOS, Linux, and Windows.</p>
 
           <div class="install-steps">
             <div class="install-step">
               <div class="step-number">1</div>
               <div class="step-content">
-                <h4>Install the CLI</h4>
+                <h4>Install Tessera</h4>
                 <p>Download a <a href="https://github.com/jackhale98/Tessera/releases" style="color: var(--accent)">pre-built binary</a> or use Cargo</p>
               </div>
             </div>
             <div class="install-step">
               <div class="step-number">2</div>
               <div class="step-content">
-                <h4>Download the Desktop App (Beta)</h4>
-                <p>Grab it from <a href="https://github.com/jackhale98/Tessera/releases" style="color: var(--accent)">GitHub Releases</a></p>
+                <h4>Initialize a Project</h4>
+                <p>Creates directory structure and config</p>
               </div>
             </div>
             <div class="install-step">
               <div class="step-number">3</div>
               <div class="step-content">
-                <h4>Initialize a Project</h4>
-                <p>Run <code style="color: var(--accent)">tdt init</code> &mdash; both interfaces use the same project files</p>
+                <h4>Start Creating</h4>
+                <p>Add requirements, risks, tests, and more</p>
               </div>
             </div>
           </div>
-
-          <div class="install-note">Both the CLI and Desktop App work on the same .pdt.yaml project files. Use whichever fits your workflow.</div>
         </div>
 
         <div class="code-block">
@@ -1994,21 +2229,110 @@
 
 <span style="color: var(--text-muted)"># Initialize your project</span>
 <span style="color: var(--accent)">$</span> tdt init
-<span style="color: var(--success)">&#10003;</span> Initialized Tessera project
+<span style="color: var(--success)">✓</span> Initialized Tessera project
 
 <span style="color: var(--text-muted)"># Create requirement</span>
 <span style="color: var(--accent)">$</span> tdt req new -t input --title "Temp"
-<span style="color: var(--success)">&#10003;</span> Created <span style="color: var(--info)">REQ@1</span>
+<span style="color: var(--success)">✓</span> Created <span style="color: var(--info)">REQ@1</span>
 
 <span style="color: var(--text-muted)"># Validate</span>
 <span style="color: var(--accent)">$</span> tdt validate
-<span style="color: var(--success)">&#10003;</span> All files passed validation</pre>
+<span style="color: var(--success)">✓</span> All files passed validation</pre>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Performance Stats -->
+
+  <section id="performance" class="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">// Performance</div>
+        <h2 class="section-title">Built for Speed</h2>
+        <p class="section-desc">Native Rust performance with SQLite caching means Tessera handles large projects effortlessly.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card" style="text-align: center;">
+          <div class="stat-number" style="font-size: 48px; font-weight: 700; color: var(--accent); margin-bottom: 8px;">50,000</div>
+          <h3>Entities Tested</h3>
+          <p>Benchmarked with 50K mixed entities: requirements, components, risks, tests, suppliers.</p>
+        </div>
+
+        <div class="feature-card" style="text-align: center;">
+          <div class="stat-number" style="font-size: 48px; font-weight: 700; color: var(--accent); margin-bottom: 8px;">3.8s</div>
+          <h3>Full Validation</h3>
+          <p>Validate all 50,000 entities with schema checking and link verification.</p>
+        </div>
+
+        <div class="feature-card" style="text-align: center;">
+          <div class="stat-number" style="font-size: 48px; font-weight: 700; color: var(--accent); margin-bottom: 8px;">13K/s</div>
+          <h3>Validation Rate</h3>
+          <p>Schema validation at ~13,000 entities per second with SQLite caching.</p>
+        </div>
+
+        <div class="feature-card" style="text-align: center;">
+          <div class="stat-number" style="font-size: 48px; font-weight: 700; color: var(--accent); margin-bottom: 8px;">&lt;10ms</div>
+          <h3>Entity Lookup</h3>
+          <p>SQLite-cached single entity lookup via short ID - near-instant results.</p>
+        </div>
+      </div>
+
+      <div style="margin-top: 48px; text-align: center;">
+        <div class="code-block" style="max-width: 800px; margin: 0 auto; text-align: left;">
+          <div class="code-header">
+            <span class="code-title">Benchmark (50,000 entities)</span>
+          </div>
+          <pre><span style="color: var(--text-muted)"># Import 25,000 requirements from CSV</span>
+<span style="color: var(--accent)">$</span> tdt import req requirements.csv
+<span style="color: var(--text-muted)">37.15s (673/s)</span>
+
+<span style="color: var(--text-muted)"># Validate all 50,000 entities</span>
+<span style="color: var(--accent)">$</span> tdt validate
+<span style="color: var(--text-muted)">3.834s (13,040 entities/s)</span>
+
+<span style="color: var(--text-muted)"># List 25,000 requirements</span>
+<span style="color: var(--accent)">$</span> tdt req list --count
+<span style="color: var(--text-muted)">25000 requirements</span>
+
+<span style="color: var(--text-muted)"># Project status</span>
+<span style="color: var(--accent)">$</span> tdt status
+<span style="color: var(--text-muted)">0.048s</span></pre>
+        </div>
+      </div>
+
+      <div class="features-grid" style="margin-top: 48px;">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <h3>Native Rust</h3>
+          <p>Zero-cost abstractions, no garbage collection, no runtime overhead. Direct syscalls for maximum efficiency.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <h3>SQLite Cache</h3>
+          <p>O(1) entity lookups via SQLite cache. Single-entity queries stay fast at any project scale.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3>Type Safety</h3>
+          <p>Compile-time guarantees prevent runtime errors. Strong typing throughout the codebase.</p>
         </div>
       </div>
     </div>
   </section>
 
   <!-- Footer -->
+
   <footer>
     <div class="container">
       <div class="footer-content">
@@ -2046,6 +2370,7 @@
           <span class="footer-text">Tessera Design Toolkit</span>
         </div>
         <div class="footer-links">
+          <a href="index.html">Home</a>
           <a href="cli.html">CLI Reference</a>
           <a href="https://github.com/jackhale98/Tessera">GitHub</a>
           <a href="https://github.com/jackhale98/Tessera/blob/main/README.md">Documentation</a>
@@ -2056,12 +2381,19 @@
     </div>
   </footer>
 
+  <style>
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+  </style>
+
   <script>
     function toggleMobileMenu() {
       const menu = document.getElementById('mobileMenu');
       const btn = document.querySelector('.mobile-menu-btn');
       menu.classList.toggle('active');
-
+      
+      // Toggle hamburger to X
       if (menu.classList.contains('active')) {
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"/>
@@ -2087,6 +2419,7 @@
       </svg>`;
     }
 
+    // Close mobile menu when clicking outside
     document.addEventListener('click', function(e) {
       const menu = document.getElementById('mobileMenu');
       const btn = document.querySelector('.mobile-menu-btn');
@@ -2095,6 +2428,7 @@
       }
     });
 
+    // Close mobile menu on escape key
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') {
         closeMobileMenu();
@@ -2103,15 +2437,20 @@
 
     // Demo tab switching
     function showDemo(name) {
+      // Hide all panels
       document.querySelectorAll('.demo-panel').forEach(panel => {
         panel.classList.remove('active');
       });
+      // Deactivate all tabs
       document.querySelectorAll('.demo-tab').forEach(tab => {
         tab.classList.remove('active');
       });
+      // Show selected panel
       document.getElementById('demo-' + name).classList.add('active');
+      // Activate clicked tab
       event.target.classList.add('active');
     }
   </script>
+
 </body>
 </html>

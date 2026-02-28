@@ -84,8 +84,8 @@
 	};
 
 	function handleKeydown(e: KeyboardEvent) {
-		// Open with Cmd+K or Ctrl+K
-		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+		// Open with Cmd+Shift+K or Ctrl+Shift+K
+		if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'k') {
 			e.preventDefault();
 			open = true;
 			searchQuery = '';
