@@ -128,7 +128,8 @@ impl ReviewListArgs {
 
         // Load roster for role-based filtering
         let roster = TeamRoster::load(project);
-        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone());
+        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone())
+            .with_repo_root(project.root());
         let current_user = engine.current_user();
 
         // Process each PR to extract entity info and approval status
@@ -517,7 +518,8 @@ impl ReviewListArgs {
 
         // Load roster to check what current user can approve
         let roster = TeamRoster::load(project);
-        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone());
+        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone())
+            .with_repo_root(project.root());
         let current_user = engine.current_user();
 
         let mut items: Vec<LocalReviewItem> = Vec::new();

@@ -4,7 +4,6 @@
 
 use clap::Args;
 use miette::{bail, IntoDiagnostic, Result};
-use std::io::{self, BufRead};
 use std::path::PathBuf;
 
 use crate::cli::args::GlobalOpts;
@@ -165,7 +164,8 @@ impl ApproveArgs {
 
         // Load team roster (optional but recommended for role-based approvals)
         let roster = TeamRoster::load(&project);
-        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone());
+        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone())
+            .with_repo_root(project.root());
 
         // Get current user - from roster, then git config, then fallback
         let current_user = engine.current_user();
@@ -184,7 +184,9 @@ impl ApproveArgs {
             }
         });
 
-        let approver_role = current_user.and_then(|u| u.roles.first().copied());
+        let approver_roles: Vec<tdt_core::core::team::Role> = current_user
+            .map(|u| u.roles.clone())
+            .unwrap_or_default();
 
         if self.verbose {
             if let Some(user) = current_user {
@@ -315,7 +317,7 @@ impl ApproveArgs {
             &entities,
             &approver_name,
             approver_email.as_deref(),
-            approver_role,
+            &approver_roles,
             pr_branch.as_deref(),
         );
 
@@ -389,197 +391,11 @@ impl ApproveArgs {
     }
 
     fn collect_entity_ids(&self, project: &Project, config: &Config) -> Result<Vec<String>> {
-        // Check for stdin
-        if self.ids.len() == 1 && self.ids[0] == "-" {
-            let stdin = io::stdin();
-            return Ok(stdin
-                .lock()
-                .lines()
-                .map_while(Result::ok)
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect());
-        }
-
-        // If --pr is set, fetch PR and extract entity IDs from branch name
-        if let Some(pr_number) = self.pr {
-            return self.extract_entities_from_pr(pr_number, project, config);
-        }
-
-        // Otherwise use provided IDs
-        Ok(self.ids.clone())
-    }
-
-    /// Extract entity IDs from a PR's branch name or changed files
-    fn extract_entities_from_pr(
-        &self,
-        pr_number: u64,
-        project: &Project,
-        config: &Config,
-    ) -> Result<Vec<String>> {
-        if config.workflow.provider == Provider::None {
-            bail!(
-                "Cannot use --pr without a git provider configured.\n\
-                 Set workflow.provider to 'github' or 'gitlab' in .tdt/config.yaml"
-            );
-        }
-
-        let provider = ProviderClient::new(config.workflow.provider, project.root());
-
-        // Get PR info to access the branch name
-        let pr_info = provider
-            .get_pr(pr_number)
-            .map_err(|e| miette::miette!("Failed to get PR #{}: {}", pr_number, e))?;
-
-        if self.verbose {
-            eprintln!(
-                "  PR #{}: {} (branch: {})",
-                pr_info.number, pr_info.title, pr_info.branch
-            );
-        }
-
-        // Try to extract entity ID from branch name
-        // Branch patterns: "review/{PREFIX}-{short_id}" or "review/batch-{date}"
-        let branch = &pr_info.branch;
-
-        if let Some(entity_id) = self.parse_entity_from_branch(branch) {
-            if self.verbose {
-                eprintln!("  Extracted entity from branch: {}", entity_id);
-            }
-            return Ok(vec![entity_id]);
-        }
-
-        // For batch branches or unknown patterns, fetch changed files from PR
-        if self.verbose {
-            eprintln!("  Branch doesn't contain entity ID, fetching changed files...");
-        }
-
-        self.extract_entities_from_pr_files(pr_number, project, config)
-    }
-
-    /// Parse entity ID from branch name like "review/REQ-01KCWY20"
-    fn parse_entity_from_branch(&self, branch: &str) -> Option<String> {
-        // Strip "review/" prefix if present
-        let branch = branch.strip_prefix("review/").unwrap_or(branch);
-
-        // Skip batch branches
-        if branch.starts_with("batch-") {
-            return None;
-        }
-
-        // Try to parse as PREFIX-SHORTID format
-        // Valid prefixes: REQ, RISK, TEST, CMP, etc.
-        let parts: Vec<&str> = branch.splitn(2, '-').collect();
-        if parts.len() == 2 {
-            let prefix = parts[0].to_uppercase();
-            let valid_prefixes = [
-                "REQ", "RISK", "TEST", "RSLT", "CMP", "ASM", "FEAT", "MATE", "TOL", "PROC", "CTRL",
-                "WORK", "LOT", "DEV", "NCR", "CAPA", "QUOT", "SUP",
-            ];
-            if valid_prefixes.contains(&prefix.as_str()) {
-                // Return as PREFIX@shortid format for resolution
-                return Some(format!("{}@{}", prefix, parts[1]));
-            }
-        }
-
-        None
-    }
-
-    /// Extract entity IDs from files changed in a PR
-    fn extract_entities_from_pr_files(
-        &self,
-        pr_number: u64,
-        project: &Project,
-        config: &Config,
-    ) -> Result<Vec<String>> {
-        use std::collections::HashSet;
-
-        // Get list of changed files using gh/glab CLI
-        let files = match config.workflow.provider {
-            Provider::GitHub => {
-                let output = std::process::Command::new("gh")
-                    .args(["pr", "diff", &pr_number.to_string(), "--name-only"])
-                    .current_dir(project.root())
-                    .output()
-                    .into_diagnostic()?;
-
-                if !output.status.success() {
-                    bail!(
-                        "Failed to get PR files: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
-
-                String::from_utf8_lossy(&output.stdout).to_string()
-            }
-            Provider::GitLab => {
-                let output = std::process::Command::new("glab")
-                    .args(["mr", "diff", &pr_number.to_string(), "--name-only"])
-                    .current_dir(project.root())
-                    .output()
-                    .into_diagnostic()?;
-
-                if !output.status.success() {
-                    bail!(
-                        "Failed to get MR files: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
-
-                String::from_utf8_lossy(&output.stdout).to_string()
-            }
-            Provider::None => bail!("No provider configured"),
-        };
-
-        // Extract entity IDs from .tdt.yaml filenames
-        let mut entity_ids: HashSet<String> = HashSet::new();
-
-        for line in files.lines() {
-            let filename = line.trim();
-            // Match files like "requirements/REQ-01ABC123.tdt.yaml"
-            if filename.ends_with(".tdt.yaml") {
-                if let Some(basename) = std::path::Path::new(filename)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                {
-                    // Remove .tdt suffix to get entity ID
-                    if let Some(entity_id) = basename.strip_suffix(".tdt") {
-                        entity_ids.insert(entity_id.to_string());
-                    }
-                }
-            }
-        }
-
-        if entity_ids.is_empty() {
-            bail!(
-                "No entity files found in PR #{}.\n\
-                 The PR may not contain any .tdt.yaml files.",
-                pr_number
-            );
-        }
-
-        if self.verbose {
-            eprintln!("  Found {} entities in PR files", entity_ids.len());
-        }
-
-        Ok(entity_ids.into_iter().collect())
+        super::utils::collect_entity_ids_from_args(&self.ids, self.pr, project, config, self.verbose)
     }
 
     fn find_entity_file(&self, project: &Project, id: &str) -> Result<PathBuf> {
-        use walkdir::WalkDir;
-
-        let file_name = format!("{}.tdt.yaml", id);
-
-        for entry in WalkDir::new(project.root())
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if entry.file_name().to_string_lossy() == file_name {
-                return Ok(entry.path().to_path_buf());
-            }
-        }
-
-        bail!("Entity file not found: {}", id)
+        super::utils::find_entity_file(project, id)
     }
 
     fn print_dry_run(
@@ -648,7 +464,7 @@ impl ApproveArgs {
         entities: &[(PathBuf, String, String, Status)],
         approver_name: &str,
         approver_email: Option<&str>,
-        approver_role: Option<tdt_core::core::team::Role>,
+        approver_roles: &[tdt_core::core::team::Role],
         pr_branch: Option<&str>,
     ) -> Result<()> {
         let mut fully_approved = 0;
@@ -705,11 +521,31 @@ impl ApproveArgs {
                 .map(|p| config.workflow.get_approval_requirements(p))
                 .cloned();
 
+            // Select the best matching role for this entity type.
+            // If the entity has required_roles in the approval matrix, pick the
+            // first of the user's roles that matches a required role. This ensures
+            // the recorded role satisfies the requirement check.
+            // Falls back to the user's first role if no specific match.
+            let best_role = if let Some(p) = prefix {
+                let required = config.workflow.get_approval_requirements(p);
+                if !required.required_roles.is_empty() {
+                    approver_roles
+                        .iter()
+                        .find(|r| required.required_roles.contains(r))
+                        .or(approver_roles.first())
+                        .copied()
+                } else {
+                    approver_roles.first().copied()
+                }
+            } else {
+                approver_roles.first().copied()
+            };
+
             // Build approval options (signature info added after commit)
             let mut options = ApprovalOptions {
                 approver: approver_name.to_string(),
                 email: approver_email.map(|s| s.to_string()),
-                role: approver_role,
+                role: best_role,
                 comment: self.message.clone(),
                 signature_verified: None,
                 signing_key: None,

@@ -14,6 +14,7 @@ pub mod release;
 pub mod review;
 pub mod submit;
 pub mod team;
+pub(crate) mod utils;
 
 pub use approve::ApproveArgs;
 pub use reject::RejectArgs;

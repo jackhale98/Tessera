@@ -642,29 +642,77 @@ impl ProviderClient {
         let rest = parts[1].trim();
 
         // Extract title (everything before the parentheses)
-        let title_end = rest.find('(')?;
-        let title = rest[..title_end].trim().to_string();
+        let paren_start = rest.find('(')?;
+        let title = rest[..paren_start].trim().to_string();
+
+        // Extract branch and author from "(branch -> target)  author"
+        let paren_end = rest.find(')')?;
+        let branch_info = &rest[paren_start + 1..paren_end];
+        let branch = branch_info
+            .split("->")
+            .next()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+
+        // Author comes after the closing parenthesis
+        let author = rest[paren_end + 1..].trim().to_string();
 
         Some(PrInfo {
             number,
-            url: String::new(), // Would need to construct from repo URL
+            url: String::new(),
             title,
-            author: String::new(),
-            branch: String::new(),
+            author,
+            branch,
             state: PrState::Open,
         })
     }
 
     /// Parse GitLab MR view output
-    fn parse_gitlab_mr_view(&self, _output: &str, number: u64) -> Result<PrInfo, ProviderError> {
-        // Simplified parsing - would need more work for full implementation
+    ///
+    /// `glab mr view` output format:
+    /// ```text
+    /// title:  Some Title
+    /// state:  opened
+    /// author: username
+    /// url:    https://gitlab.com/owner/repo/-/merge_requests/123
+    /// source branch:  feature-branch
+    /// target branch:  main
+    /// ...
+    /// ```
+    fn parse_gitlab_mr_view(&self, output: &str, number: u64) -> Result<PrInfo, ProviderError> {
+        let mut title = String::new();
+        let mut author = String::new();
+        let mut branch = String::new();
+        let mut url = String::new();
+        let mut state = PrState::Open;
+
+        for line in output.lines() {
+            let line = line.trim();
+            if let Some(val) = line.strip_prefix("title:") {
+                title = val.trim().to_string();
+            } else if let Some(val) = line.strip_prefix("author:") {
+                author = val.trim().to_string();
+            } else if let Some(val) = line.strip_prefix("source branch:") {
+                branch = val.trim().to_string();
+            } else if let Some(val) = line.strip_prefix("url:") {
+                url = val.trim().to_string();
+            } else if let Some(val) = line.strip_prefix("state:") {
+                state = match val.trim().to_lowercase().as_str() {
+                    "opened" => PrState::Open,
+                    "closed" => PrState::Closed,
+                    "merged" => PrState::Merged,
+                    _ => PrState::Open,
+                };
+            }
+        }
+
         Ok(PrInfo {
             number,
-            url: String::new(),
-            title: String::new(),
-            author: String::new(),
-            branch: String::new(),
-            state: PrState::Open,
+            url,
+            title,
+            author,
+            branch,
+            state,
         })
     }
 }
@@ -736,5 +784,66 @@ mod tests {
     fn test_dry_run_mode() {
         let client = ProviderClient::new(Provider::GitHub, Path::new(".")).with_dry_run(true);
         assert!(client.dry_run);
+    }
+
+    #[test]
+    fn test_parse_gitlab_mr_line() {
+        let client = ProviderClient::new(Provider::GitLab, Path::new("."));
+        let line = "!42\tSubmit REQ-01KCWY20\t(review/REQ-01KCWY20 -> main)\ttestuser";
+        let pr = client.parse_gitlab_mr_line(line);
+        assert!(pr.is_some());
+        let pr = pr.unwrap();
+        assert_eq!(pr.number, 42);
+        assert_eq!(pr.title, "Submit REQ-01KCWY20");
+        assert_eq!(pr.branch, "review/REQ-01KCWY20");
+        assert_eq!(pr.author, "testuser");
+    }
+
+    #[test]
+    fn test_parse_gitlab_mr_line_spaces() {
+        let client = ProviderClient::new(Provider::GitLab, Path::new("."));
+        let line = "!7  My PR Title  (feature-branch -> main)  alice";
+        let pr = client.parse_gitlab_mr_line(line).unwrap();
+        assert_eq!(pr.number, 7);
+        assert_eq!(pr.title, "My PR Title");
+        assert_eq!(pr.branch, "feature-branch");
+        assert_eq!(pr.author, "alice");
+    }
+
+    #[test]
+    fn test_parse_gitlab_mr_view() {
+        let client = ProviderClient::new(Provider::GitLab, Path::new("."));
+        let output = "\
+title:  Submit REQ-01KCWY20: Flow Rate Requirement
+state:  opened
+author: jsmith
+url:    https://gitlab.com/org/repo/-/merge_requests/42
+source branch:  review/REQ-01KCWY20
+target branch:  main
+";
+        let pr = client.parse_gitlab_mr_view(output, 42).unwrap();
+        assert_eq!(pr.number, 42);
+        assert_eq!(pr.title, "Submit REQ-01KCWY20: Flow Rate Requirement");
+        assert_eq!(pr.author, "jsmith");
+        assert_eq!(pr.branch, "review/REQ-01KCWY20");
+        assert_eq!(
+            pr.url,
+            "https://gitlab.com/org/repo/-/merge_requests/42"
+        );
+        assert_eq!(pr.state, PrState::Open);
+    }
+
+    #[test]
+    fn test_parse_gitlab_mr_view_merged() {
+        let client = ProviderClient::new(Provider::GitLab, Path::new("."));
+        let output = "\
+title:  Done PR
+state:  merged
+author: bob
+source branch:  feat
+";
+        let pr = client.parse_gitlab_mr_view(output, 10).unwrap();
+        assert_eq!(pr.state, PrState::Merged);
+        assert_eq!(pr.branch, "feat");
     }
 }

@@ -183,12 +183,23 @@ pub enum WorkflowError {
 pub struct WorkflowEngine {
     roster: Option<TeamRoster>,
     config: WorkflowConfig,
+    repo_root: Option<std::path::PathBuf>,
 }
 
 impl WorkflowEngine {
     /// Create a new workflow engine
     pub fn new(roster: Option<TeamRoster>, config: WorkflowConfig) -> Self {
-        Self { roster, config }
+        Self {
+            roster,
+            config,
+            repo_root: None,
+        }
+    }
+
+    /// Create a new workflow engine with a repo root for repo-scoped git config
+    pub fn with_repo_root(mut self, repo_root: &Path) -> Self {
+        self.repo_root = Some(repo_root.to_path_buf());
+        self
     }
 
     /// Check if workflow features are enabled
@@ -208,7 +219,9 @@ impl WorkflowEngine {
 
     /// Get the current user from the team roster
     pub fn current_user(&self) -> Option<&TeamMember> {
-        self.roster.as_ref().and_then(|r| r.current_user())
+        self.roster.as_ref().and_then(|r| {
+            r.current_user_in_repo(self.repo_root.as_deref())
+        })
     }
 
     /// Check if a status transition is valid
@@ -351,31 +364,51 @@ pub struct RejectionRecord {
     pub timestamp: DateTime<Utc>,
 }
 
-/// Update an entity's status in its YAML file
-pub fn update_entity_status(file_path: &Path, new_status: Status) -> Result<(), WorkflowError> {
+/// Read and parse a YAML file.
+fn read_yaml(file_path: &Path) -> Result<serde_yml::Value, WorkflowError> {
     let contents = std::fs::read_to_string(file_path)?;
+    serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
+        message: e.to_string(),
+    })
+}
 
-    // Parse as YAML value to preserve formatting
-    let mut doc: serde_yml::Value =
-        serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
-            message: e.to_string(),
-        })?;
-
-    // Update status field
-    if let Some(map) = doc.as_mapping_mut() {
-        map.insert(
-            serde_yml::Value::String("status".to_string()),
-            serde_yml::Value::String(new_status.to_string()),
-        );
-    }
-
-    // Serialize back
-    let new_contents = serde_yml::to_string(&doc).map_err(|e| WorkflowError::YamlError {
+/// Write a serde_yml::Value back to a YAML file.
+fn write_yaml(file_path: &Path, doc: &serde_yml::Value) -> Result<(), WorkflowError> {
+    let output = serde_yml::to_string(doc).map_err(|e| WorkflowError::YamlError {
         message: e.to_string(),
     })?;
-
-    std::fs::write(file_path, new_contents)?;
+    std::fs::write(file_path, output)?;
     Ok(())
+}
+
+/// Build an ApprovalRecord serde_yml::Value from ApprovalOptions.
+fn approval_to_value(options: &ApprovalOptions) -> serde_yml::Value {
+    let record = ApprovalRecord {
+        approver: options.approver.clone(),
+        email: options.email.clone(),
+        role: options.role.map(|r| r.to_string()),
+        timestamp: Utc::now(),
+        comment: options.comment.clone(),
+        signature_verified: options.signature_verified,
+        signing_key: options.signing_key.clone(),
+    };
+    serde_yml::to_value(&record).expect("ApprovalRecord serialization cannot fail")
+}
+
+/// Update an entity's status in its YAML file.
+pub fn update_entity_status(file_path: &Path, new_status: Status) -> Result<(), WorkflowError> {
+    let mut doc = read_yaml(file_path)?;
+
+    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
+        message: "Expected YAML mapping".to_string(),
+    })?;
+
+    map.insert(
+        serde_yml::Value::String("status".to_string()),
+        serde_yml::Value::String(new_status.to_string()),
+    );
+
+    write_yaml(file_path, &doc)
 }
 
 /// Options for recording an approval
@@ -411,95 +444,73 @@ pub fn record_approval(
     record_approval_ext(file_path, &options, None)
 }
 
-/// Record an approval with multi-approval support
-/// Automatically transitions to "approved" status when requirements are met
+/// Record an approval with multi-approval support.
+/// Automatically transitions to "approved" status when requirements are met.
 pub fn record_approval_ext(
     file_path: &Path,
     options: &ApprovalOptions,
     requirements: Option<&ApprovalRequirements>,
 ) -> Result<(), WorkflowError> {
-    let contents = std::fs::read_to_string(file_path)?;
+    let mut doc = read_yaml(file_path)?;
 
-    let mut doc: serde_yml::Value =
-        serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
-            message: e.to_string(),
-        })?;
+    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
+        message: "Expected YAML mapping".to_string(),
+    })?;
 
-    if let Some(map) = doc.as_mapping_mut() {
-        // Create approval record (this is the "electronic signature")
-        let mut approval = serde_yml::Mapping::new();
-        approval.insert(
-            serde_yml::Value::String("approver".to_string()),
-            serde_yml::Value::String(options.approver.clone()),
-        );
-        if let Some(ref email) = options.email {
-            approval.insert(
-                serde_yml::Value::String("email".to_string()),
-                serde_yml::Value::String(email.clone()),
-            );
-        }
-        if let Some(r) = options.role {
-            approval.insert(
-                serde_yml::Value::String("role".to_string()),
-                serde_yml::Value::String(r.to_string()),
-            );
-        }
-        approval.insert(
-            serde_yml::Value::String("timestamp".to_string()),
-            serde_yml::Value::String(Utc::now().to_rfc3339()),
-        );
-        if let Some(ref c) = options.comment {
-            approval.insert(
-                serde_yml::Value::String("comment".to_string()),
-                serde_yml::Value::String(c.clone()),
-            );
-        }
-        // GPG signature fields (for Part 11 compliance)
-        if let Some(verified) = options.signature_verified {
-            approval.insert(
-                serde_yml::Value::String("signature_verified".to_string()),
-                serde_yml::Value::Bool(verified),
-            );
-        }
-        if let Some(ref key) = options.signing_key {
-            approval.insert(
-                serde_yml::Value::String("signing_key".to_string()),
-                serde_yml::Value::String(key.clone()),
-            );
-        }
+    let approvals_key = serde_yml::Value::String("approvals".to_string());
 
-        // Add to approvals list (create if doesn't exist)
-        let approvals_key = serde_yml::Value::String("approvals".to_string());
-        let approvals = map
-            .entry(approvals_key)
-            .or_insert_with(|| serde_yml::Value::Sequence(Vec::new()));
-
-        if let Some(seq) = approvals.as_sequence_mut() {
-            seq.push(serde_yml::Value::Mapping(approval));
-        }
-
-        // Check if we should transition to approved status
-        let should_approve = if let Some(reqs) = requirements {
-            check_approval_requirements(map, reqs).requirements_met
-        } else {
-            // Default behavior: single approval transitions to approved
-            true
-        };
-
-        if should_approve {
-            map.insert(
-                serde_yml::Value::String("status".to_string()),
-                serde_yml::Value::String("approved".to_string()),
-            );
+    // Guard against duplicate approvals at the core level
+    if let Some(reqs) = requirements {
+        if reqs.require_unique_approvers {
+            if let Some(approvals) = map.get(&approvals_key) {
+                if let Some(seq) = approvals.as_sequence() {
+                    for existing in seq {
+                        if let Some(existing_map) = existing.as_mapping() {
+                            if let Some(existing_name) = existing_map
+                                .get(serde_yml::Value::String("approver".to_string()))
+                                .and_then(|v| v.as_str())
+                            {
+                                if existing_name.eq_ignore_ascii_case(&options.approver) {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    let new_contents = serde_yml::to_string(&doc).map_err(|e| WorkflowError::YamlError {
-        message: e.to_string(),
-    })?;
+    // Append the approval entry
+    let entry = approval_to_value(options);
+    match map.get_mut(&approvals_key) {
+        Some(approvals) => {
+            if let Some(seq) = approvals.as_sequence_mut() {
+                seq.push(entry);
+            } else {
+                *approvals = serde_yml::Value::Sequence(vec![entry]);
+            }
+        }
+        None => {
+            map.insert(approvals_key.clone(), serde_yml::Value::Sequence(vec![entry]));
+        }
+    }
 
-    std::fs::write(file_path, new_contents)?;
-    Ok(())
+    // Check if we should transition to approved status
+    let should_approve = if let Some(reqs) = requirements {
+        check_approval_requirements(map, reqs).requirements_met
+    } else {
+        true
+    };
+
+    if should_approve {
+        map.insert(
+            serde_yml::Value::String("status".to_string()),
+            serde_yml::Value::String("approved".to_string()),
+        );
+    }
+
+    write_yaml(file_path, &doc)
 }
 
 /// Check if approval requirements are met for an entity
@@ -572,12 +583,7 @@ pub fn get_approval_status(
     file_path: &Path,
     requirements: &ApprovalRequirements,
 ) -> Result<ApprovalStatus, WorkflowError> {
-    let contents = std::fs::read_to_string(file_path)?;
-
-    let doc: serde_yml::Value =
-        serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
-            message: e.to_string(),
-        })?;
+    let doc = read_yaml(file_path)?;
 
     let map = doc.as_mapping().ok_or_else(|| WorkflowError::YamlError {
         message: "Expected YAML mapping".to_string(),
@@ -591,12 +597,7 @@ pub fn would_be_duplicate_approval(
     file_path: &Path,
     approver: &str,
 ) -> Result<bool, WorkflowError> {
-    let contents = std::fs::read_to_string(file_path)?;
-
-    let doc: serde_yml::Value =
-        serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
-            message: e.to_string(),
-        })?;
+    let doc = read_yaml(file_path)?;
 
     if let Some(map) = doc.as_mapping() {
         if let Some(approvals) = map.get(serde_yml::Value::String("approvals".to_string())) {
@@ -620,103 +621,83 @@ pub fn would_be_duplicate_approval(
     Ok(false)
 }
 
-/// Record a rejection in an entity's YAML file
+/// Record a rejection in an entity's YAML file.
 pub fn record_rejection(
     file_path: &Path,
     rejector: &str,
     reason: &str,
 ) -> Result<(), WorkflowError> {
-    let contents = std::fs::read_to_string(file_path)?;
+    let mut doc = read_yaml(file_path)?;
 
-    let mut doc: serde_yml::Value =
-        serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
-            message: e.to_string(),
-        })?;
+    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
+        message: "Expected YAML mapping".to_string(),
+    })?;
 
-    if let Some(map) = doc.as_mapping_mut() {
-        // Update status back to draft
-        map.insert(
-            serde_yml::Value::String("status".to_string()),
-            serde_yml::Value::String("draft".to_string()),
-        );
+    // Update status back to draft
+    map.insert(
+        serde_yml::Value::String("status".to_string()),
+        serde_yml::Value::String("draft".to_string()),
+    );
 
-        // Create rejection record
-        let mut rejection = serde_yml::Mapping::new();
-        rejection.insert(
-            serde_yml::Value::String("rejector".to_string()),
-            serde_yml::Value::String(rejector.to_string()),
-        );
-        rejection.insert(
-            serde_yml::Value::String("reason".to_string()),
-            serde_yml::Value::String(reason.to_string()),
-        );
-        rejection.insert(
-            serde_yml::Value::String("timestamp".to_string()),
-            serde_yml::Value::String(Utc::now().to_rfc3339()),
-        );
+    // Clear stale approvals
+    map.insert(
+        serde_yml::Value::String("approvals".to_string()),
+        serde_yml::Value::Sequence(vec![]),
+    );
 
-        // Add to rejections list
-        let rejections_key = serde_yml::Value::String("rejections".to_string());
-        let rejections = map
-            .entry(rejections_key)
-            .or_insert_with(|| serde_yml::Value::Sequence(Vec::new()));
+    // Build rejection record
+    let record = RejectionRecord {
+        rejector: rejector.to_string(),
+        reason: reason.to_string(),
+        timestamp: Utc::now(),
+    };
+    let entry = serde_yml::to_value(&record).expect("RejectionRecord serialization cannot fail");
 
-        if let Some(seq) = rejections.as_sequence_mut() {
-            seq.push(serde_yml::Value::Mapping(rejection));
+    // Append to rejections array
+    let rejections_key = serde_yml::Value::String("rejections".to_string());
+    match map.get_mut(&rejections_key) {
+        Some(rejections) => {
+            if let Some(seq) = rejections.as_sequence_mut() {
+                seq.push(entry);
+            } else {
+                *rejections = serde_yml::Value::Sequence(vec![entry]);
+            }
+        }
+        None => {
+            map.insert(rejections_key, serde_yml::Value::Sequence(vec![entry]));
         }
     }
 
-    let new_contents = serde_yml::to_string(&doc).map_err(|e| WorkflowError::YamlError {
-        message: e.to_string(),
-    })?;
-
-    std::fs::write(file_path, new_contents)?;
-    Ok(())
+    write_yaml(file_path, &doc)
 }
 
-/// Record a release in an entity's YAML file
+/// Record a release in an entity's YAML file.
 pub fn record_release(file_path: &Path, releaser: &str) -> Result<(), WorkflowError> {
-    let contents = std::fs::read_to_string(file_path)?;
+    let mut doc = read_yaml(file_path)?;
 
-    let mut doc: serde_yml::Value =
-        serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
-            message: e.to_string(),
-        })?;
-
-    if let Some(map) = doc.as_mapping_mut() {
-        // Update status to released
-        map.insert(
-            serde_yml::Value::String("status".to_string()),
-            serde_yml::Value::String("released".to_string()),
-        );
-
-        // Add release metadata
-        map.insert(
-            serde_yml::Value::String("released_by".to_string()),
-            serde_yml::Value::String(releaser.to_string()),
-        );
-        map.insert(
-            serde_yml::Value::String("released_at".to_string()),
-            serde_yml::Value::String(Utc::now().to_rfc3339()),
-        );
-    }
-
-    let new_contents = serde_yml::to_string(&doc).map_err(|e| WorkflowError::YamlError {
-        message: e.to_string(),
+    let map = doc.as_mapping_mut().ok_or_else(|| WorkflowError::YamlError {
+        message: "Expected YAML mapping".to_string(),
     })?;
 
-    std::fs::write(file_path, new_contents)?;
-    Ok(())
+    map.insert(
+        serde_yml::Value::String("status".to_string()),
+        serde_yml::Value::String("released".to_string()),
+    );
+    map.insert(
+        serde_yml::Value::String("released_by".to_string()),
+        serde_yml::Value::String(releaser.to_string()),
+    );
+    map.insert(
+        serde_yml::Value::String("released_at".to_string()),
+        serde_yml::Value::String(Utc::now().to_rfc3339()),
+    );
+
+    write_yaml(file_path, &doc)
 }
 
 /// Get entity info from a YAML file (id, title, status)
 pub fn get_entity_info(file_path: &Path) -> Result<(String, String, Status), WorkflowError> {
-    let contents = std::fs::read_to_string(file_path)?;
-
-    let doc: serde_yml::Value =
-        serde_yml::from_str(&contents).map_err(|e| WorkflowError::YamlError {
-            message: e.to_string(),
-        })?;
+    let doc = read_yaml(file_path)?;
 
     let id = doc
         .get("id")
@@ -933,6 +914,34 @@ status: review
         assert!(contents.contains("status: draft"));
         assert!(contents.contains("rejector: jsmith"));
         assert!(contents.contains("reason: Needs more detail"));
+    }
+
+    #[test]
+    fn test_rejection_clears_stale_approvals() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("test.yaml");
+
+        std::fs::write(
+            &file,
+            r#"id: REQ-TEST
+title: Test Requirement
+status: review
+approvals:
+  - approver: alice
+    role: engineering
+    timestamp: 2024-01-01T00:00:00Z
+"#,
+        )
+        .unwrap();
+
+        record_rejection(&file, "bob", "Needs revision").unwrap();
+
+        let contents = std::fs::read_to_string(&file).unwrap();
+        assert!(contents.contains("status: draft"));
+        // Old approvals should be cleared
+        assert!(!contents.contains("approver: alice"));
+        // Rejection should be recorded
+        assert!(contents.contains("rejector: bob"));
     }
 
     #[test]

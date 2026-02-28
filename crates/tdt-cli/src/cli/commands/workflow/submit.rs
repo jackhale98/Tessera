@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use crate::cli::args::GlobalOpts;
 use tdt_core::core::entity::Status;
-use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::workflow::{
     get_entity_info, get_prefix_from_id, truncate_id, update_entity_status,
@@ -172,64 +171,12 @@ impl SubmitArgs {
     }
 
     fn scan_project_for_entities(&self, project: &Project) -> Result<Vec<String>> {
-        use walkdir::WalkDir;
-
         let target_status: Status = self.status.parse().unwrap_or(Status::Draft);
-        let target_prefix: Option<EntityPrefix> = self
-            .entity_type
-            .as_ref()
-            .and_then(|t| t.to_uppercase().parse().ok());
-
-        let mut ids = Vec::new();
-
-        for entry in WalkDir::new(project.root())
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|ext| ext == "yaml")
-                    .unwrap_or(false)
-            })
-            .filter(|e| e.path().to_string_lossy().contains(".tdt.yaml"))
-        {
-            if let Ok((id, _, status)) = get_entity_info(entry.path()) {
-                if status != target_status {
-                    continue;
-                }
-
-                if let Some(ref prefix_filter) = target_prefix {
-                    if let Some(prefix) = get_prefix_from_id(&id) {
-                        if prefix != *prefix_filter {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-
-                ids.push(id);
-            }
-        }
-
-        Ok(ids)
+        super::utils::scan_entities_by_status(project, target_status, self.entity_type.as_deref())
     }
 
     fn find_entity_file(&self, project: &Project, id: &str) -> Result<PathBuf> {
-        use walkdir::WalkDir;
-
-        let file_name = format!("{}.tdt.yaml", id);
-
-        for entry in WalkDir::new(project.root())
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if entry.file_name().to_string_lossy() == file_name {
-                return Ok(entry.path().to_path_buf());
-            }
-        }
-
-        bail!("Entity file not found: {}", id)
+        super::utils::find_entity_file(project, id)
     }
 
     fn print_dry_run(

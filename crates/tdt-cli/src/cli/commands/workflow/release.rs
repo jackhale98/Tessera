@@ -7,9 +7,8 @@ use std::path::PathBuf;
 
 use crate::cli::args::GlobalOpts;
 use tdt_core::core::entity::Status;
-use tdt_core::core::identity::EntityPrefix;
 use tdt_core::core::shortid::ShortIdIndex;
-use tdt_core::core::workflow::{get_entity_info, get_prefix_from_id, record_release, truncate_id};
+use tdt_core::core::workflow::{get_entity_info, record_release, truncate_id};
 use tdt_core::core::{Config, Git, Project, TeamRoster, WorkflowEngine};
 
 /// Release approved entities
@@ -76,7 +75,8 @@ impl ReleaseArgs {
 
         // Load team roster (optional)
         let roster = TeamRoster::load(&project);
-        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone());
+        let engine = WorkflowEngine::new(roster.clone(), config.workflow.clone())
+            .with_repo_root(project.root());
 
         // Get current user and check release authorization
         let current_user = engine.current_user();
@@ -191,63 +191,11 @@ impl ReleaseArgs {
     }
 
     fn scan_project_for_entities(&self, project: &Project) -> Result<Vec<String>> {
-        use walkdir::WalkDir;
-
-        let target_prefix: Option<EntityPrefix> = self
-            .entity_type
-            .as_ref()
-            .and_then(|t| t.to_uppercase().parse().ok());
-
-        let mut ids = Vec::new();
-
-        for entry in WalkDir::new(project.root())
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|ext| ext == "yaml")
-                    .unwrap_or(false)
-            })
-            .filter(|e| e.path().to_string_lossy().contains(".tdt.yaml"))
-        {
-            if let Ok((id, _, status)) = get_entity_info(entry.path()) {
-                if status != Status::Approved {
-                    continue;
-                }
-
-                if let Some(ref prefix_filter) = target_prefix {
-                    if let Some(prefix) = get_prefix_from_id(&id) {
-                        if prefix != *prefix_filter {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-
-                ids.push(id);
-            }
-        }
-
-        Ok(ids)
+        super::utils::scan_entities_by_status(project, Status::Approved, self.entity_type.as_deref())
     }
 
     fn find_entity_file(&self, project: &Project, id: &str) -> Result<PathBuf> {
-        use walkdir::WalkDir;
-
-        let file_name = format!("{}.tdt.yaml", id);
-
-        for entry in WalkDir::new(project.root())
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if entry.file_name().to_string_lossy() == file_name {
-                return Ok(entry.path().to_path_buf());
-            }
-        }
-
-        bail!("Entity file not found: {}", id)
+        super::utils::find_entity_file(project, id)
     }
 
     fn print_dry_run(&self, entities: &[(PathBuf, String, String, Status)]) -> Result<()> {
@@ -352,6 +300,28 @@ impl ReleaseArgs {
                             eprintln!("  Warning: Failed to create tag {}: {}", tag_name, e);
                         }
                     }
+                }
+            }
+        }
+
+        // Push changes and tags to remote
+        let current_branch = git.current_branch().unwrap_or_default();
+        if !current_branch.is_empty() {
+            match git.push(&current_branch, false) {
+                Ok(()) => println!("  Pushed to origin/{}", current_branch),
+                Err(e) => {
+                    eprintln!("  Warning: Failed to push: {}", e);
+                    eprintln!(
+                        "  You may need to push manually: git push origin {}",
+                        current_branch
+                    );
+                }
+            }
+
+            // Push tags
+            if let Err(e) = git.run_checked(&["push", "--tags"]) {
+                if self.verbose {
+                    eprintln!("  Warning: Failed to push tags: {}", e);
                 }
             }
         }

@@ -2,7 +2,6 @@
 
 use clap::Args;
 use miette::{bail, IntoDiagnostic, Result};
-use std::io::{self, BufRead};
 use std::path::PathBuf;
 
 use crate::cli::args::GlobalOpts;
@@ -37,6 +36,10 @@ pub struct RejectArgs {
     /// Print commands as they run
     #[arg(long, short = 'v')]
     pub verbose: bool,
+
+    /// Skip git commit (just update YAML files)
+    #[arg(long)]
+    pub no_commit: bool,
 }
 
 impl RejectArgs {
@@ -56,14 +59,16 @@ impl RejectArgs {
         }
 
         let git = Git::new(project.root());
+        let has_git = git.is_repo();
 
-        // Verify we're in a git repo
-        if !git.is_repo() {
-            bail!("Not a git repository.");
-        }
-
-        // Get rejector name
-        let rejector_name = git.user_name().unwrap_or_else(|_| "Unknown".to_string());
+        // Get rejector name - from git config, env var, or fallback
+        let rejector_name = if has_git {
+            git.user_name().unwrap_or_else(|_| "Unknown".to_string())
+        } else {
+            std::env::var("USER")
+                .or_else(|_| std::env::var("USERNAME"))
+                .unwrap_or_else(|_| "Unknown".to_string())
+        };
 
         // Collect entity IDs
         let ids = self.collect_entity_ids(&project, &config)?;
@@ -107,7 +112,7 @@ impl RejectArgs {
         }
 
         if self.dry_run {
-            self.print_dry_run(&entities, &config)?;
+            self.print_dry_run(&entities, &config, has_git)?;
             println!("\nNo changes made (dry run).");
             return Ok(());
         }
@@ -125,209 +130,24 @@ impl RejectArgs {
         }
 
         // Execute the rejection
-        self.execute_reject(&project, &config, &git, &entities, &rejector_name)?;
+        self.execute_reject(&project, &config, &git, has_git, &entities, &rejector_name)?;
 
         Ok(())
     }
 
     fn collect_entity_ids(&self, project: &Project, config: &Config) -> Result<Vec<String>> {
-        // Check for stdin
-        if self.ids.len() == 1 && self.ids[0] == "-" {
-            let stdin = io::stdin();
-            return Ok(stdin
-                .lock()
-                .lines()
-                .map_while(Result::ok)
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect());
-        }
-
-        // If --pr is set, fetch PR and extract entity IDs from branch name
-        if let Some(pr_number) = self.pr {
-            return self.extract_entities_from_pr(pr_number, project, config);
-        }
-
-        // Otherwise use provided IDs
-        Ok(self.ids.clone())
-    }
-
-    /// Extract entity IDs from a PR's branch name or changed files
-    fn extract_entities_from_pr(
-        &self,
-        pr_number: u64,
-        project: &Project,
-        config: &Config,
-    ) -> Result<Vec<String>> {
-        if config.workflow.provider == Provider::None {
-            bail!(
-                "Cannot use --pr without a git provider configured.\n\
-                 Set workflow.provider to 'github' or 'gitlab' in .tdt/config.yaml"
-            );
-        }
-
-        let provider = ProviderClient::new(config.workflow.provider, project.root());
-
-        // Get PR info to access the branch name
-        let pr_info = provider
-            .get_pr(pr_number)
-            .map_err(|e| miette::miette!("Failed to get PR #{}: {}", pr_number, e))?;
-
-        if self.verbose {
-            eprintln!(
-                "  PR #{}: {} (branch: {})",
-                pr_info.number, pr_info.title, pr_info.branch
-            );
-        }
-
-        // Try to extract entity ID from branch name
-        // Branch patterns: "review/{PREFIX}-{short_id}" or "review/batch-{date}"
-        let branch = &pr_info.branch;
-
-        if let Some(entity_id) = self.parse_entity_from_branch(branch) {
-            if self.verbose {
-                eprintln!("  Extracted entity from branch: {}", entity_id);
-            }
-            return Ok(vec![entity_id]);
-        }
-
-        // For batch branches or unknown patterns, fetch changed files from PR
-        if self.verbose {
-            eprintln!("  Branch doesn't contain entity ID, fetching changed files...");
-        }
-
-        self.extract_entities_from_pr_files(pr_number, project, config)
-    }
-
-    /// Parse entity ID from branch name like "review/REQ-01KCWY20"
-    fn parse_entity_from_branch(&self, branch: &str) -> Option<String> {
-        // Strip "review/" prefix if present
-        let branch = branch.strip_prefix("review/").unwrap_or(branch);
-
-        // Skip batch branches
-        if branch.starts_with("batch-") {
-            return None;
-        }
-
-        // Try to parse as PREFIX-SHORTID format
-        // Valid prefixes: REQ, RISK, TEST, CMP, etc.
-        let parts: Vec<&str> = branch.splitn(2, '-').collect();
-        if parts.len() == 2 {
-            let prefix = parts[0].to_uppercase();
-            let valid_prefixes = [
-                "REQ", "RISK", "TEST", "RSLT", "CMP", "ASM", "FEAT", "MATE", "TOL", "PROC", "CTRL",
-                "WORK", "LOT", "DEV", "NCR", "CAPA", "QUOT", "SUP",
-            ];
-            if valid_prefixes.contains(&prefix.as_str()) {
-                // Return as PREFIX@shortid format for resolution
-                return Some(format!("{}@{}", prefix, parts[1]));
-            }
-        }
-
-        None
-    }
-
-    /// Extract entity IDs from files changed in a PR
-    fn extract_entities_from_pr_files(
-        &self,
-        pr_number: u64,
-        project: &Project,
-        config: &Config,
-    ) -> Result<Vec<String>> {
-        use std::collections::HashSet;
-
-        // Get list of changed files using gh/glab CLI
-        let files = match config.workflow.provider {
-            Provider::GitHub => {
-                let output = std::process::Command::new("gh")
-                    .args(["pr", "diff", &pr_number.to_string(), "--name-only"])
-                    .current_dir(project.root())
-                    .output()
-                    .into_diagnostic()?;
-
-                if !output.status.success() {
-                    bail!(
-                        "Failed to get PR files: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
-
-                String::from_utf8_lossy(&output.stdout).to_string()
-            }
-            Provider::GitLab => {
-                let output = std::process::Command::new("glab")
-                    .args(["mr", "diff", &pr_number.to_string(), "--name-only"])
-                    .current_dir(project.root())
-                    .output()
-                    .into_diagnostic()?;
-
-                if !output.status.success() {
-                    bail!(
-                        "Failed to get MR files: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
-
-                String::from_utf8_lossy(&output.stdout).to_string()
-            }
-            Provider::None => bail!("No provider configured"),
-        };
-
-        // Extract entity IDs from .tdt.yaml filenames
-        let mut entity_ids: HashSet<String> = HashSet::new();
-
-        for line in files.lines() {
-            let filename = line.trim();
-            // Match files like "requirements/REQ-01ABC123.tdt.yaml"
-            if filename.ends_with(".tdt.yaml") {
-                if let Some(basename) = std::path::Path::new(filename)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                {
-                    // Remove .tdt suffix to get entity ID
-                    if let Some(entity_id) = basename.strip_suffix(".tdt") {
-                        entity_ids.insert(entity_id.to_string());
-                    }
-                }
-            }
-        }
-
-        if entity_ids.is_empty() {
-            bail!(
-                "No entity files found in PR #{}.\n\
-                 The PR may not contain any .tdt.yaml files.",
-                pr_number
-            );
-        }
-
-        if self.verbose {
-            eprintln!("  Found {} entities in PR files", entity_ids.len());
-        }
-
-        Ok(entity_ids.into_iter().collect())
+        super::utils::collect_entity_ids_from_args(&self.ids, self.pr, project, config, self.verbose)
     }
 
     fn find_entity_file(&self, project: &Project, id: &str) -> Result<PathBuf> {
-        use walkdir::WalkDir;
-
-        let file_name = format!("{}.tdt.yaml", id);
-
-        for entry in WalkDir::new(project.root())
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if entry.file_name().to_string_lossy() == file_name {
-                return Ok(entry.path().to_path_buf());
-            }
-        }
-
-        bail!("Entity file not found: {}", id)
+        super::utils::find_entity_file(project, id)
     }
 
     fn print_dry_run(
         &self,
         entities: &[(PathBuf, String, String, Status)],
         config: &Config,
+        has_git: bool,
     ) -> Result<()> {
         println!("\nWould execute:");
 
@@ -337,16 +157,20 @@ impl RejectArgs {
                 .unwrap_or(path)
                 .display();
             println!("  [record rejection in {}]", rel_path);
-            println!("  git add {}", rel_path);
+            if has_git && !self.no_commit {
+                println!("  git add {}", rel_path);
+            }
         }
 
-        let commit_message = if entities.len() == 1 {
-            let (_, id, _, _) = &entities[0];
-            format!("Reject {}: {}", truncate_id(id), self.reason)
-        } else {
-            format!("Reject {} entities: {}", entities.len(), self.reason)
-        };
-        println!("  git commit -m \"{}\"", commit_message);
+        if has_git && !self.no_commit {
+            let commit_message = if entities.len() == 1 {
+                let (_, id, _, _) = &entities[0];
+                format!("Reject {}: {}", truncate_id(id), self.reason)
+            } else {
+                format!("Reject {} entities: {}", entities.len(), self.reason)
+            };
+            println!("  git commit -m \"{}\"", commit_message);
+        }
 
         if config.workflow.provider != Provider::None {
             if let Some(pr) = self.pr {
@@ -367,6 +191,7 @@ impl RejectArgs {
         project: &Project,
         config: &Config,
         git: &Git,
+        has_git: bool,
         entities: &[(PathBuf, String, String, Status)],
         rejector_name: &str,
     ) -> Result<()> {
@@ -382,34 +207,39 @@ impl RejectArgs {
             entities.len()
         );
 
-        // Stage files
-        let paths: Vec<&std::path::Path> =
-            entities.iter().map(|(p, _, _, _)| p.as_path()).collect();
-        git.stage_files(&paths).into_diagnostic()?;
+        // Git operations are optional - only if we have git and not --no-commit
+        let should_commit = has_git && !self.no_commit;
 
-        // Commit
-        let commit_message = if entities.len() == 1 {
-            let (_, id, _, _) = &entities[0];
-            format!("Reject {}: {}", truncate_id(id), self.reason)
-        } else {
-            format!("Reject {} entities: {}", entities.len(), self.reason)
-        };
-        let _hash = git.commit(&commit_message).into_diagnostic()?;
-        println!("  Committed: \"{}\"", commit_message);
+        if should_commit {
+            // Stage files
+            let paths: Vec<&std::path::Path> =
+                entities.iter().map(|(p, _, _, _)| p.as_path()).collect();
+            git.stage_files(&paths).into_diagnostic()?;
 
-        // Close PR if provider is configured
-        if config.workflow.provider != Provider::None {
-            let provider = ProviderClient::new(config.workflow.provider, project.root())
-                .with_verbose(self.verbose);
+            // Commit
+            let commit_message = if entities.len() == 1 {
+                let (_, id, _, _) = &entities[0];
+                format!("Reject {}: {}", truncate_id(id), self.reason)
+            } else {
+                format!("Reject {} entities: {}", entities.len(), self.reason)
+            };
+            let _hash = git.commit(&commit_message).into_diagnostic()?;
+            println!("  Committed: \"{}\"", commit_message);
 
-            // Find PR for current branch
-            let current_branch = git.current_branch().unwrap_or_default();
-            if let Ok(Some(pr_info)) = provider.get_pr_for_branch(&current_branch) {
-                let comment = format!("Rejected: {}", self.reason);
-                if let Err(e) = provider.close_pr(pr_info.number, Some(&comment)) {
-                    eprintln!("  Warning: Failed to close PR: {}", e);
-                } else {
-                    println!("  Closed PR #{}", pr_info.number);
+            // Close PR if provider is configured
+            if config.workflow.provider != Provider::None {
+                let provider = ProviderClient::new(config.workflow.provider, project.root())
+                    .with_verbose(self.verbose);
+
+                // Find PR for current branch
+                let current_branch = git.current_branch().unwrap_or_default();
+                if let Ok(Some(pr_info)) = provider.get_pr_for_branch(&current_branch) {
+                    let comment = format!("Rejected: {}", self.reason);
+                    if let Err(e) = provider.close_pr(pr_info.number, Some(&comment)) {
+                        eprintln!("  Warning: Failed to close PR: {}", e);
+                    } else {
+                        println!("  Closed PR #{}", pr_info.number);
+                    }
                 }
             }
         }

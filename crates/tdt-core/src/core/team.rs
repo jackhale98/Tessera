@@ -194,12 +194,26 @@ impl TeamRoster {
     }
 
     /// Get current user as team member (from git config)
+    ///
+    /// Uses the global git config by default. Pass a repo root path to
+    /// also check repo-local git config (which takes precedence).
     pub fn current_user(&self) -> Option<&TeamMember> {
+        self.current_user_in_repo(None)
+    }
+
+    /// Get current user as team member, using repo-scoped git config
+    ///
+    /// When `repo_root` is provided, git config lookups are run with that
+    /// directory as the working directory, ensuring repo-local overrides
+    /// (e.g., per-repo user.name) are respected.
+    pub fn current_user_in_repo(&self, repo_root: Option<&Path>) -> Option<&TeamMember> {
         // Try git user.name first
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["config", "user.name"])
-            .output()
-        {
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["config", "user.name"]);
+        if let Some(root) = repo_root {
+            cmd.current_dir(root);
+        }
+        if let Ok(output) = cmd.output() {
             if output.status.success() {
                 let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !name.is_empty() {
@@ -211,10 +225,12 @@ impl TeamRoster {
         }
 
         // Try git user.email as fallback
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["config", "user.email"])
-            .output()
-        {
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["config", "user.email"]);
+        if let Some(root) = repo_root {
+            cmd.current_dir(root);
+        }
+        if let Ok(output) = cmd.output() {
             if output.status.success() {
                 let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !email.is_empty() {
