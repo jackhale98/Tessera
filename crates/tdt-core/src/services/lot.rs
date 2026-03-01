@@ -225,6 +225,7 @@ pub struct LotService<'a> {
     project: &'a Project,
     base: ServiceBase<'a>,
     cache: &'a EntityCache,
+    workflow_guard: Option<crate::services::workflow_guard::WorkflowGuard>,
 }
 
 impl<'a> LotService<'a> {
@@ -234,7 +235,14 @@ impl<'a> LotService<'a> {
             project,
             base: ServiceBase::new(project, cache),
             cache,
+            workflow_guard: None,
         }
+    }
+
+    /// Attach a workflow guard for authorization enforcement
+    pub fn with_workflow(mut self, guard: crate::services::workflow_guard::WorkflowGuard) -> Self {
+        self.workflow_guard = Some(guard);
+        self
     }
 
     /// Get a reference to the project
@@ -1155,14 +1163,37 @@ impl<'a> LotService<'a> {
     }
 
     /// Approve or reject a WI step
+    ///
+    /// When a `WorkflowGuard` is attached and enabled, the current user must be
+    /// authorized to approve LOT entities. The guard's resolved identity is used
+    /// for the approval record instead of the raw input.
     pub fn approve_wi_step(
         &self,
         lot_id: &str,
         process_index: usize,
         wi_id: &str,
         step_number: u32,
-        input: ApproveWiStepInput,
+        mut input: ApproveWiStepInput,
     ) -> ServiceResult<Lot> {
+        // Authorization check via workflow guard (if present)
+        if let Some(ref guard) = self.workflow_guard {
+            if let Some(user) = guard.check_approval_auth(
+                crate::core::identity::EntityPrefix::Lot,
+            )? {
+                // Use the authorized user's identity
+                input.approver = user.name.clone();
+                input.email = Some(user.email.clone());
+                if input.role.is_none() {
+                    input.role = user.primary_role().map(|r| r.to_string());
+                }
+            }
+            // Also check signature requirements
+            guard.check_signature_required(
+                crate::core::identity::EntityPrefix::Lot,
+                input.sign,
+            )?;
+        }
+
         let (_, mut lot) = self.find_lot(lot_id)?;
 
         if process_index >= lot.execution.len() {

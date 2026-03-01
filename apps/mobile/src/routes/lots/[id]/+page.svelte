@@ -2,29 +2,41 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { lots, ncrs } from '$lib/api/tauri.js';
+	import { lots, ncrs, deviations } from '$lib/api/tauri.js';
 	import { MobileHeader } from '$lib/components/layout/index.js';
 	import { StatusBadge } from '$lib/components/common/index.js';
-	import { CheckCircle, Circle, Pause, Play, Flag, AlertTriangle, Plus, ChevronDown, ChevronUp, FileText } from 'lucide-svelte';
+	import { CheckCircle, Circle, Pause, Play, Flag, AlertTriangle, Plus, ChevronDown, ChevronUp, FileText, ShieldAlert, GitBranch } from 'lucide-svelte';
 
 	let lot = $state<Record<string, unknown> | null>(null);
 	let loading = $state(true);
 	let nextStep = $state<number | null>(null);
 	let expandedStep = $state<number | null>(null);
 	let stepUpdateLoading = $state(false);
+	let linkedNcrs = $state<Record<string, unknown>[]>([]);
+	let linkedDeviations = $state<Record<string, unknown>[]>([]);
 
 	let lotId = $derived($page.params.id);
 
-	// Lot step types
-	interface LotStep {
-		process_id?: string;
-		process_title?: string;
+	// Execution step types matching the real entity structure
+	interface WorkInstructionRef {
+		id: string;
+		revision?: number;
+	}
+
+	interface ExecutionStep {
+		process?: string;
+		process_revision?: number;
 		status?: string;
 		operator?: string;
-		started_at?: string;
-		completed_at?: string;
+		operator_email?: string;
+		started_date?: string;
+		completed_date?: string;
 		notes?: string;
-		work_instructions_used?: string[];
+		signature_verified?: boolean;
+		commit_sha?: string;
+		data?: Record<string, unknown>;
+		work_instructions_used?: WorkInstructionRef[];
+		wi_step_executions?: Array<Record<string, unknown>>;
 	}
 
 	// WI step execution state
@@ -34,7 +46,7 @@
 	let wiStepComplete = $state(false);
 	let wiStepLoading = $state(false);
 
-	let steps = $derived<LotStep[]>((lot?.steps as LotStep[]) ?? []);
+	let steps = $derived<ExecutionStep[]>((lot?.execution as ExecutionStep[]) ?? []);
 	let completedCount = $derived(steps.filter(s => s.status === 'completed').length);
 	let progress = $derived(steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0);
 
@@ -51,6 +63,19 @@
 			]);
 			lot = lotData as Record<string, unknown>;
 			nextStep = next;
+
+			// Fetch linked NCRs and deviations
+			const links = lot?.links as Record<string, unknown> | undefined;
+			const ncrIds = (links?.ncrs as string[]) ?? [];
+			const devIds = (links?.deviations as string[]) ?? [];
+
+			const [fetchedNcrs, fetchedDevs] = await Promise.all([
+				Promise.all(ncrIds.map(id => ncrs.get(id).catch(() => null))),
+				Promise.all(devIds.map(id => deviations.get(id).catch(() => null)))
+			]);
+
+			linkedNcrs = fetchedNcrs.filter(Boolean) as Record<string, unknown>[];
+			linkedDeviations = fetchedDevs.filter(Boolean) as Record<string, unknown>[];
 		} finally {
 			loading = false;
 		}
@@ -176,7 +201,7 @@
 								</div>
 								<div class="step-info">
 									<span class="step-num">Step {index + 1}</span>
-									<span class="step-title">{step.process_title || step.process_id || 'Unnamed step'}</span>
+									<span class="step-title">{step.process || 'Unnamed step'}</span>
 									{#if step.operator}
 										<span class="step-meta">{step.operator}</span>
 									{/if}
@@ -190,6 +215,16 @@
 
 							{#if expandedStep === index}
 								<div class="step-expanded" onclick={(e) => e.stopPropagation()}>
+									{#if step.started_date || step.completed_date}
+										<div class="step-dates">
+											{#if step.started_date}
+												<span class="step-meta">Started: {new Date(step.started_date).toLocaleDateString()}</span>
+											{/if}
+											{#if step.completed_date}
+												<span class="step-meta">Completed: {new Date(step.completed_date).toLocaleDateString()}</span>
+											{/if}
+										</div>
+									{/if}
 									{#if step.notes}
 										<p class="step-notes">{step.notes}</p>
 									{/if}
@@ -220,13 +255,13 @@
 												{#each step.work_instructions_used as wi}
 													<button
 														class="wi-btn"
-														class:expanded={wiStepExpanded === `${index}-${wi}`}
-														onclick={() => wiStepExpanded = wiStepExpanded === `${index}-${wi}` ? null : `${index}-${wi}`}
+														class:expanded={wiStepExpanded === `${index}-${wi.id}`}
+														onclick={() => wiStepExpanded = wiStepExpanded === `${index}-${wi.id}` ? null : `${index}-${wi.id}`}
 													>
 														<FileText size={14} />
-														<span>{wi}</span>
+														<span>{wi.id}{wi.revision != null ? ` (rev ${wi.revision})` : ''}</span>
 													</button>
-													{#if wiStepExpanded === `${index}-${wi}`}
+													{#if wiStepExpanded === `${index}-${wi.id}`}
 														<div class="wi-exec-form" onclick={(e) => e.stopPropagation()}>
 															<input type="text" placeholder="Operator" class="wi-input" bind:value={wiStepOperator} />
 															<input type="number" placeholder="Step #" min={1} class="wi-input" bind:value={wiStepNumber} />
@@ -234,7 +269,7 @@
 																<input type="checkbox" bind:checked={wiStepComplete} />
 																<span>Complete</span>
 															</label>
-															<button class="step-action-btn primary" onclick={() => executeWiStep(index, wi)} disabled={wiStepLoading}>
+															<button class="step-action-btn primary" onclick={() => executeWiStep(index, wi.id)} disabled={wiStepLoading}>
 																{wiStepLoading ? "Executing..." : "Execute"}
 															</button>
 														</div>
@@ -250,6 +285,63 @@
 				</div>
 			{/if}
 		</section>
+
+		<!-- NCRs -->
+		{#if linkedNcrs.length > 0}
+			<section class="section">
+				<h2 class="section-title">
+					<AlertTriangle size={16} />
+					Non-Conformances ({linkedNcrs.length})
+				</h2>
+				<div class="linked-list">
+					{#each linkedNcrs as ncr}
+						<a href="/quality/ncrs/{ncr.id}" class="linked-card ncr">
+							<div class="linked-card-header">
+								<StatusBadge status={ncr.ncr_status as string} />
+								{#if ncr.severity}
+									<span class="severity-tag {ncr.severity}">{ncr.severity}</span>
+								{/if}
+							</div>
+							<span class="linked-card-title">{ncr.title}</span>
+							{#if ncr.ncr_number}
+								<span class="linked-card-meta">{ncr.ncr_number}</span>
+							{/if}
+						</a>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		<!-- Deviations -->
+		{#if linkedDeviations.length > 0}
+			<section class="section">
+				<h2 class="section-title">
+					<GitBranch size={16} />
+					Process Deviations ({linkedDeviations.length})
+				</h2>
+				<div class="linked-list">
+					{#each linkedDeviations as dev}
+						<a href="/more/deviations/{dev.id}" class="linked-card deviation">
+							<div class="linked-card-header">
+								<StatusBadge status={dev.dev_status as string} />
+								{#if dev.risk_level}
+									<span class="risk-tag {dev.risk_level}">{dev.risk_level}</span>
+								{/if}
+							</div>
+							<span class="linked-card-title">{dev.title}</span>
+							<div class="linked-card-footer">
+								{#if dev.deviation_number}
+									<span class="linked-card-meta">{dev.deviation_number}</span>
+								{/if}
+								{#if dev.expiration_date}
+									<span class="linked-card-meta">Expires: {new Date(dev.expiration_date as string).toLocaleDateString()}</span>
+								{/if}
+							</div>
+						</a>
+					{/each}
+				</div>
+			</section>
+		{/if}
 
 		<!-- Info -->
 		<section class="section">
@@ -365,7 +457,7 @@
 	.action-btn.destructive { background-color: color-mix(in oklch, var(--theme-error) 15%, transparent); color: var(--theme-error); border-color: var(--theme-error); }
 
 	.section { display: flex; flex-direction: column; gap: 10px; }
-	.section-title { font-size: 16px; font-weight: 700; padding: 0 4px; }
+	.section-title { font-size: 16px; font-weight: 700; padding: 0 4px; display: flex; align-items: center; gap: 6px; }
 
 	.steps-list { display: flex; flex-direction: column; gap: 6px; }
 
@@ -423,6 +515,7 @@
 		gap: 10px;
 	}
 
+	.step-dates { display: flex; gap: 16px; flex-wrap: wrap; }
 	.step-notes { font-size: 13px; color: var(--theme-muted-foreground); line-height: 1.5; }
 
 	.step-actions { display: flex; gap: 8px; }
@@ -477,6 +570,44 @@
 	.wi-exec-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; background: var(--theme-muted); }
 	.wi-input { width: 100%; padding: 8px 10px; border: 1px solid var(--theme-border); border-radius: 8px; font-size: 13px; background: var(--theme-card); }
 	.wi-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+
+	.linked-list { display: flex; flex-direction: column; gap: 8px; }
+
+	.linked-card {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 14px 16px;
+		background-color: var(--theme-card);
+		border: 1px solid var(--theme-border);
+		border-radius: 14px;
+		text-decoration: none;
+		color: inherit;
+		transition: transform 0.1s ease;
+	}
+
+	.linked-card:active { transform: scale(0.98); }
+
+	.linked-card.ncr { border-left: 3px solid var(--theme-error); }
+	.linked-card.deviation { border-left: 3px solid var(--theme-warning); }
+
+	.linked-card-header { display: flex; align-items: center; gap: 8px; }
+	.linked-card-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+	.linked-card-meta { font-size: 12px; color: var(--theme-muted-foreground); }
+	.linked-card-footer { display: flex; gap: 12px; flex-wrap: wrap; }
+
+	.severity-tag, .risk-tag {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 2px 8px;
+		border-radius: 6px;
+	}
+
+	.severity-tag.minor, .risk-tag.low { background-color: color-mix(in oklch, var(--theme-success) 15%, transparent); color: var(--theme-success); }
+	.severity-tag.major, .risk-tag.medium { background-color: color-mix(in oklch, var(--theme-warning) 15%, transparent); color: var(--theme-warning); }
+	.severity-tag.critical, .risk-tag.high { background-color: color-mix(in oklch, var(--theme-error) 15%, transparent); color: var(--theme-error); }
 
 	.empty-text { font-size: 13px; color: var(--theme-muted-foreground); padding: 16px; text-align: center; }
 

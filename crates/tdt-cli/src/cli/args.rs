@@ -47,7 +47,9 @@ use crate::cli::commands::{
     validate::ValidateArgs,
     where_used::WhereUsedArgs,
     work::WorkCommands,
-    workflow::{ApproveArgs, RejectArgs, ReleaseArgs, ReviewCommands, SubmitArgs, TeamCommands},
+    workflow::{
+        ApproveArgs, CheckArgs, RejectArgs, ReleaseArgs, ReviewCommands, SubmitArgs, TeamCommands,
+    },
 };
 
 /// Custom help template with grouped commands
@@ -115,6 +117,7 @@ WORKFLOW (opt-in):
   release     Release approved entities
   review      View pending reviews (list, summary)
   team        Team roster management (list, whoami, init, add, remove)
+  check       Check entities meet approval requirements
 
 INTERCHANGE:
   export      Export project data (sysml)
@@ -350,6 +353,9 @@ pub enum Commands {
     /// Team roster management (list, whoami, init, add, remove)
     #[command(subcommand)]
     Team(TeamCommands),
+
+    /// Check entities meet approval requirements
+    Check(CheckArgs),
 
     // ─────────────────────────────────────────────────────────────────────
     // INTERCHANGE

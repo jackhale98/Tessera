@@ -202,6 +202,7 @@ pub struct DeviationService<'a> {
     project: &'a Project,
     base: ServiceBase<'a>,
     cache: &'a EntityCache,
+    workflow_guard: Option<crate::services::workflow_guard::WorkflowGuard>,
 }
 
 impl<'a> DeviationService<'a> {
@@ -211,7 +212,14 @@ impl<'a> DeviationService<'a> {
             project,
             base: ServiceBase::new(project, cache),
             cache,
+            workflow_guard: None,
         }
+    }
+
+    /// Attach a workflow guard for authorization enforcement
+    pub fn with_workflow(mut self, guard: crate::services::workflow_guard::WorkflowGuard) -> Self {
+        self.workflow_guard = Some(guard);
+        self
     }
 
     /// Get a reference to the project
@@ -511,13 +519,24 @@ impl<'a> DeviationService<'a> {
     }
 
     /// Approve a deviation
+    ///
+    /// When a `WorkflowGuard` is attached and enabled, the current user must be
+    /// authorized to approve DEV entities. The guard's resolved identity overrides
+    /// the `approved_by` parameter.
     pub fn approve(
         &self,
         id: &str,
-        approved_by: String,
+        mut approved_by: String,
         authorization_level: AuthorizationLevel,
         activate: bool,
     ) -> ServiceResult<Dev> {
+        // Authorization check via workflow guard (if present)
+        if let Some(ref guard) = self.workflow_guard {
+            if let Some(user) = guard.check_approval_auth(EntityPrefix::Dev)? {
+                approved_by = user.name.clone();
+            }
+        }
+
         let (_, mut dev) = self.find_deviation(id)?;
 
         // Validate current status

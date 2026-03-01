@@ -68,40 +68,43 @@ function getMockResponse<T>(cmd: string, args?: Record<string, unknown>): T {
 		get_all_entity_counts: { REQ: 12, RISK: 8, HAZ: 2, TEST: 15, RSLT: 10, CMP: 20, ASM: 5, FEAT: 3, MATE: 2, TOL: 1, PROC: 6, CTRL: 4, WORK: 3, LOT: 7, DEV: 2, NCR: 4, CAPA: 3, QUOT: 1, SUP: 2 },
 		list_lots: {
 			items: [
-				{ id: 'LOT-01DEMO001', title: 'Production Lot A-2024', lot_number: 'LOT-001', quantity: 100, lot_status: 'in_progress', status: 'draft', start_date: '2024-12-01', author: 'J. Smith', created: '2024-11-28' },
-				{ id: 'LOT-01DEMO002', title: 'Prototype Lot B', lot_number: 'LOT-002', quantity: 10, lot_status: 'in_progress', status: 'draft', author: 'A. Chen', created: '2024-12-05' },
-				{ id: 'LOT-01DEMO003', title: 'QC Validation Batch', lot_number: 'LOT-003', quantity: 50, lot_status: 'on_hold', status: 'draft', author: 'M. Park', created: '2024-12-10' },
-				{ id: 'LOT-01DEMO004', title: 'Final Assembly Run', lot_number: 'LOT-004', quantity: 200, lot_status: 'completed', status: 'approved', completion_date: '2024-12-20', author: 'J. Smith', created: '2024-11-15' }
+				{ id: 'LOT-01DEMO001', title: 'Cold Plate Sub-Assembly Lot 001', lot_number: 'LOT-2026-001', quantity: 50, lot_status: 'in_progress', status: 'draft', start_date: '2026-02-15', author: 'Jack Hale', created: '2026-02-14T18:30:00Z', entity_revision: 8 },
+				{ id: 'LOT-01DEMO002', title: 'Cold Plate Sub-Assembly Lot 002', lot_number: 'LOT-2026-002', quantity: 25, lot_status: 'completed', status: 'draft', start_date: '2026-02-20', completion_date: '2026-02-28', author: 'Jack Hale', created: '2026-02-19T14:00:00Z', entity_revision: 21 },
+				{ id: 'LOT-01DEMO003', title: 'Bracket Assembly Lot 003', lot_number: 'LOT-2026-003', quantity: 100, lot_status: 'on_hold', status: 'draft', start_date: '2026-02-25', author: 'Mike Chen', created: '2026-02-24T09:15:00Z', entity_revision: 5 },
+				{ id: 'LOT-01DEMO004', title: 'Housing Machining Lot 004', lot_number: 'LOT-2026-004', quantity: 30, lot_status: 'in_progress', status: 'draft', start_date: '2026-02-27', author: 'Sarah Kim', created: '2026-02-26T11:00:00Z', entity_revision: 3 },
+				{ id: 'LOT-01DEMO005', title: 'Connector Assembly Lot 005', lot_number: 'LOT-2026-005', quantity: 200, lot_status: 'completed', status: 'approved', start_date: '2026-01-10', completion_date: '2026-02-05', author: 'Jack Hale', created: '2026-01-09T08:00:00Z', entity_revision: 15 },
+				{ id: 'LOT-01DEMO006', title: 'Prototype Enclosure Lot', lot_number: 'LOT-2026-006', quantity: 5, lot_status: 'scrapped', status: 'draft', start_date: '2026-02-01', author: 'Mike Chen', created: '2026-01-31T16:00:00Z', entity_revision: 7 },
+				{ id: 'LOT-01DEMO007', title: 'Heatsink Fin Assembly Lot 007', lot_number: 'LOT-2026-007', quantity: 75, lot_status: 'in_progress', status: 'draft', start_date: '2026-03-01', author: 'Sarah Kim', created: '2026-02-28T13:45:00Z', entity_revision: 2 }
 			],
-			total_count: 4, has_more: false
+			total_count: 7, has_more: false
 		},
 		list_ncrs: {
 			items: [
-				{ id: 'NCR-01DEMO001', title: 'Dimensional out-of-spec on housing', ncr_number: 'NCR-2024-001', ncr_type: 'internal', severity: 'major', ncr_status: 'investigation', category: 'dimensional', status: 'draft', author: 'Q. Inspector', created: '2024-12-15' },
-				{ id: 'NCR-01DEMO002', title: 'Surface finish defect on cover plate', ncr_number: 'NCR-2024-002', ncr_type: 'supplier', severity: 'minor', ncr_status: 'open', category: 'cosmetic', status: 'draft', author: 'R. Lead', created: '2024-12-18' },
-				{ id: 'NCR-01DEMO003', title: 'Solder joint crack on PCB assembly', ncr_number: 'NCR-2024-003', ncr_type: 'internal', severity: 'critical', ncr_status: 'containment', category: 'workmanship', status: 'draft', author: 'E. Tech', created: '2024-12-20' }
+				{ id: 'NCR-01DEMO001', title: 'Bore diameter out-of-spec on housing', ncr_number: 'NCR-2026-001', ncr_type: 'internal', severity: 'major', ncr_status: 'investigation', category: 'dimensional', status: 'draft', author: 'Mike Chen', created: '2026-02-22T14:30:00Z' },
+				{ id: 'NCR-01DEMO002', title: 'Anodize coating thickness below spec on 3 units', ncr_number: 'NCR-2026-002', ncr_type: 'internal', severity: 'minor', ncr_status: 'disposition', category: 'process', status: 'draft', author: 'Sarah Kim', created: '2026-02-24T12:00:00Z' },
+				{ id: 'NCR-01DEMO003', title: 'Incoming aluminum billet hardness non-conformance', ncr_number: 'NCR-2026-003', ncr_type: 'supplier', severity: 'critical', ncr_status: 'containment', category: 'material', status: 'draft', author: 'Jack Hale', created: '2026-02-26T09:00:00Z' }
 			],
 			total_count: 3, has_more: false
 		},
 		list_capas: {
 			items: [
-				{ id: 'CAPA-01DEMO001', title: 'Root cause: solder process parameters', capa_number: 'CAPA-2024-001', capa_type: 'corrective', capa_status: 'investigation', status: 'draft', due_date: '2025-01-15', author: 'M. Engineer', created: '2024-12-21' },
-				{ id: 'CAPA-01DEMO002', title: 'Prevent dimensional drift on CNC ops', capa_number: 'CAPA-2024-002', capa_type: 'preventive', capa_status: 'implementation', status: 'draft', due_date: '2025-02-01', author: 'J. Smith', created: '2024-12-16' }
+				{ id: 'CAPA-01DEMO001', title: 'Root cause: anodize coating thickness variation', capa_number: 'CAPA-2026-001', capa_type: 'corrective', capa_status: 'investigation', status: 'draft', due_date: '2026-03-15', author: 'Sarah Kim', created: '2026-02-25T10:00:00Z' },
+				{ id: 'CAPA-01DEMO002', title: 'Prevent CNC tool wear dimensional drift', capa_number: 'CAPA-2026-002', capa_type: 'preventive', capa_status: 'implementation', status: 'draft', due_date: '2026-04-01', author: 'Mike Chen', created: '2026-02-23T15:00:00Z' }
 			],
 			total_count: 2, has_more: false
 		},
 		list_deviations: {
 			items: [
-				{ id: 'DEV-01DEMO001', title: 'Temporary material substitution - AL6061 to AL7075', deviation_number: 'DEV-2024-001', deviation_type: 'temporary', category: 'material', risk_level: 'low', dev_status: 'active', status: 'approved', author: 'J. Smith', created: '2024-12-01' },
-				{ id: 'DEV-01DEMO002', title: 'Emergency: alternate supplier for connector P/N 12345', deviation_number: 'DEV-2024-002', deviation_type: 'emergency', category: 'material', risk_level: 'medium', dev_status: 'pending', status: 'draft', author: 'A. Buyer', created: '2024-12-19' }
+				{ id: 'DEV-01DEMO001', title: 'Temporary material substitution - AL6061 to AL7075 for bracket', deviation_number: 'DEV-2026-001', deviation_type: 'temporary', category: 'material', risk_level: 'low', dev_status: 'active', status: 'approved', author: 'Jack Hale', created: '2026-02-10T08:00:00Z' },
+				{ id: 'DEV-01DEMO002', title: 'Emergency: alternate anodize supplier due to capacity', deviation_number: 'DEV-2026-002', deviation_type: 'emergency', category: 'process', risk_level: 'medium', dev_status: 'pending', status: 'draft', author: 'Sarah Kim', created: '2026-02-27T16:00:00Z' }
 			],
 			total_count: 2, has_more: false
 		},
 		get_ncr_stats: { total: 3, by_ncr_status: { open: 1, containment: 1, investigation: 1, disposition: 0, closed: 0 }, by_type: { internal: 2, supplier: 1, customer: 0 }, by_severity: { minor: 1, major: 1, critical: 1 }, open: 3, total_cost: 2500 },
 		get_capa_stats: { total: 2, by_capa_status: { initiation: 0, investigation: 1, implementation: 1, verification: 0, closed: 0 }, by_type: { corrective: 1, preventive: 1 }, open: 2, overdue: 0, verified_effective: 0 },
-		get_lot_stats: { total: 4, by_status: { in_progress: 2, on_hold: 1, completed: 1, scrapped: 0 }, total_quantity: 360, avg_quantity: 90, with_git_branch: 0, merged_branches: 0 },
+		get_lot_stats: { total: 7, by_status: { in_progress: 3, on_hold: 1, completed: 2, scrapped: 1 }, total_quantity: 485, avg_quantity: 69, with_git_branch: 0, merged_branches: 0 },
 		get_deviation_stats: { total: 2, by_dev_status: { pending: 1, approved: 0, active: 1, expired: 0, closed: 0, rejected: 0 }, by_type: { temporary: 1, permanent: 0, emergency: 1 }, by_category: { material: 2, process: 0, equipment: 0, tooling: 0, specification: 0, documentation: 0 }, by_risk: { low: 1, medium: 1, high: 0 }, active: 1 },
-		get_lot_next_step: 0,
+		get_lot_next_step: 1,
 		list_entities: { items: [], total_count: 0, has_more: false },
 		search_entities: [],
 		get_entity: null,
@@ -112,26 +115,393 @@ function getMockResponse<T>(cmd: string, args?: Record<string, unknown>): T {
 		sync_cache: undefined,
 	};
 
-	// Handle specific lot/ncr/capa get by returning first mock item
+	// Handle specific lot get — return full lot with execution steps
 	if (cmd === 'get_lot') {
-		const lotItems = (mocks['list_lots'] as { items: unknown[] }).items;
-		const match = lotItems.find((l: unknown) => (l as Record<string, string>).id === (args?.id as string));
-		return (match ?? { id: args?.id, title: 'Demo Lot', lot_status: 'in_progress', status: 'draft', quantity: 50, author: 'Demo User', created: new Date().toISOString(), steps: [
-			{ process_title: 'Incoming Inspection', status: 'completed', operator: 'Q. Inspector' },
-			{ process_title: 'CNC Machining', status: 'in_progress', operator: 'M. Operator' },
-			{ process_title: 'Deburring & Finishing', status: 'pending' },
-			{ process_title: 'Final QC', status: 'pending' },
-			{ process_title: 'Packaging', status: 'pending' }
-		] }) as T;
+		const id = args?.id as string;
+		const lotMocks: Record<string, unknown> = {
+			'LOT-01DEMO001': {
+				id: 'LOT-01DEMO001',
+				title: 'Cold Plate Sub-Assembly Lot 001',
+				lot_number: 'LOT-2026-001',
+				quantity: 50,
+				lot_status: 'in_progress',
+				start_date: '2026-02-15',
+				notes: 'First production run of cold plate sub-assemblies for Q1 delivery',
+				materials_used: [
+					{ component: 'CMP-01DEMO001', supplier_lot: 'MC-2026-0142', quantity: 50 },
+					{ component: 'CMP-01DEMO002', supplier_lot: 'SC-2026-0088', quantity: 200 }
+				],
+				execution: [
+					{
+						process: 'PROC-01DEMO001',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO001', revision: 3 }],
+						status: 'completed',
+						started_date: '2026-02-15',
+						completed_date: '2026-02-18',
+						operator: 'Mike Chen',
+						operator_email: 'mchen@example.com',
+						notes: 'CNC machining complete, all 50 units pass dimensional check',
+						signature_verified: true,
+						commit_sha: 'a1b2c3d4e5f6789012345678901234567890abcd',
+						data: { channel_depth: '3.01mm', flatness: '0.02mm' },
+						wi_step_executions: [
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 1,
+								operator: 'Mike Chen',
+								operator_email: 'mchen@example.com',
+								completed_at: '2026-02-15T08:30:00Z',
+								data: { material_cert: 'MC-2026-0142' },
+								approval_status: 'not_required',
+								notes: 'Verified material cert for 6061-T6 aluminum billet'
+							},
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 2,
+								operator: 'Mike Chen',
+								operator_email: 'mchen@example.com',
+								completed_at: '2026-02-15T09:15:00Z',
+								data: { torque_value: 35.0, fixture_id: 'FIX-CNC-007' },
+								approval_status: 'not_required',
+								notes: 'Cold plate blank mounted in 5-axis fixture, torqued to 35 ft-lbs'
+							},
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 3,
+								operator: 'Mike Chen',
+								operator_email: 'mchen@example.com',
+								completed_at: '2026-02-16T14:20:00Z',
+								data: { cnc_program: 'CPSA-001-R3' },
+								equipment_used: { 'Haas VF-4SS': 'SN-44821' },
+								approval_status: 'not_required',
+								notes: 'Rough machining complete, program CPSA-001-R3'
+							},
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 4,
+								operator: 'Mike Chen',
+								operator_email: 'mchen@example.com',
+								completed_at: '2026-02-18T10:00:00Z',
+								data: { length: '152.1mm', width: '101.8mm', depth: '24.9mm' },
+								approvals: [{
+									approver: 'Jack Hale',
+									email: 'jhale@example.com',
+									role: 'quality',
+									timestamp: '2026-02-18T10:30:00Z',
+									comment: 'Rough dimensions verified, within tolerance per drawing'
+								}],
+								approval_status: 'approved',
+								notes: 'Rough dimension check - all within tolerance'
+							}
+						]
+					},
+					{
+						process: 'PROC-01DEMO002',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO002', revision: 2 }],
+						status: 'in_progress',
+						started_date: '2026-02-19',
+						operator: 'Sarah Kim',
+						operator_email: 'skim@example.com',
+						notes: 'Anodizing in progress — 30 of 50 units processed',
+						wi_step_executions: [
+							{
+								work_instruction: 'WORK-01DEMO002',
+								step_number: 1,
+								operator: 'Sarah Kim',
+								operator_email: 'skim@example.com',
+								completed_at: '2026-02-19T07:45:00Z',
+								data: { bath_time: '15min', bath_temp: '140F' },
+								approval_status: 'not_required',
+								notes: 'Alkaline degreaser bath - 15 min at 140F'
+							},
+							{
+								work_instruction: 'WORK-01DEMO002',
+								step_number: 2,
+								operator: 'Sarah Kim',
+								operator_email: 'skim@example.com',
+								completed_at: '2026-02-19T09:00:00Z',
+								data: { bath_time: '45min', bath_concentration: '15pct', voltage: '18V' },
+								equipment_used: { 'Anodize Tank 2': 'AT-2-SN003' },
+								approval_status: 'not_required',
+								notes: 'Type III sulfuric acid anodize - 18V, 45 min'
+							}
+						]
+					},
+					{
+						process: 'PROC-01DEMO003',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO003' }],
+						status: 'pending',
+						notes: null
+					},
+					{
+						process: 'PROC-01DEMO004',
+						process_revision: 1,
+						work_instructions_used: [],
+						status: 'pending',
+						notes: null
+					}
+				],
+				links: {
+					product: 'ASM-01DEMO001',
+					processes: ['PROC-01DEMO001', 'PROC-01DEMO002', 'PROC-01DEMO003', 'PROC-01DEMO004'],
+					work_instructions: ['WORK-01DEMO001', 'WORK-01DEMO002', 'WORK-01DEMO003'],
+					ncrs: [],
+					results: []
+				},
+				status: 'draft',
+				created: '2026-02-14T18:30:00Z',
+				author: 'Jack Hale',
+				entity_revision: 8
+			},
+			'LOT-01DEMO002': {
+				id: 'LOT-01DEMO002',
+				title: 'Cold Plate Sub-Assembly Lot 002',
+				lot_number: 'LOT-2026-002',
+				quantity: 25,
+				lot_status: 'completed',
+				start_date: '2026-02-20',
+				completion_date: '2026-02-28',
+				materials_used: [
+					{ component: 'CMP-01DEMO001', supplier_lot: 'MC-2026-0198', quantity: 25 }
+				],
+				execution: [
+					{
+						process: 'PROC-01DEMO001',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO001', revision: 3 }],
+						status: 'completed',
+						started_date: '2026-02-20',
+						completed_date: '2026-02-22',
+						operator: 'Mike Chen',
+						notes: 'CNC machining complete, all 25 units pass inspection',
+						signature_verified: true,
+						commit_sha: 'b2c3d4e5f67890123456789012345678901abcde',
+						wi_step_executions: [
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 1,
+								operator: 'Mike Chen',
+								completed_at: '2026-02-20T08:00:00Z',
+								data: { material_cert: 'MC-2026-0198' },
+								approval_status: 'not_required',
+								notes: 'Verified material cert for 6061-T6 aluminum billet'
+							},
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 3,
+								operator: 'Mike Chen',
+								completed_at: '2026-02-21T15:30:00Z',
+								data: { channel_depth: '3.02mm', flatness: '0.03mm' },
+								equipment_used: { 'Haas VF-4SS': 'SN-44821' },
+								approvals: [{
+									approver: 'Jack Hale',
+									role: 'quality',
+									timestamp: '2026-02-21T16:00:00Z',
+									comment: 'Dimensions verified per drawing TMS-CPSA-001 Rev D'
+								}],
+								approval_status: 'approved',
+								notes: 'All 25 pieces within tolerance'
+							}
+						]
+					},
+					{
+						process: 'PROC-01DEMO002',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO002', revision: 2 }],
+						status: 'completed',
+						started_date: '2026-02-23',
+						completed_date: '2026-02-25',
+						operator: 'Sarah Kim',
+						notes: '22 of 25 units pass anodizing. 3 units segregated under NCR for rework.',
+						commit_sha: 'c3d4e5f678901234567890123456789012abcdef',
+						wi_step_executions: [
+							{
+								work_instruction: 'WORK-01DEMO002',
+								step_number: 2,
+								operator: 'Sarah Kim',
+								completed_at: '2026-02-24T11:00:00Z',
+								data: { units_pass: 22, units_fail: 3, coating_min: '40um', coating_max: '65um' },
+								equipment_used: { 'Anodize Tank Line 2': 'AT2-SN-003' },
+								approvals: [{
+									approver: 'Jack Hale',
+									role: 'quality',
+									timestamp: '2026-02-24T11:45:00Z',
+									comment: '22/25 pass. 3 units below 50um spec - segregate for NCR'
+								}],
+								approval_status: 'approved',
+								notes: 'Type III anodize complete. Coating measured 55-65um on 22/25 parts'
+							}
+						]
+					},
+					{
+						process: 'PROC-01DEMO003',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO003' }],
+						status: 'completed',
+						started_date: '2026-02-26',
+						completed_date: '2026-02-27',
+						operator: 'Mike Chen',
+						notes: 'Final assembly and inspection complete',
+						commit_sha: 'd4e5f6789012345678901234567890123abcdef0'
+					},
+					{
+						process: 'PROC-01DEMO004',
+						process_revision: 1,
+						work_instructions_used: [],
+						status: 'completed',
+						started_date: '2026-02-28',
+						completed_date: '2026-02-28',
+						operator: 'Sarah Kim',
+						notes: 'Packaging and labeling complete, lot shipped',
+						commit_sha: 'e5f67890123456789012345678901234abcdef01'
+					}
+				],
+				links: {
+					product: 'ASM-01DEMO001',
+					processes: ['PROC-01DEMO001', 'PROC-01DEMO002', 'PROC-01DEMO003', 'PROC-01DEMO004'],
+					ncrs: ['NCR-01DEMO002'],
+					results: ['RSLT-01DEMO001']
+				},
+				status: 'draft',
+				created: '2026-02-19T14:00:00Z',
+				author: 'Jack Hale',
+				entity_revision: 21
+			},
+			'LOT-01DEMO003': {
+				id: 'LOT-01DEMO003',
+				title: 'Bracket Assembly Lot 003',
+				lot_number: 'LOT-2026-003',
+				quantity: 100,
+				lot_status: 'on_hold',
+				start_date: '2026-02-25',
+				notes: 'On hold pending supplier material cert verification',
+				execution: [
+					{
+						process: 'PROC-01DEMO001',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO001' }],
+						status: 'completed',
+						started_date: '2026-02-25',
+						completed_date: '2026-02-26',
+						operator: 'Mike Chen',
+						notes: 'Machining complete on first 40 units'
+					},
+					{
+						process: 'PROC-01DEMO002',
+						process_revision: 1,
+						work_instructions_used: [{ id: 'WORK-01DEMO002' }],
+						status: 'in_progress',
+						started_date: '2026-02-27',
+						operator: 'Sarah Kim',
+						notes: 'HOLD: Anodizing paused — awaiting material cert from supplier'
+					},
+					{
+						process: 'PROC-01DEMO003',
+						process_revision: 1,
+						status: 'pending'
+					}
+				],
+				links: {
+					product: 'ASM-01DEMO002',
+					processes: ['PROC-01DEMO001', 'PROC-01DEMO002', 'PROC-01DEMO003'],
+					ncrs: [],
+					deviations: ['DEV-01DEMO001'],
+					results: []
+				},
+				status: 'draft',
+				created: '2026-02-24T09:15:00Z',
+				author: 'Mike Chen',
+				entity_revision: 5
+			},
+			'LOT-01DEMO004': {
+				id: 'LOT-01DEMO004',
+				title: 'Housing Machining Lot 004',
+				lot_number: 'LOT-2026-004',
+				quantity: 30,
+				lot_status: 'in_progress',
+				start_date: '2026-02-27',
+				execution: [
+					{
+						process: 'PROC-01DEMO001',
+						process_revision: 2,
+						work_instructions_used: [{ id: 'WORK-01DEMO001', revision: 3 }],
+						status: 'in_progress',
+						started_date: '2026-02-27',
+						operator: 'Mike Chen',
+						notes: 'Running CNC program — 12 of 30 units completed',
+						wi_step_executions: [
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 1,
+								operator: 'Mike Chen',
+								completed_at: '2026-02-27T07:30:00Z',
+								data: { material_cert: 'MC-2026-0215' },
+								approval_status: 'not_required',
+								notes: 'Material loaded and cert verified'
+							},
+							{
+								work_instruction: 'WORK-01DEMO001',
+								step_number: 2,
+								operator: 'Mike Chen',
+								completed_at: '2026-02-27T08:00:00Z',
+								data: { fixture_id: 'FIX-CNC-012', torque_value: 40.0 },
+								approval_status: 'not_required',
+								notes: 'Fixture mounted and torqued'
+							}
+						]
+					},
+					{
+						process: 'PROC-01DEMO002',
+						process_revision: 1,
+						status: 'pending'
+					},
+					{
+						process: 'PROC-01DEMO004',
+						process_revision: 1,
+						status: 'pending'
+					}
+				],
+				links: {
+					product: 'CMP-01DEMO003',
+					processes: ['PROC-01DEMO001', 'PROC-01DEMO002', 'PROC-01DEMO004'],
+					ncrs: ['NCR-01DEMO001'],
+					deviations: ['DEV-01DEMO002']
+				},
+				status: 'draft',
+				created: '2026-02-26T11:00:00Z',
+				author: 'Sarah Kim',
+				entity_revision: 3
+			}
+		};
+		const match = lotMocks[id];
+		if (match) return match as T;
+		// Fallback for unknown lot IDs
+		const listItems = (mocks['list_lots'] as { items: unknown[] }).items;
+		const listMatch = listItems.find((l: unknown) => (l as Record<string, string>).id === id);
+		return (listMatch ?? { id, title: 'Unknown Lot', lot_status: 'in_progress', status: 'draft', quantity: 0, author: 'Demo User', created: new Date().toISOString(), execution: [] }) as T;
 	}
 	if (cmd === 'get_ncr') {
-		return { id: args?.id, title: 'Demo NCR', ncr_status: 'investigation', ncr_type: 'internal', severity: 'major', category: 'dimensional', description: 'Housing bore diameter measured at 25.12mm, spec is 25.00 +/- 0.05mm. 3 of 10 parts affected.', author: 'Q. Inspector', created: new Date().toISOString() } as T;
+		const ncrId = args?.id as string;
+		const ncrMocks: Record<string, unknown> = {
+			'NCR-01DEMO001': { id: 'NCR-01DEMO001', title: 'Bore diameter out-of-spec on cold plate housing units', ncr_number: 'NCR-2026-001', ncr_status: 'investigation', ncr_type: 'internal', severity: 'major', category: 'dimensional', description: 'Housing bore diameter measured at 25.12mm, spec is 25.00 +/- 0.05mm. 3 of 30 parts affected in LOT-2026-004.', lot_ids: ['LOT-01DEMO004'], author: 'Mike Chen', created: '2026-02-22T14:30:00Z', status: 'draft', entity_revision: 3 },
+			'NCR-01DEMO002': { id: 'NCR-01DEMO002', title: 'Anodize coating thickness below minimum spec on 3 units', ncr_number: 'NCR-2026-002', ncr_status: 'open', ncr_type: 'internal', severity: 'minor', category: 'process', description: 'Anodize coating thickness measured at 42um on 3 units, minimum spec is 50um. Lot 002, anodize step.', lot_ids: ['LOT-01DEMO002'], author: 'Sarah Kim', created: '2026-02-24T11:00:00Z', status: 'draft', entity_revision: 2 },
+			'NCR-01DEMO003': { id: 'NCR-01DEMO003', title: 'Incoming aluminum billet hardness non-conformance', ncr_number: 'NCR-2026-003', ncr_status: 'containment', ncr_type: 'supplier', severity: 'critical', category: 'material', description: 'Incoming inspection: Brinell hardness on 5 billets from supplier lot SL-2026-088 measured 58-62 HB, spec requires 65-75 HB.', lot_ids: [], author: 'Jack Hale', created: '2026-02-26T09:00:00Z', status: 'draft', entity_revision: 1 }
+		};
+		return (ncrMocks[ncrId] ?? { id: ncrId, title: 'Unknown NCR', ncr_status: 'open', severity: 'minor', status: 'draft', author: 'Unknown', created: new Date().toISOString() }) as T;
 	}
 	if (cmd === 'get_capa') {
-		return { id: args?.id, title: 'Demo CAPA', capa_status: 'investigation', capa_type: 'corrective', description: 'Investigating root cause of dimensional non-conformance on housing bore.', author: 'M. Engineer', created: new Date().toISOString(), due_date: '2025-02-01' } as T;
+		return { id: args?.id, title: 'Root cause: anodize coating thickness variation', capa_number: 'CAPA-2026-001', capa_status: 'investigation', capa_type: 'corrective', description: 'Investigating root cause of anodize coating thickness below 50um spec on 3 units from LOT-2026-002. Suspect bath concentration drift over shift.', source_ncr: 'NCR-01DEMO002', author: 'Sarah Kim', created: '2026-02-25T10:00:00Z', due_date: '2026-03-15', status: 'draft', entity_revision: 2 } as T;
 	}
 	if (cmd === 'get_deviation') {
-		return { id: args?.id, title: 'Demo Deviation', dev_status: 'active', deviation_type: 'temporary', category: 'material', risk_level: 'low', description: 'Temporary substitution of AL6061-T6 with AL7075-T6 for bracket P/N 10042.', author: 'J. Smith', created: new Date().toISOString() } as T;
+		const devId = args?.id as string;
+		const devMocks: Record<string, unknown> = {
+			'DEV-01DEMO001': { id: 'DEV-01DEMO001', title: 'Temporary material substitution - AL6061 to AL7075 for bracket', deviation_number: 'DEV-2026-001', dev_status: 'active', deviation_type: 'temporary', category: 'material', risk_level: 'low', description: 'Temporary substitution of AL6061-T6 with AL7075-T6 for bracket P/N 10042 due to supplier stock-out. AL7075 meets or exceeds all mechanical requirements. Valid for LOT-2026-003 only.', approved_by: 'Jack Hale', approval_date: '2026-02-11', effective_date: '2026-02-12', expiration_date: '2026-04-01', lots: ['LOT-01DEMO003'], author: 'Jack Hale', created: '2026-02-10T08:00:00Z', status: 'approved', entity_revision: 4 },
+			'DEV-01DEMO002': { id: 'DEV-01DEMO002', title: 'Emergency: alternate anodize supplier due to capacity', deviation_number: 'DEV-2026-002', dev_status: 'pending', deviation_type: 'emergency', category: 'process', risk_level: 'medium', description: 'Primary anodize supplier at capacity. Temporary switch to AnoTech Corp for LOT-2026-004 anodize step. AnoTech is AS9100 certified but not yet qualified for this part.', lots: ['LOT-01DEMO004'], author: 'Sarah Kim', created: '2026-02-27T16:00:00Z', status: 'draft', entity_revision: 1 }
+		};
+		return (devMocks[devId] ?? { id: devId, title: 'Unknown Deviation', dev_status: 'pending', risk_level: 'low', status: 'draft', author: 'Unknown', created: new Date().toISOString() }) as T;
 	}
 	if (cmd === 'trace_from' || cmd === 'trace_to') {
 		return { nodes: [], edges: [] } as T;

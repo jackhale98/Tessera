@@ -2354,8 +2354,9 @@ fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.wi)
         .unwrap_or_else(|| args.wi.clone());
 
-    // Load lot using service
-    let service = LotService::new(&project, &cache);
+    // Load lot using service (with workflow guard for authorization)
+    let guard = tdt_core::services::WorkflowGuard::load(&project);
+    let service = LotService::new(&project, &cache).with_workflow(guard);
     let mut lot = service
         .get(&resolved_lot_id)
         .map_err(|e| miette::miette!("{}", e))?

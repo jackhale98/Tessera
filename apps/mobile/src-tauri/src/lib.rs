@@ -253,6 +253,12 @@ pub fn run() {
             commands::get_commit_file_diff,
             // Cache commands
             commands::sync_cache,
+            // Workflow commands (general entity approve/submit/reject/release)
+            commands::approve_entity,
+            commands::submit_entity,
+            commands::reject_entity,
+            commands::release_entity,
+            commands::get_entity_approval_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

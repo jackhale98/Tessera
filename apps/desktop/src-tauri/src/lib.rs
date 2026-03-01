@@ -356,6 +356,12 @@ pub fn run() {
             commands::get_recent_commits,
             commands::get_commit_details,
             commands::get_commit_file_diff,
+            // Workflow commands (general entity approve/submit/reject/release)
+            commands::approve_entity,
+            commands::submit_entity,
+            commands::reject_entity,
+            commands::release_entity,
+            commands::get_entity_approval_status,
             // Cache commands
             commands::sync_cache,
         ])

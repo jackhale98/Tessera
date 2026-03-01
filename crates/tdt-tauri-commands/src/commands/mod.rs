@@ -24,6 +24,7 @@ pub mod tests;
 pub mod traceability;
 pub mod version_control;
 pub mod work_instructions;
+pub mod workflow;
 
 use tdt_core::core::identity::EntityPrefix;
 
@@ -78,3 +79,4 @@ pub use tests::*;
 pub use traceability::*;
 pub use version_control::*;
 pub use work_instructions::*;
+pub use workflow::*;

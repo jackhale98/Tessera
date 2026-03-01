@@ -9,6 +9,7 @@
 //! - `team` - Team roster management
 
 pub mod approve;
+pub mod check;
 pub mod reject;
 pub mod release;
 pub mod review;
@@ -17,6 +18,7 @@ pub mod team;
 pub(crate) mod utils;
 
 pub use approve::ApproveArgs;
+pub use check::CheckArgs;
 pub use reject::RejectArgs;
 pub use release::ReleaseArgs;
 pub use review::ReviewCommands;

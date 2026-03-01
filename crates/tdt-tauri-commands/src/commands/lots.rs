@@ -1001,7 +1001,8 @@ pub async fn approve_wi_step(
     let lot = {
         let cache_guard = state.cache.lock().unwrap();
         let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
-        let service = LotService::new(project, cache);
+        let guard = tdt_core::services::WorkflowGuard::load(project);
+        let service = LotService::new(project, cache).with_workflow(guard);
 
         let approve_input = ApproveWiStepInput {
             approver: input.approver,

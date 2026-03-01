@@ -425,7 +425,8 @@ pub async fn approve_deviation(
     let dev = {
         let cache_guard = state.cache.lock().unwrap();
         let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
-        let service = DeviationService::new(project, cache);
+        let guard = tdt_core::services::WorkflowGuard::load(project);
+        let service = DeviationService::new(project, cache).with_workflow(guard);
 
         let auth_level = parse_authorization_level(&input.authorization_level)
             .unwrap_or(AuthorizationLevel::Engineering);

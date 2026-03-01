@@ -285,6 +285,26 @@ if command -v tdt >/dev/null 2>&1; then
 fi
 "#;
 
+/// Pre-push hook script that checks approval requirements
+const PRE_PUSH_HOOK: &str = r#"#!/bin/sh
+# TDT-MANAGED-HOOK
+# This hook was installed by `tdt cache install-hooks`
+# It checks that entities on this branch meet approval requirements before pushing
+
+# Only run if tdt is available
+if command -v tdt >/dev/null 2>&1; then
+    if [ -d ".tdt" ]; then
+        tdt check --branch --push-guard 2>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "Push blocked: entities with missing approvals."
+            echo "Run 'tdt check --branch' for details."
+            echo "Use 'git push --no-verify' to bypass."
+            exit 1
+        fi
+    fi
+fi
+"#;
+
 fn run_install_hooks(force: bool) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
 
@@ -302,6 +322,7 @@ fn run_install_hooks(force: bool) -> Result<()> {
         ("post-merge", POST_MERGE_HOOK),
         ("post-checkout", POST_CHECKOUT_HOOK),
         ("post-rewrite", POST_REWRITE_HOOK),
+        ("pre-push", PRE_PUSH_HOOK),
     ];
 
     let mut installed = 0;
@@ -388,7 +409,7 @@ fn run_remove_hooks() -> Result<()> {
         return Ok(());
     }
 
-    let hook_names = ["post-merge", "post-checkout", "post-rewrite"];
+    let hook_names = ["post-merge", "post-checkout", "post-rewrite", "pre-push"];
     let mut removed = 0;
 
     for hook_name in hook_names {

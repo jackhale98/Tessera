@@ -425,6 +425,10 @@ pub struct ApproveArgs {
     #[arg(long)]
     pub activate: bool,
 
+    /// Sign the approval (GPG/SSH/gitsign signature)
+    #[arg(long, short = 'S')]
+    pub sign: bool,
+
     /// Skip confirmation prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
@@ -1360,7 +1364,8 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
 fn run_approve(args: ApproveArgs, global: &GlobalOpts) -> Result<()> {
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
-    let service = DeviationService::new(&project, &cache);
+    let guard = tdt_core::services::WorkflowGuard::load(&project);
+    let service = DeviationService::new(&project, &cache).with_workflow(guard);
     let config = Config::load();
     let short_ids = ShortIdIndex::load(&project);
 

@@ -53,6 +53,8 @@ pub mod supplier;
 pub mod test_protocol;
 pub mod traceability;
 pub mod work_instruction;
+pub mod workflow;
+pub mod workflow_guard;
 
 pub use assembly::{
     AssemblyFilter, AssemblyService, AssemblySortField, AssemblyStats, BomCostResult,
@@ -136,3 +138,8 @@ pub use work_instruction::{
     CreateWorkInstruction, UpdateWorkInstruction, WorkInstructionFilter, WorkInstructionService,
     WorkInstructionSortField, WorkInstructionStats, WorkInstructionStatusCounts,
 };
+pub use workflow::{
+    ApprovalResult, ApproveEntityInput, ReleaseEntityInput, RejectEntityInput, SubmitEntityInput,
+    WorkflowService,
+};
+pub use workflow_guard::{AuthorizedUser, SignatureCheck, WorkflowGuard};

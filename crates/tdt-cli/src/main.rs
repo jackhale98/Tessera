@@ -68,6 +68,7 @@ fn main() -> Result<()> {
         Commands::Release(args) => args.run(&global),
         Commands::Review(cmd) => cmd.run(&global),
         Commands::Team(cmd) => cmd.run(&global),
+        Commands::Check(args) => args.run(&global),
         Commands::Export(cmd) => cli::commands::export::run(cmd, &global),
         Commands::Import(args) => cli::commands::import::run(args),
         Commands::Bulk(cmd) => cli::commands::bulk::run(cmd),
