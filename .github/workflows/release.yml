@@ -262,6 +262,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
