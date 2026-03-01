@@ -285,7 +285,7 @@ jobs:
         working-directory: apps/mobile
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
-        run: npx tauri android build --apk
+        run: npx tauri android build --apk true
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
