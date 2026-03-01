@@ -13,32 +13,9 @@
 	import { TraceGraph } from '$lib/components/traceability';
 	import { traceability } from '$lib/api';
 	import { isProjectOpen } from '$lib/stores/project';
+	import { ALL_ENTITY_TYPES, getEntityRoute } from '$lib/config/entities';
 	import type { TraceResult, CycleEntity } from '$lib/api/types';
 	import { Search, GitBranch, AlertCircle, RefreshCw, ArrowRight } from 'lucide-svelte';
-
-	const allEntityTypes = ['REQ', 'RISK', 'HAZ', 'TEST', 'RSLT', 'CMP', 'ASM', 'FEAT', 'MATE', 'TOL', 'PROC', 'CTRL', 'WORK', 'LOT', 'DEV', 'NCR', 'CAPA', 'QUOT', 'SUP'];
-
-	const entityRoutes: Record<string, string> = {
-		REQ: 'requirements',
-		RISK: 'risks',
-		HAZ: 'hazards',
-		TEST: 'verification/tests',
-		RSLT: 'verification/results',
-		CMP: 'components',
-		ASM: 'assemblies',
-		FEAT: 'features',
-		MATE: 'mates',
-		TOL: 'tolerances',
-		PROC: 'manufacturing/processes',
-		CTRL: 'controls',
-		WORK: 'manufacturing/work-instructions',
-		LOT: 'manufacturing/lots',
-		DEV: 'manufacturing/deviations',
-		NCR: 'quality/ncrs',
-		CAPA: 'quality/capas',
-		QUOT: 'procurement/quotes',
-		SUP: 'procurement/suppliers'
-	};
 
 	let selectedEntityId = $state<string | null>(null);
 	let traceResult = $state<TraceResult | null>(null);
@@ -81,8 +58,7 @@
 	}
 
 	function navigateToEntity(entityType: string, id: string) {
-		const route = entityRoutes[entityType] ?? 'entities';
-		goto(`/${route}/${id}`);
+		goto(getEntityRoute(entityType, id));
 	}
 
 	onMount(() => {
@@ -113,7 +89,7 @@
 		</CardHeader>
 		<CardContent>
 			<EntityPicker
-				entityTypes={allEntityTypes}
+				entityTypes={[...ALL_ENTITY_TYPES]}
 				placeholder="Search by ID or title..."
 				onSelect={(entity) => selectEntity(entity.id)}
 				onClear={() => { selectedEntityId = null; traceResult = null; }}

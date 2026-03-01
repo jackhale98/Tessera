@@ -813,6 +813,64 @@ pub async fn get_dmm(
     })
 }
 
+/// A maturity mismatch: a source entity is more mature than its target
+#[derive(Debug, Clone, Serialize)]
+pub struct MaturityMismatch {
+    pub source_id: String,
+    pub source_title: String,
+    pub source_status: String,
+    pub target_id: String,
+    pub target_title: String,
+    pub target_status: String,
+    pub link_type: String,
+}
+
+/// Get maturity mismatches — entities linked to less-mature targets
+///
+/// Mirrors the CLI `tdt validate` maturity check: skip draft/obsolete sources,
+/// flag when source.status > target.status (excluding obsolete targets).
+#[tauri::command]
+pub async fn get_maturity_mismatches(
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<MaturityMismatch>> {
+    use tdt_core::core::entity::Status;
+
+    let cache = state.cache.lock().unwrap();
+    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+
+    let filter = EntityFilter::default();
+    let entities = cache.list_entities(&filter);
+
+    let mut mismatches = Vec::new();
+
+    for entity in &entities {
+        // Only check entities above Draft and not Obsolete
+        if entity.status <= Status::Draft || entity.status == Status::Obsolete {
+            continue;
+        }
+
+        let links = cache.get_links_from(&entity.id);
+        for link in &links {
+            if let Some(target) = cache.get_entity(&link.target_id) {
+                // Flag if source is more mature than target (excluding obsolete targets)
+                if target.status != Status::Obsolete && entity.status > target.status {
+                    mismatches.push(MaturityMismatch {
+                        source_id: entity.id.clone(),
+                        source_title: entity.title.clone(),
+                        source_status: format!("{:?}", entity.status).to_lowercase(),
+                        target_id: target.id.clone(),
+                        target_title: target.title.clone(),
+                        target_status: format!("{:?}", target.status).to_lowercase(),
+                        link_type: link.link_type.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(mismatches)
+}
+
 /// Get all link types used in the project
 #[tauri::command]
 pub async fn get_link_types(state: State<'_, AppState>) -> CommandResult<Vec<String>> {

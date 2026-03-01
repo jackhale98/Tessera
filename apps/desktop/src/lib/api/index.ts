@@ -30,6 +30,8 @@ export type {
 	DmmEntity,
 	DmmLink,
 	DmmCoverage,
-	DmmResult
+	DmmResult,
+	// Maturity types
+	MaturityMismatch
 } from './tauri.js';
 export { default } from './tauri.js';

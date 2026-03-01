@@ -299,6 +299,7 @@ pub fn run() {
             commands::add_link,
             commands::remove_link,
             commands::get_link_types,
+            commands::get_maturity_mismatches,
             // Settings commands
             commands::get_all_settings,
             commands::get_general_settings,

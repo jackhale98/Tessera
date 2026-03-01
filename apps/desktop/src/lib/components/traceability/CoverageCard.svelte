@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui';
+	import { AlertTriangle } from 'lucide-svelte';
 	import type { CoverageStats } from '$lib/api/types';
 
 	interface Props {
@@ -7,9 +8,11 @@
 		stats: CoverageStats;
 		icon?: typeof import('lucide-svelte').Icon;
 		colorClass?: string;
+		/** Optional warning message shown when there are uncovered items */
+		gapWarning?: string;
 	}
 
-	let { title, stats, icon: Icon, colorClass = 'text-primary' }: Props = $props();
+	let { title, stats, icon: Icon, colorClass = 'text-primary', gapWarning }: Props = $props();
 
 	const percentage = $derived(stats.percentage.toFixed(1));
 	const progressColor = $derived(
@@ -17,6 +20,7 @@
 		stats.percentage >= 50 ? 'bg-yellow-500' :
 		'bg-red-500'
 	);
+	const gap = $derived(stats.total - stats.covered);
 </script>
 
 <Card>
@@ -42,6 +46,12 @@
 					style="width: {stats.percentage}%"
 				></div>
 			</div>
+			{#if gapWarning && gap > 0}
+				<div class="flex items-center gap-2 rounded-lg bg-yellow-500/10 p-2 text-xs text-yellow-600 dark:text-yellow-400">
+					<AlertTriangle class="h-3.5 w-3.5 shrink-0" />
+					{gap} {gapWarning}
+				</div>
+			{/if}
 		</div>
 	</CardContent>
 </Card>

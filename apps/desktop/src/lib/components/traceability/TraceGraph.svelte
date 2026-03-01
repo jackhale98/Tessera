@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui';
+	import { getEntityColorSolid, getEntityRoute, truncateEntityId } from '$lib/config/entities';
 	import type { TraceResult, TraceNode, TraceEdge, EntityPrefix } from '$lib/api/types';
 	import { ArrowRight, ExternalLink } from 'lucide-svelte';
 
@@ -9,56 +10,6 @@
 	}
 
 	let { traceResult }: Props = $props();
-
-	function getEntityColor(prefix: string): string {
-		const colors: Record<string, string> = {
-			REQ: 'bg-blue-500',
-			RISK: 'bg-red-500',
-			HAZ: 'bg-orange-500',
-			TEST: 'bg-green-500',
-			RSLT: 'bg-emerald-500',
-			CMP: 'bg-purple-500',
-			ASM: 'bg-violet-500',
-			FEAT: 'bg-cyan-500',
-			MATE: 'bg-teal-500',
-			TOL: 'bg-indigo-500',
-			PROC: 'bg-amber-500',
-			CTRL: 'bg-yellow-500',
-			WORK: 'bg-lime-500',
-			LOT: 'bg-pink-500',
-			DEV: 'bg-rose-500',
-			NCR: 'bg-red-600',
-			CAPA: 'bg-orange-600',
-			QUOT: 'bg-sky-500',
-			SUP: 'bg-slate-500'
-		};
-		return colors[prefix] ?? 'bg-gray-500';
-	}
-
-	function getEntityRoute(prefix: string): string {
-		const routes: Record<string, string> = {
-			REQ: 'requirements',
-			RISK: 'risks',
-			HAZ: 'hazards',
-			TEST: 'verification/tests',
-			RSLT: 'verification/results',
-			CMP: 'components',
-			ASM: 'assemblies',
-			FEAT: 'features',
-			MATE: 'mates',
-			TOL: 'tolerances',
-			PROC: 'manufacturing/processes',
-			CTRL: 'controls',
-			WORK: 'manufacturing/work-instructions',
-			LOT: 'manufacturing/lots',
-			DEV: 'manufacturing/deviations',
-			NCR: 'quality/ncrs',
-			CAPA: 'quality/capas',
-			QUOT: 'procurement/quotes',
-			SUP: 'procurement/suppliers'
-		};
-		return routes[prefix] ?? 'entities';
-	}
 
 	// Group nodes by depth into columns, sorted left (upstream) to right (downstream)
 	const columns = $derived.by(() => {
@@ -94,7 +45,7 @@
 	});
 
 	function handleNodeClick(node: TraceNode) {
-		goto(`/${getEntityRoute(node.entity_type)}/${node.id}`);
+		goto(getEntityRoute(node.entity_type, node.id));
 	}
 
 	// Get edge labels for a node (what connects it)
@@ -113,13 +64,6 @@
 		return `Downstream`;
 	}
 
-	function truncateId(id: string): string {
-		const parts = id.split('-');
-		if (parts.length === 2 && parts[1].length > 8) {
-			return `${parts[0]}-${parts[1].slice(0, 6)}…`;
-		}
-		return id;
-	}
 </script>
 
 {#if traceResult.nodes.length === 0}
@@ -152,7 +96,7 @@
 						title={getEdgeLabels(node.id)}
 					>
 						<div
-							class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full {getEntityColor(
+							class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full {getEntityColorSolid(
 								node.entity_type
 							)}"
 						>
@@ -161,7 +105,7 @@
 						<div class="min-w-0 flex-1">
 							<p class="truncate text-sm font-medium">{node.title}</p>
 							<p class="truncate text-xs text-muted-foreground font-mono">
-								{truncateId(node.id)}
+								{truncateEntityId(node.id)}
 							</p>
 						</div>
 						<ExternalLink class="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />

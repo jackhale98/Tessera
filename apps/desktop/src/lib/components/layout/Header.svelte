@@ -7,6 +7,7 @@
 	import { openProject, initProject, closeProject, refreshProject } from '$lib/stores/project.js';
 	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
+	import { ALL_ENTITY_TYPES, getEntityRoute, getStatusColor } from '$lib/config/entities';
 	import {
 		FolderOpen,
 		FolderPlus,
@@ -27,39 +28,6 @@
 		prefix: string;
 	}
 
-	const ALL_ENTITY_TYPES = [
-		'REQ', 'RISK', 'TEST', 'RSLT', 'CMP', 'ASM', 'FEAT', 'MATE', 'TOL',
-		'PROC', 'CTRL', 'WORK', 'LOT', 'DEV', 'NCR', 'CAPA', 'QUOT', 'SUP', 'HAZ'
-	];
-
-	const ENTITY_ROUTE_MAP: Record<string, string> = {
-		REQ: '/requirements',
-		RISK: '/risks',
-		TEST: '/verification/tests',
-		RSLT: '/verification/results',
-		CMP: '/components',
-		ASM: '/assemblies',
-		FEAT: '/features',
-		MATE: '/mates',
-		TOL: '/tolerances',
-		PROC: '/manufacturing/processes',
-		CTRL: '/controls',
-		WORK: '/manufacturing/work-instructions',
-		LOT: '/manufacturing/lots',
-		DEV: '/manufacturing/deviations',
-		NCR: '/quality/ncrs',
-		CAPA: '/quality/capas',
-		QUOT: '/procurement/quotes',
-		SUP: '/procurement/suppliers',
-		HAZ: '/hazards'
-	};
-
-	function getEntityRoute(prefix: string, id: string): string {
-		const base = ENTITY_ROUTE_MAP[prefix];
-		if (base) return `${base}/${id}`;
-		return '/';
-	}
-
 	function getThemeLabel(currentTheme: Theme): string {
 		switch (currentTheme) {
 			case 'light':
@@ -71,22 +39,6 @@
 		}
 	}
 
-	function getStatusColor(status: string): string {
-		switch (status) {
-			case 'approved':
-			case 'released':
-				return 'bg-green-500/20 text-green-400';
-			case 'review':
-				return 'bg-yellow-500/20 text-yellow-400';
-			case 'draft':
-				return 'bg-blue-500/20 text-blue-400';
-			case 'obsolete':
-				return 'bg-red-500/20 text-red-400';
-			default:
-				return 'bg-muted text-muted-foreground';
-		}
-	}
-
 	let searchQuery = $state('');
 	let results = $state<EntitySearchResult[]>([]);
 	let loading = $state(false);
@@ -95,6 +47,13 @@
 	let inputElement = $state<HTMLInputElement | null>(null);
 	let dropdownElement = $state<HTMLDivElement | null>(null);
 	let debounceTimer: ReturnType<typeof setTimeout>;
+	let dropdownStyle = $state('');
+
+	function updateDropdownPosition() {
+		if (!inputElement) return;
+		const rect = inputElement.getBoundingClientRect();
+		dropdownStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${rect.left}px; width: ${rect.width}px;`;
+	}
 
 	async function searchEntities(query: string) {
 		if (!query.trim() && !isOpen) {
@@ -133,6 +92,7 @@
 
 	function handleFocus() {
 		isOpen = true;
+		updateDropdownPosition();
 		if (results.length === 0) {
 			searchEntities(searchQuery);
 		}
@@ -283,7 +243,8 @@
 		{#if isOpen && $isProjectOpen}
 			<div
 				bind:this={dropdownElement}
-				class="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md"
+				class="z-50 rounded-md border bg-popover shadow-md"
+				style={dropdownStyle}
 			>
 				{#if results.length === 0}
 					<div class="px-3 py-6 text-center text-sm text-muted-foreground">

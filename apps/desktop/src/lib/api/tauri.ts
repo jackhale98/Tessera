@@ -639,8 +639,19 @@ export const traceability = {
 		call<void>('add_link', { sourceId, targetId, linkType }),
 	removeLink: (sourceId: string, targetId: string, linkType: string) =>
 		call<void>('remove_link', { sourceId, targetId, linkType }),
-	getLinkTypes: () => call<string[]>('get_link_types')
+	getLinkTypes: () => call<string[]>('get_link_types'),
+	getMaturityMismatches: () => call<MaturityMismatch[]>('get_maturity_mismatches')
 };
+
+export interface MaturityMismatch {
+	source_id: string;
+	source_title: string;
+	source_status: string;
+	target_id: string;
+	target_title: string;
+	target_status: string;
+	link_type: string;
+}
 
 /**
  * Deviations API (specialized commands + CRUD)

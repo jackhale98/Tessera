@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Card, CardContent, CardHeader, CardTitle, Button } from '$lib/components/ui';
+	import { goto } from '$app/navigation';
+	import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '$lib/components/ui';
 	import { CoverageCard } from '$lib/components/traceability';
-	import { traceability } from '$lib/api';
+	import { traceability, type MaturityMismatch } from '$lib/api';
 	import { isProjectOpen } from '$lib/stores/project';
+	import { getEntityRoute } from '$lib/config/entities';
 	import type { CoverageReport } from '$lib/api/types';
 	import {
 		FileCheck,
@@ -12,10 +14,12 @@
 		PlayCircle,
 		RefreshCw,
 		TrendingUp,
-		AlertTriangle
+		AlertTriangle,
+		ArrowRight
 	} from 'lucide-svelte';
 
 	let coverage = $state<CoverageReport | null>(null);
+	let mismatches = $state<MaturityMismatch[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
@@ -26,7 +30,12 @@
 		error = null;
 
 		try {
-			coverage = await traceability.getCoverage();
+			const [coverageResult, mismatchResult] = await Promise.all([
+				traceability.getCoverage(),
+				traceability.getMaturityMismatches()
+			]);
+			coverage = coverageResult;
+			mismatches = mismatchResult;
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -145,141 +154,101 @@
 				stats={coverage.requirements_verified}
 				icon={FileCheck}
 				colorClass="text-blue-500"
+				gapWarning="requirements need verification"
 			/>
 			<CoverageCard
 				title="Requirements Satisfied"
 				stats={coverage.requirements_satisfied}
 				icon={TestTube}
 				colorClass="text-green-500"
+				gapWarning="requirements need design satisfaction"
 			/>
 			<CoverageCard
 				title="Risks Mitigated"
 				stats={coverage.risks_mitigated}
 				icon={Shield}
 				colorClass="text-red-500"
+				gapWarning="risks need mitigation"
 			/>
 			<CoverageCard
 				title="Risks Verified"
 				stats={coverage.risks_verified}
 				icon={AlertTriangle}
 				colorClass="text-orange-500"
+				gapWarning="risk mitigations need verification"
 			/>
 			<CoverageCard
 				title="Tests Linked"
 				stats={coverage.tests_linked}
 				icon={PlayCircle}
 				colorClass="text-purple-500"
+				gapWarning="tests not linked to requirements"
 			/>
 			<CoverageCard
 				title="Components with Suppliers"
 				stats={coverage.components_with_suppliers}
 				icon={TrendingUp}
 				colorClass="text-cyan-500"
+				gapWarning="components missing supplier info"
 			/>
 		</div>
 
-		<!-- Detailed Breakdown -->
-		<div class="grid gap-6 lg:grid-cols-2">
-			<!-- Requirements Coverage -->
-			<Card>
+		<!-- Maturity Mismatches -->
+		{#if mismatches.length > 0}
+			<Card class="border-orange-500/50">
 				<CardHeader>
-					<CardTitle>Requirements Coverage Details</CardTitle>
+					<CardTitle class="flex items-center gap-2">
+						<AlertTriangle class="h-5 w-5 text-orange-500" />
+						Maturity Mismatches
+						<Badge variant="secondary">{mismatches.length}</Badge>
+					</CardTitle>
 				</CardHeader>
-				<CardContent class="space-y-4">
-					<div>
-						<div class="mb-2 flex items-center justify-between text-sm">
-							<span>Verified Requirements</span>
-							<span class="font-medium">
-								{coverage.requirements_verified.covered} of {coverage.requirements_verified.total}
-							</span>
-						</div>
-						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
-							<div
-								class="h-full bg-blue-500 transition-all"
-								style="width: {coverage.requirements_verified.percentage}%"
-							></div>
-						</div>
+				<CardContent>
+					<p class="mb-4 text-sm text-muted-foreground">
+						These entities link to targets with a lower maturity level. For example, an approved requirement linking to a draft test.
+					</p>
+					<div class="max-h-80 space-y-2 overflow-auto">
+						{#each mismatches as mismatch (mismatch.source_id + mismatch.target_id + mismatch.link_type)}
+							<div class="flex items-center gap-2 rounded-lg border p-3 text-sm">
+								<button
+									class="min-w-0 flex-1 text-left hover:underline"
+									onclick={() => goto(getEntityRoute(mismatch.source_id.split('-')[0], mismatch.source_id))}
+								>
+									<div class="flex items-center gap-2">
+										<Badge variant="outline" class="shrink-0 font-mono text-xs">
+											{mismatch.source_id.split('-')[0]}
+										</Badge>
+										<span class="truncate font-medium">{mismatch.source_title}</span>
+										<Badge class="shrink-0 text-xs bg-green-500/20 text-green-400">
+											{mismatch.source_status}
+										</Badge>
+									</div>
+								</button>
+								<div class="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+									<ArrowRight class="h-3 w-3" />
+									<span>{mismatch.link_type}</span>
+									<ArrowRight class="h-3 w-3" />
+								</div>
+								<button
+									class="min-w-0 flex-1 text-left hover:underline"
+									onclick={() => goto(getEntityRoute(mismatch.target_id.split('-')[0], mismatch.target_id))}
+								>
+									<div class="flex items-center gap-2">
+										<Badge variant="outline" class="shrink-0 font-mono text-xs">
+											{mismatch.target_id.split('-')[0]}
+										</Badge>
+										<span class="truncate font-medium">{mismatch.target_title}</span>
+										<Badge class="shrink-0 text-xs bg-orange-500/20 text-orange-400">
+											{mismatch.target_status}
+										</Badge>
+									</div>
+								</button>
+							</div>
+						{/each}
 					</div>
-					<div>
-						<div class="mb-2 flex items-center justify-between text-sm">
-							<span>Satisfied Requirements</span>
-							<span class="font-medium">
-								{coverage.requirements_satisfied.covered} of {coverage.requirements_satisfied.total}
-							</span>
-						</div>
-						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
-							<div
-								class="h-full bg-green-500 transition-all"
-								style="width: {coverage.requirements_satisfied.percentage}%"
-							></div>
-						</div>
-					</div>
-					{#if coverage.requirements_verified.total - coverage.requirements_verified.covered > 0}
-						<div class="flex items-center gap-2 rounded-lg bg-yellow-500/10 p-3 text-sm text-yellow-600 dark:text-yellow-400">
-							<AlertTriangle class="h-4 w-4" />
-							{coverage.requirements_verified.total - coverage.requirements_verified.covered} requirements need verification
-						</div>
-					{/if}
 				</CardContent>
 			</Card>
-
-			<!-- Risk & Test Coverage -->
-			<Card>
-				<CardHeader>
-					<CardTitle>Risk & Test Coverage Details</CardTitle>
-				</CardHeader>
-				<CardContent class="space-y-4">
-					<div>
-						<div class="mb-2 flex items-center justify-between text-sm">
-							<span>Mitigated Risks</span>
-							<span class="font-medium">
-								{coverage.risks_mitigated.covered} of {coverage.risks_mitigated.total}
-							</span>
-						</div>
-						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
-							<div
-								class="h-full bg-red-500 transition-all"
-								style="width: {coverage.risks_mitigated.percentage}%"
-							></div>
-						</div>
-					</div>
-					<div>
-						<div class="mb-2 flex items-center justify-between text-sm">
-							<span>Verified Risks</span>
-							<span class="font-medium">
-								{coverage.risks_verified.covered} of {coverage.risks_verified.total}
-							</span>
-						</div>
-						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
-							<div
-								class="h-full bg-orange-500 transition-all"
-								style="width: {coverage.risks_verified.percentage}%"
-							></div>
-						</div>
-					</div>
-					<div>
-						<div class="mb-2 flex items-center justify-between text-sm">
-							<span>Tests Linked to Requirements</span>
-							<span class="font-medium">
-								{coverage.tests_linked.covered} of {coverage.tests_linked.total}
-							</span>
-						</div>
-						<div class="h-3 w-full overflow-hidden rounded-full bg-muted">
-							<div
-								class="h-full bg-purple-500 transition-all"
-								style="width: {coverage.tests_linked.percentage}%"
-							></div>
-						</div>
-					</div>
-					{#if coverage.risks_mitigated.total - coverage.risks_mitigated.covered > 0}
-						<div class="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">
-							<AlertTriangle class="h-4 w-4" />
-							{coverage.risks_mitigated.total - coverage.risks_mitigated.covered} risks need mitigation
-						</div>
-					{/if}
-				</CardContent>
-			</Card>
-		</div>
+		{/if}
 	{:else}
 		<Card>
 			<CardContent class="flex h-64 items-center justify-center">
