@@ -305,6 +305,8 @@ jobs:
         working-directory: apps/mobile
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+          PKG_CONFIG_ALLOW_CROSS: 1
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
         run: npx tauri android build --apk true
 
       - name: Upload Android APK
@@ -406,6 +408,16 @@ jobs:
           # Create checksums
           sha256sum * > checksums.txt 2>/dev/null || echo "No files to checksum"
           cat checksums.txt
+
+      - name: Delete existing release if re-running
+        run: gh release delete ${{ github.ref_name }} -y --cleanup-tag || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Recreate tag
+        run: |
+          git tag -f ${{ github.ref_name }}
+          git push origin ${{ github.ref_name }} --force
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
