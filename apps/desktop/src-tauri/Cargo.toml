@@ -1,6 +1,6 @@
 [package]
 name = "tdt-desktop"
-version = "0.6.2"
+version = "0.7.0"
 description = "Tessera Desktop - Engineering Artifact Management GUI"
 authors = ["Tessera Contributors"]
 license = "MIT"
