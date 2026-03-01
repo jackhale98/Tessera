@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use tdt_core::core::cache::CachedEntity;
 use tdt_core::core::entity::Status;
+use tdt_core::core::{Config, Git, LotWorkflowConfig};
 use tdt_core::entities::lot::{
     ExecutionStatus, ExecutionStep, Lot, LotStatus, MaterialUsed, WiStepExecution,
 };
-use tdt_core::core::{Config, Git, LotWorkflowConfig};
 use tdt_core::services::{
     ApproveWiStepInput, CreateLot, ExecuteWiStepInput, LotFilter, LotService, LotSortField,
     LotStats, SortDirection, UpdateLot, UpdateStepInput, WiStepExecutionResult,
@@ -17,11 +17,7 @@ use tdt_core::services::{
 
 /// Try to auto-commit a lot change. Returns the commit SHA on success, or None if
 /// auto-commit is disabled or the commit fails (non-fatal).
-fn try_auto_commit(
-    root: &std::path::Path,
-    lot: &Lot,
-    message: &str,
-) -> Option<String> {
+fn try_auto_commit(root: &std::path::Path, lot: &Lot, message: &str) -> Option<String> {
     let config = Config::load();
     let wf_config = LotWorkflowConfig::from_config(&config);
 
@@ -529,7 +525,11 @@ pub async fn update_lot_step(
                 "lot({}): Step {} {} by {}",
                 lot_num,
                 step_index + 1,
-                if step.status == ExecutionStatus::Completed { "completed" } else { "skipped" },
+                if step.status == ExecutionStatus::Completed {
+                    "completed"
+                } else {
+                    "skipped"
+                },
                 operator
             );
             let _ = try_auto_commit(project.root(), &lot, &msg);

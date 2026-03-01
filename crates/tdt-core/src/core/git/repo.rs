@@ -2,9 +2,7 @@
 
 use gix::bstr::ByteSlice;
 
-use super::{
-    format_gix_time, gix_err, glob_match, BranchInfoEntry, Git, GitError, TagInfoEntry,
-};
+use super::{format_gix_time, gix_err, glob_match, BranchInfoEntry, Git, GitError, TagInfoEntry};
 
 impl Git {
     /// Check if we're in a git repository
@@ -52,10 +50,10 @@ impl Git {
     /// Get list of uncommitted changes (status --porcelain style)
     pub fn uncommitted_files(&self) -> Result<Vec<String>, GitError> {
         let repo = self.open_repo()?;
-        let status = repo
-            .status(gix::progress::Discard)
+        let status = repo.status(gix::progress::Discard).map_err(gix_err)?;
+        let iter = status
+            .into_iter(Vec::<gix::bstr::BString>::new())
             .map_err(gix_err)?;
-        let iter = status.into_iter(Vec::<gix::bstr::BString>::new()).map_err(gix_err)?;
 
         let mut files = Vec::new();
         for item in iter {
@@ -264,20 +262,19 @@ impl Git {
             .find_reference(&format!("refs/tags/{}", name))
             .map_err(gix_err)?;
 
-        let obj = reference
-            .id()
-            .object()
-            .map_err(gix_err)?;
+        let obj = reference.id().object().map_err(gix_err)?;
 
         if obj.kind == gix::object::Kind::Tag {
             let tag = obj.into_tag();
             let decoded = tag.decode().map_err(gix_err)?;
-            let tagger_str = decoded.tagger.as_ref().map(|t| {
-                format!("{} <{}>", t.name, t.email)
-            });
-            let date_str = decoded.tagger.as_ref().and_then(|t| {
-                t.time().ok().map(format_gix_time)
-            });
+            let tagger_str = decoded
+                .tagger
+                .as_ref()
+                .map(|t| format!("{} <{}>", t.name, t.email));
+            let date_str = decoded
+                .tagger
+                .as_ref()
+                .and_then(|t| t.time().ok().map(format_gix_time));
             Ok(TagInfoEntry {
                 tagger: tagger_str,
                 date: date_str,
@@ -336,9 +333,7 @@ impl Git {
     /// Resolve a reference to its commit SHA
     pub fn rev_parse(&self, reference: &str) -> Result<String, GitError> {
         let repo = self.open_repo()?;
-        let id = repo
-            .rev_parse_single(reference)
-            .map_err(gix_err)?;
+        let id = repo.rev_parse_single(reference).map_err(gix_err)?;
         Ok(id.to_hex().to_string())
     }
 }

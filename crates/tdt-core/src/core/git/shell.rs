@@ -390,11 +390,7 @@ impl Git {
     // ========================================================================
 
     /// Get commit log for a specific file (with --follow for renames)
-    pub fn file_log(
-        &self,
-        file_path: &str,
-        limit: u32,
-    ) -> Result<Vec<CommitLogEntry>, GitError> {
+    pub fn file_log(&self, file_path: &str, limit: u32) -> Result<Vec<CommitLogEntry>, GitError> {
         let output = self.run_shell(&[
             "log",
             "--format=%H|%h|%s|%an|%ae|%aI|%G?",
@@ -520,11 +516,12 @@ impl Git {
 
         let stdout = output.stdout.trim().to_string();
 
-        let (msg_part, meta_part) = stdout
-            .split_once("---END_MSG---")
-            .ok_or_else(|| GitError::CommandFailed {
-                message: "Failed to parse commit output".to_string(),
-            })?;
+        let (msg_part, meta_part) =
+            stdout
+                .split_once("---END_MSG---")
+                .ok_or_else(|| GitError::CommandFailed {
+                    message: "Failed to parse commit output".to_string(),
+                })?;
 
         let meta_parts: Vec<&str> = meta_part.split('|').collect();
         let msg_lines: Vec<&str> = msg_part.split('|').collect();
@@ -541,9 +538,7 @@ impl Git {
         let author = meta_parts.get(1).unwrap_or(&"").to_string();
         let author_email = meta_parts.get(2).map(|s| s.to_string());
         let date = meta_parts.get(3).unwrap_or(&"").to_string();
-        let is_signed = meta_parts
-            .get(4)
-            .map_or(false, |s| *s == "G" || *s == "U");
+        let is_signed = meta_parts.get(4).map_or(false, |s| *s == "G" || *s == "U");
 
         Ok((
             full_hash,

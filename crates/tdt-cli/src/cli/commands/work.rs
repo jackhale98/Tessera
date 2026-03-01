@@ -119,7 +119,10 @@ pub struct StepListArgs {
 fn parse_data_field(s: &str) -> std::result::Result<(String, String), String> {
     let parts: Vec<&str> = s.splitn(2, ':').collect();
     if parts.len() != 2 {
-        return Err("Data field must be in key:label format (e.g., diameter:\"Hole Diameter (mm)\")".to_string());
+        return Err(
+            "Data field must be in key:label format (e.g., diameter:\"Hole Diameter (mm)\")"
+                .to_string(),
+        );
     }
     Ok((parts[0].to_string(), parts[1].to_string()))
 }
@@ -895,7 +898,9 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
 }
 
 fn run_step_add(args: StepAddArgs) -> Result<()> {
-    use tdt_core::entities::work_instruction::{ProcedureStep, StepApprovalRequirement, StepDataField};
+    use tdt_core::entities::work_instruction::{
+        ProcedureStep, StepApprovalRequirement, StepDataField,
+    };
 
     let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
     let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
@@ -915,14 +920,9 @@ fn run_step_add(args: StepAddArgs) -> Result<()> {
         .unwrap_or_else(|| args.id.clone());
 
     // Determine step number
-    let step_num = args.step.unwrap_or_else(|| {
-        wi.procedure
-            .iter()
-            .map(|s| s.step)
-            .max()
-            .unwrap_or(0)
-            + 1
-    });
+    let step_num = args
+        .step
+        .unwrap_or_else(|| wi.procedure.iter().map(|s| s.step).max().unwrap_or(0) + 1);
 
     // Check for duplicate step number
     if wi.procedure.iter().any(|s| s.step == step_num) {
@@ -989,11 +989,7 @@ fn run_step_add(args: StepAddArgs) -> Result<()> {
     } else if args.require_approval {
         println!("   {} Requires approval", style("⏳").yellow());
     }
-    println!(
-        "   {} now has {} step(s)",
-        display_id,
-        wi.procedure.len()
-    );
+    println!("   {} now has {} step(s)", display_id, wi.procedure.len());
 
     super::utils::sync_cache(&project);
     Ok(())
@@ -1043,11 +1039,7 @@ fn run_step_rm(args: StepRmArgs) -> Result<()> {
         style(args.step).yellow(),
         style(&display_id).cyan()
     );
-    println!(
-        "   {} now has {} step(s)",
-        display_id,
-        wi.procedure.len()
-    );
+    println!("   {} now has {} step(s)", display_id, wi.procedure.len());
 
     super::utils::sync_cache(&project);
     Ok(())

@@ -450,13 +450,13 @@ pub async fn search_entities(
 /// This prevents entity saves from reordering YAML fields, which would create
 /// noisy git diffs when only a single value actually changed.
 fn merge_yaml_preserving_order(original_yaml: &str, new_data: &Value) -> Result<String, String> {
-    let mut original: serde_yml::Value =
-        serde_yml::from_str(original_yaml).map_err(|e| format!("Failed to parse original YAML: {}", e))?;
+    let mut original: serde_yml::Value = serde_yml::from_str(original_yaml)
+        .map_err(|e| format!("Failed to parse original YAML: {}", e))?;
 
     let new_yml: serde_yml::Value = {
         // Convert JSON Value -> JSON string -> YAML Value to handle type conversion
-        let json_str =
-            serde_json::to_string(new_data).map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+        let json_str = serde_json::to_string(new_data)
+            .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
         serde_yml::from_str(&json_str).map_err(|e| format!("Failed to convert to YAML: {}", e))?
     };
 

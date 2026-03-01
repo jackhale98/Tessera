@@ -761,7 +761,9 @@ fn run_sync(args: SyncLinksArgs) -> Result<()> {
             };
 
             // Find the target entity file
-            let target_dir = project.root().join(Project::entity_directory(target_prefix));
+            let target_dir = project
+                .root()
+                .join(Project::entity_directory(target_prefix));
             let target_path = match loader::find_entity_file(&target_dir, &target_id) {
                 Some(p) => p,
                 None => continue,

@@ -47,9 +47,7 @@ impl Git {
 
                 // Remove existing entry for this path if present
                 let rel_bstr: &BStr = rel_str.as_bstr();
-                index_mut.remove_entries(|_idx, entry_path, _entry| {
-                    entry_path == rel_bstr
-                });
+                index_mut.remove_entries(|_idx, entry_path, _entry| entry_path == rel_bstr);
 
                 // Push new entry
                 index_mut.dangerously_push_entry(
@@ -62,9 +60,7 @@ impl Git {
             } else {
                 // File was deleted — remove from index
                 let rel_bstr: &BStr = rel_str.as_bstr();
-                index_mut.remove_entries(|_idx, entry_path, _entry| {
-                    entry_path == rel_bstr
-                });
+                index_mut.remove_entries(|_idx, entry_path, _entry| entry_path == rel_bstr);
             }
         }
 
@@ -72,11 +68,12 @@ impl Git {
         index_mut.sort_entries();
 
         // Write the index back
-        index.write(gix::index::write::Options {
-            extensions: Default::default(),
-            skip_hash: false,
-        })
-        .map_err(gix_err)?;
+        index
+            .write(gix::index::write::Options {
+                extensions: Default::default(),
+                skip_hash: false,
+            })
+            .map_err(gix_err)?;
 
         Ok(())
     }
@@ -164,9 +161,7 @@ impl Git {
                 match tree.lookup_entry_by_path(path.as_ref() as &std::path::Path) {
                     Ok(Some(tree_entry)) => {
                         // File exists in HEAD — restore the index entry from HEAD
-                        index.remove_entries(|_idx, entry_path, _entry| {
-                            entry_path == path_bstr
-                        });
+                        index.remove_entries(|_idx, entry_path, _entry| entry_path == path_bstr);
                         index.dangerously_push_entry(
                             entry::Stat::default(),
                             tree_entry.object_id(),
@@ -177,26 +172,23 @@ impl Git {
                     }
                     Ok(None) => {
                         // File doesn't exist in HEAD — remove from index entirely
-                        index.remove_entries(|_idx, entry_path, _entry| {
-                            entry_path == path_bstr
-                        });
+                        index.remove_entries(|_idx, entry_path, _entry| entry_path == path_bstr);
                     }
                     Err(_) => {}
                 }
             } else {
                 // No HEAD — remove from index
-                index.remove_entries(|_idx, entry_path, _entry| {
-                    entry_path == path_bstr
-                });
+                index.remove_entries(|_idx, entry_path, _entry| entry_path == path_bstr);
             }
         }
 
         index.sort_entries();
-        index.write(gix::index::write::Options {
-            extensions: Default::default(),
-            skip_hash: false,
-        })
-        .map_err(gix_err)?;
+        index
+            .write(gix::index::write::Options {
+                extensions: Default::default(),
+                skip_hash: false,
+            })
+            .map_err(gix_err)?;
 
         Ok(())
     }

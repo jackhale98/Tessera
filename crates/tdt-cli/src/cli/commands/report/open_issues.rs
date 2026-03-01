@@ -278,11 +278,7 @@ pub fn run(args: OpenIssuesArgs, _global: &GlobalOpts) -> Result<()> {
                     .get_short_id(&test.id.to_string())
                     .unwrap_or_else(|| test.id.to_string())
             };
-            test_table.push_record([
-                test_short,
-                test.title.clone(),
-                test.test_type.to_string(),
-            ]);
+            test_table.push_record([test_short, test.title.clone(), test.test_type.to_string()]);
         }
         output.push_str(&test_table.build().with(Style::markdown()).to_string());
     }

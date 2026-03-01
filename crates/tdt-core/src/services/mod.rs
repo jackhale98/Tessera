@@ -139,7 +139,7 @@ pub use work_instruction::{
     WorkInstructionSortField, WorkInstructionStats, WorkInstructionStatusCounts,
 };
 pub use workflow::{
-    ApprovalResult, ApproveEntityInput, ReleaseEntityInput, RejectEntityInput, SubmitEntityInput,
+    ApprovalResult, ApproveEntityInput, RejectEntityInput, ReleaseEntityInput, SubmitEntityInput,
     WorkflowService,
 };
 pub use workflow_guard::{AuthorizedUser, SignatureCheck, WorkflowGuard};

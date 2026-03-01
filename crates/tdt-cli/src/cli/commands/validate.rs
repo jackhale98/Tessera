@@ -458,12 +458,8 @@ pub fn run(args: ValidateArgs) -> Result<()> {
     // === Maturity Mismatch Check ===
     if !args.fail_fast || !had_error {
         if let Some(ref cache) = cache {
-            let mismatches = check_maturity_mismatches(
-                cache,
-                entity_filter,
-                args.summary,
-                &mut stats,
-            );
+            let mismatches =
+                check_maturity_mismatches(cache, entity_filter, args.summary, &mut stats);
             if !mismatches.is_empty() && args.strict {
                 had_error = true;
             }
@@ -1394,7 +1390,9 @@ fn check_link_consistency(
             };
 
             // Find the target entity file
-            let target_dir = project.root().join(Project::entity_directory(target_prefix));
+            let target_dir = project
+                .root()
+                .join(Project::entity_directory(target_prefix));
             let target_path = loader::find_entity_file(&target_dir, &target_id);
 
             // Check if the target has the reciprocal link
@@ -1457,11 +1455,7 @@ fn check_link_consistency(
                     }
                     Err(e) => {
                         if !summary_only {
-                            println!(
-                                "      {} Failed to fix: {}",
-                                style("✗").red(),
-                                e
-                            );
+                            println!("      {} Failed to fix: {}", style("✗").red(), e);
                         }
                     }
                 }

@@ -595,21 +595,20 @@ impl<'a> RequirementService<'a> {
 
         // Orphans filter
         if filter.orphans_only
-            && (!req.links.satisfied_by.is_empty() || !req.links.verified_by.is_empty()) {
-                return false;
-            }
+            && (!req.links.satisfied_by.is_empty() || !req.links.verified_by.is_empty())
+        {
+            return false;
+        }
 
         // Needs review filter
-        if filter.needs_review
-            && req.status != Status::Draft && req.status != Status::Review {
-                return false;
-            }
+        if filter.needs_review && req.status != Status::Draft && req.status != Status::Review {
+            return false;
+        }
 
         // Unverified filter
-        if filter.unverified_only
-            && !req.links.verified_by.is_empty() {
-                return false;
-            }
+        if filter.unverified_only && !req.links.verified_by.is_empty() {
+            return false;
+        }
 
         // Common filters
         if !filter.common.matches_status(&req.status) {

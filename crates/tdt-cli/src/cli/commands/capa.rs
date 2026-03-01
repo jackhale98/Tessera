@@ -1263,8 +1263,7 @@ fn run_capa_advance(args: CapaAdvanceArgs, _global: &GlobalOpts) -> Result<()> {
         .join("quality/capas")
         .join(format!("{}.tdt.yaml", capa.id));
     let content = std::fs::read_to_string(&capa_file).into_diagnostic()?;
-    let mut capa_yaml: serde_json::Value =
-        serde_yml::from_str(&content).into_diagnostic()?;
+    let mut capa_yaml: serde_json::Value = serde_yml::from_str(&content).into_diagnostic()?;
 
     capa_yaml["capa_status"] = serde_json::json!(target_status.to_string());
 

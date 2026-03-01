@@ -218,13 +218,12 @@ pub async fn get_git_status(state: State<'_, AppState>) -> CommandResult<GitStat
                     .to_string();
 
                 // Try to extract entity info from .tdt.yaml or .pdt.yaml files
-                let (entity_id, entity_title) = if path.ends_with(".tdt.yaml")
-                    || path.ends_with(".pdt.yaml")
-                {
-                    extract_entity_info_from_path(project.root(), &path, cache)
-                } else {
-                    (None, None)
-                };
+                let (entity_id, entity_title) =
+                    if path.ends_with(".tdt.yaml") || path.ends_with(".pdt.yaml") {
+                        extract_entity_info_from_path(project.root(), &path, cache)
+                    } else {
+                        (None, None)
+                    };
 
                 UncommittedFile {
                     path,
@@ -626,17 +625,13 @@ pub async fn discard_changes(paths: Vec<String>, state: State<'_, AppState>) -> 
 
         if tracked {
             // Tracked file: restore from HEAD
-            git.restore_file(path).map_err(|e| {
-                CommandError::Other(format!("Failed to restore {}: {}", path, e))
-            })?;
+            git.restore_file(path)
+                .map_err(|e| CommandError::Other(format!("Failed to restore {}: {}", path, e)))?;
         } else {
             // Untracked file: delete it
             if full_path.exists() {
                 std::fs::remove_file(&full_path).map_err(|e| {
-                    CommandError::Other(format!(
-                        "Failed to delete untracked file {}: {}",
-                        path, e
-                    ))
+                    CommandError::Other(format!("Failed to delete untracked file {}: {}", path, e))
                 })?;
             }
         }
@@ -765,15 +760,13 @@ pub async fn get_recent_commits(
     let limit_arg = limit.unwrap_or(50);
     let git = Git::new(project.root());
 
-    let entries = git
-        .recent_commits(limit_arg)
-        .map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("does not have any commits") || msg.contains("head id") {
-                return CommandError::Other("No commits yet".to_string());
-            }
-            CommandError::Other(format!("Failed to get commits: {}", msg))
-        });
+    let entries = git.recent_commits(limit_arg).map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("does not have any commits") || msg.contains("head id") {
+            return CommandError::Other("No commits yet".to_string());
+        }
+        CommandError::Other(format!("Failed to get commits: {}", msg))
+    });
 
     let entries = match entries {
         Ok(e) => e,
@@ -1011,7 +1004,10 @@ fn extract_entity_info_from_path(
     // Try to extract entity ID from filename (e.g., "REQ-01KC8FF...tdt.yaml" → "REQ-01KC8FF...")
     if let Some(filename) = std::path::Path::new(relative_path).file_name() {
         let fname = filename.to_string_lossy();
-        if let Some(id_part) = fname.strip_suffix(".tdt.yaml").or_else(|| fname.strip_suffix(".pdt.yaml")) {
+        if let Some(id_part) = fname
+            .strip_suffix(".tdt.yaml")
+            .or_else(|| fname.strip_suffix(".pdt.yaml"))
+        {
             // Try cache lookup first
             if let Some(cache) = cache {
                 if let Some(entity) = cache.get_entity(id_part) {
@@ -1077,9 +1073,7 @@ pub async fn get_uncommitted_file_diff(
     let git = Git::new(root);
 
     // Try git diff for tracked files (both staged and unstaged)
-    let diff = git
-        .diff_file(&path)
-        .unwrap_or_default();
+    let diff = git.diff_file(&path).unwrap_or_default();
 
     if !diff.is_empty() {
         return Ok(diff);
@@ -1091,7 +1085,11 @@ pub async fn get_uncommitted_file_diff(
         let content = std::fs::read_to_string(&full_path)
             .map_err(|e| CommandError::Io(format!("Cannot read file: {}", e)))?;
 
-        let mut diff_output = format!("--- /dev/null\n+++ b/{}\n@@ -0,0 +1,{} @@\n", path, content.lines().count());
+        let mut diff_output = format!(
+            "--- /dev/null\n+++ b/{}\n@@ -0,0 +1,{} @@\n",
+            path,
+            content.lines().count()
+        );
         for line in content.lines() {
             diff_output.push('+');
             diff_output.push_str(line);
@@ -1108,7 +1106,9 @@ pub async fn get_uncommitted_file_diff(
 pub async fn sync_cache(state: State<'_, AppState>) -> CommandResult<()> {
     let mut cache_guard = state.cache.lock().unwrap();
     if let Some(cache) = cache_guard.as_mut() {
-        cache.sync().map_err(|e| CommandError::Other(format!("Cache sync failed: {}", e)))?;
+        cache
+            .sync()
+            .map_err(|e| CommandError::Other(format!("Cache sync failed: {}", e)))?;
     }
     Ok(())
 }

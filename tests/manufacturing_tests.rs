@@ -1313,8 +1313,16 @@ fn test_lot_wi_step_with_data() {
     tdt()
         .current_dir(tmp.path())
         .args([
-            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
-            "--step", "1", "--complete",
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
         ])
         .assert()
         .success();
@@ -1443,8 +1451,16 @@ fn test_lot_router_show_pending() {
     tdt()
         .current_dir(tmp.path())
         .args([
-            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
-            "--step", "1", "--complete",
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
         ])
         .assert()
         .success();
@@ -1491,8 +1507,16 @@ fn test_lot_approve_step() {
     tdt()
         .current_dir(tmp.path())
         .args([
-            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
-            "--step", "1", "--complete",
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
         ])
         .assert()
         .success();
@@ -1551,8 +1575,16 @@ fn test_lot_approve_with_comment() {
     tdt()
         .current_dir(tmp.path())
         .args([
-            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
-            "--step", "1", "--complete",
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
         ])
         .assert()
         .success();
@@ -1612,8 +1644,16 @@ fn test_lot_approve_reject() {
     tdt()
         .current_dir(tmp.path())
         .args([
-            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
-            "--step", "1", "--complete",
+            "lot",
+            "wi-step",
+            &lot_id,
+            "--process",
+            "0",
+            "--wi",
+            &wi_id,
+            "--step",
+            "1",
+            "--complete",
         ])
         .assert()
         .success();

@@ -35,9 +35,12 @@ impl Git {
 
         if let Some(msg) = message {
             // Annotated tag
-            let tagger = repo.committer().ok_or_else(|| GitError::CommandFailed {
-                message: "Committer identity not configured".to_string(),
-            }).and_then(|r| r.map_err(gix_err))?;
+            let tagger = repo
+                .committer()
+                .ok_or_else(|| GitError::CommandFailed {
+                    message: "Committer identity not configured".to_string(),
+                })
+                .and_then(|r| r.map_err(gix_err))?;
 
             repo.tag(
                 name,

@@ -77,8 +77,7 @@ pub enum AssemblySortField {
 }
 
 /// Input for creating a new assembly
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateAssembly {
     /// Assembly part number
     pub part_number: String,
@@ -109,7 +108,6 @@ pub struct CreateAssembly {
     #[serde(default)]
     pub tags: Vec<String>,
 }
-
 
 /// Input for updating an existing assembly
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -103,8 +103,7 @@ pub enum TestSortField {
 }
 
 /// Input for creating a new test
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateTest {
     /// Test title
     pub title: String,
@@ -147,7 +146,6 @@ pub struct CreateTest {
     #[serde(default)]
     pub tags: Vec<String>,
 }
-
 
 /// Input for updating an existing test
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -82,8 +82,7 @@ pub enum SupplierSortField {
 }
 
 /// Input for creating a new supplier
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateSupplier {
     /// Company name
     pub name: String,
@@ -119,7 +118,6 @@ pub struct CreateSupplier {
     #[serde(default)]
     pub tags: Vec<String>,
 }
-
 
 /// Input for updating an existing supplier
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -1647,8 +1647,7 @@ fn run_analyze_all(args: &AnalyzeArgs) -> Result<()> {
     let mut analyzed = 0;
     let mut skipped = 0;
     let mut errors = 0;
-    let mut results_summary: Vec<StackupResultRow> =
-        Vec::new();
+    let mut results_summary: Vec<StackupResultRow> = Vec::new();
 
     println!(
         "{} Analyzing {} stackup(s) with {} Monte Carlo iterations...\n",

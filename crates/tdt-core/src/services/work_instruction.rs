@@ -73,8 +73,7 @@ pub enum WorkInstructionSortField {
 }
 
 /// Input for creating a new work instruction
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateWorkInstruction {
     /// Work instruction title
     pub title: String,
@@ -106,7 +105,6 @@ pub struct CreateWorkInstruction {
     #[serde(default)]
     pub tags: Vec<String>,
 }
-
 
 /// Input for updating an existing work instruction
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

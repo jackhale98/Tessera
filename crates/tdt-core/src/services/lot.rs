@@ -363,16 +363,14 @@ impl<'a> LotService<'a> {
     }
 
     /// Load all processes as a HashMap keyed by ID
-    fn load_processes(&self) -> std::collections::HashMap<String, crate::entities::process::Process>
-    {
+    fn load_processes(
+        &self,
+    ) -> std::collections::HashMap<String, crate::entities::process::Process> {
         use crate::entities::process::Process;
 
         let dir = self.project.root().join("manufacturing/processes");
         let procs: Vec<Process> = loader::load_all(&dir).unwrap_or_default();
-        procs
-            .into_iter()
-            .map(|p| (p.id.to_string(), p))
-            .collect()
+        procs.into_iter().map(|p| (p.id.to_string(), p)).collect()
     }
 
     /// List lots with filtering and sorting
@@ -417,9 +415,11 @@ impl<'a> LotService<'a> {
 
             // Active only filter
             if filter.active_only
-                && lot.lot_status != LotStatus::InProgress && lot.lot_status != LotStatus::OnHold {
-                    return false;
-                }
+                && lot.lot_status != LotStatus::InProgress
+                && lot.lot_status != LotStatus::OnHold
+            {
+                return false;
+            }
 
             // Recent filter
             if let Some(days) = filter.recent_days {
@@ -1091,19 +1091,20 @@ impl<'a> LotService<'a> {
             self.validate_deviation_bypass(dev_id)?;
             Some(dev_id.clone())
         } else {
-            self.validate_step_order(&lot, proc_idx, &input.work_instruction_id, input.step_number)?;
+            self.validate_step_order(
+                &lot,
+                proc_idx,
+                &input.work_instruction_id,
+                input.step_number,
+            )?;
             None
         };
 
         // Find existing or create new WI step execution
         let exec_step = &mut lot.execution[proc_idx];
-        let existing_idx = exec_step
-            .wi_step_executions
-            .iter()
-            .position(|e| {
-                e.work_instruction == input.work_instruction_id
-                    && e.step_number == input.step_number
-            });
+        let existing_idx = exec_step.wi_step_executions.iter().position(|e| {
+            e.work_instruction == input.work_instruction_id && e.step_number == input.step_number
+        });
 
         let mut wi_exec = if let Some(idx) = existing_idx {
             exec_step.wi_step_executions.remove(idx)
@@ -1143,9 +1144,7 @@ impl<'a> LotService<'a> {
 
         // Re-insert and sort
         exec_step.wi_step_executions.push(wi_exec);
-        exec_step
-            .wi_step_executions
-            .sort_by_key(|e| e.step_number);
+        exec_step.wi_step_executions.sort_by_key(|e| e.step_number);
 
         lot.entity_revision += 1;
 
@@ -1177,9 +1176,9 @@ impl<'a> LotService<'a> {
     ) -> ServiceResult<Lot> {
         // Authorization check via workflow guard (if present)
         if let Some(ref guard) = self.workflow_guard {
-            if let Some(user) = guard.check_approval_auth(
-                crate::core::identity::EntityPrefix::Lot,
-            )? {
+            if let Some(user) =
+                guard.check_approval_auth(crate::core::identity::EntityPrefix::Lot)?
+            {
                 // Use the authorized user's identity
                 input.approver = user.name.clone();
                 input.email = Some(user.email.clone());
@@ -1188,10 +1187,7 @@ impl<'a> LotService<'a> {
                 }
             }
             // Also check signature requirements
-            guard.check_signature_required(
-                crate::core::identity::EntityPrefix::Lot,
-                input.sign,
-            )?;
+            guard.check_signature_required(crate::core::identity::EntityPrefix::Lot, input.sign)?;
         }
 
         let (_, mut lot) = self.find_lot(lot_id)?;

@@ -107,11 +107,7 @@ impl<'a> WorkflowService<'a> {
     /// 4. Checks for duplicate approval
     /// 5. Records the approval
     /// 6. Returns approval result with status
-    pub fn approve(
-        &self,
-        id: &str,
-        input: ApproveEntityInput,
-    ) -> ServiceResult<ApprovalResult> {
+    pub fn approve(&self, id: &str, input: ApproveEntityInput) -> ServiceResult<ApprovalResult> {
         let (file_path, entity_id, title, status) = self.resolve_entity(id)?;
 
         // Validate status
@@ -129,28 +125,22 @@ impl<'a> WorkflowService<'a> {
         };
 
         // Signature check
-        let sig_check = self
-            .guard
-            .check_signature_required(prefix, input.sign)?;
+        let sig_check = self.guard.check_signature_required(prefix, input.sign)?;
 
         // Determine approver identity
-        let (approver_name, approver_email, approver_role) =
-            if let Some(ref user) = authorized_user {
-                let role = user.role_for_prefix(
-                    self.guard.roster().unwrap_or(&Default::default()),
-                    prefix,
-                );
-                (
-                    user.name.clone(),
-                    Some(user.email.clone()),
-                    role,
-                )
-            } else {
-                // Workflow disabled — use git identity
-                let name = self.git_user_name().unwrap_or_else(|| "unknown".to_string());
-                let email = self.git_user_email();
-                (name, email, None)
-            };
+        let (approver_name, approver_email, approver_role) = if let Some(ref user) = authorized_user
+        {
+            let role =
+                user.role_for_prefix(self.guard.roster().unwrap_or(&Default::default()), prefix);
+            (user.name.clone(), Some(user.email.clone()), role)
+        } else {
+            // Workflow disabled — use git identity
+            let name = self
+                .git_user_name()
+                .unwrap_or_else(|| "unknown".to_string());
+            let email = self.git_user_email();
+            (name, email, None)
+        };
 
         // Check for duplicate approval
         if workflow::would_be_duplicate_approval(&file_path, &approver_name)
@@ -296,8 +286,8 @@ impl<'a> WorkflowService<'a> {
 
         // Fallback: search filesystem
         let path = self.find_entity_file(id)?;
-        let (entity_id, title, status) = workflow::get_entity_info(&path)
-            .map_err(|e| ServiceError::Other(e.to_string()))?;
+        let (entity_id, title, status) =
+            workflow::get_entity_info(&path).map_err(|e| ServiceError::Other(e.to_string()))?;
         Ok((path, entity_id, title, status))
     }
 
@@ -337,10 +327,7 @@ impl<'a> WorkflowService<'a> {
             }
         }
 
-        Err(ServiceError::NotFound(format!(
-            "Entity not found: {}",
-            id
-        )))
+        Err(ServiceError::NotFound(format!("Entity not found: {}", id)))
     }
 
     /// Parse an entity prefix from a full ID string
@@ -358,7 +345,11 @@ impl<'a> WorkflowService<'a> {
         cmd.output().ok().and_then(|o| {
             if o.status.success() {
                 let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if val.is_empty() { None } else { Some(val) }
+                if val.is_empty() {
+                    None
+                } else {
+                    Some(val)
+                }
             } else {
                 None
             }

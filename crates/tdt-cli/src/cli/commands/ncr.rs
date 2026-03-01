@@ -1365,8 +1365,7 @@ fn run_advance(args: AdvanceArgs, _global: &GlobalOpts) -> Result<()> {
         .join("manufacturing/ncrs")
         .join(format!("{}.tdt.yaml", ncr.id));
     let content = std::fs::read_to_string(&ncr_file).into_diagnostic()?;
-    let mut ncr_yaml: serde_json::Value =
-        serde_yml::from_str(&content).into_diagnostic()?;
+    let mut ncr_yaml: serde_json::Value = serde_yml::from_str(&content).into_diagnostic()?;
 
     ncr_yaml["ncr_status"] = serde_json::json!(target_status.to_string());
 

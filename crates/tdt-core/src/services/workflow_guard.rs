@@ -240,9 +240,7 @@ impl WorkflowGuard {
         }
 
         // Check that the user has a signing method available
-        let signing_format = self
-            .current_user()
-            .and_then(|u| u.signing_format);
+        let signing_format = self.current_user().and_then(|u| u.signing_format);
 
         let key_available = self.check_signing_key_available(signing_format);
 
@@ -328,7 +326,8 @@ impl WorkflowGuard {
         };
 
         if let Some(workflow) = value.get("workflow") {
-            serde_yml::from_value(workflow.clone()).unwrap_or_else(|_| WorkflowConfig::with_defaults())
+            serde_yml::from_value(workflow.clone())
+                .unwrap_or_else(|_| WorkflowConfig::with_defaults())
         } else {
             WorkflowConfig::with_defaults()
         }
@@ -467,10 +466,8 @@ mod tests {
 
     #[test]
     fn test_signature_required_without_sign_flag_errors() {
-        let guard = WorkflowGuard::new(
-            make_config_with_signature(true, "REQ"),
-            Some(make_roster()),
-        );
+        let guard =
+            WorkflowGuard::new(make_config_with_signature(true, "REQ"), Some(make_roster()));
         let result = guard.check_signature_required(EntityPrefix::Req, false);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -534,25 +531,17 @@ mod tests {
     fn test_validate_status_all_operations() {
         // submit: Draft → Review
         assert!(validate_status_for_operation(Status::Draft, "submit", Status::Draft).is_ok());
-        assert!(
-            validate_status_for_operation(Status::Review, "submit", Status::Draft).is_err()
-        );
+        assert!(validate_status_for_operation(Status::Review, "submit", Status::Draft).is_err());
 
         // approve: Review → Approved
-        assert!(
-            validate_status_for_operation(Status::Review, "approve", Status::Review).is_ok()
-        );
+        assert!(validate_status_for_operation(Status::Review, "approve", Status::Review).is_ok());
         assert!(
             validate_status_for_operation(Status::Approved, "approve", Status::Review).is_err()
         );
 
         // reject: Review → Draft
-        assert!(
-            validate_status_for_operation(Status::Review, "reject", Status::Review).is_ok()
-        );
-        assert!(
-            validate_status_for_operation(Status::Draft, "reject", Status::Review).is_err()
-        );
+        assert!(validate_status_for_operation(Status::Review, "reject", Status::Review).is_ok());
+        assert!(validate_status_for_operation(Status::Draft, "reject", Status::Review).is_err());
 
         // release: Approved → Released
         assert!(
@@ -577,10 +566,8 @@ mod tests {
     fn test_signature_required_with_sign_flag_but_no_key() {
         // When signature is required and --sign is passed, but no signing key is available,
         // the check should fail with a helpful message
-        let guard = WorkflowGuard::new(
-            make_config_with_signature(true, "REQ"),
-            Some(make_roster()),
-        );
+        let guard =
+            WorkflowGuard::new(make_config_with_signature(true, "REQ"), Some(make_roster()));
         // No repo_root set, so signing key check will fail
         let result = guard.check_signature_required(EntityPrefix::Req, true);
         assert!(result.is_err());

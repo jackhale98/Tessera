@@ -97,8 +97,7 @@ pub enum ProcessSortField {
 }
 
 /// Input for creating a new process
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateProcess {
     /// Process title
     pub title: String,
@@ -138,7 +137,6 @@ pub struct CreateProcess {
     #[serde(default)]
     pub tags: Vec<String>,
 }
-
 
 /// Input for updating an existing process
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

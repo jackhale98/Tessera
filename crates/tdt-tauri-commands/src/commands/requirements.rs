@@ -490,10 +490,12 @@ pub async fn get_verification_matrix(
                     // Also collect tests that verify the derived requirement
                     let derived_links = cache.get_links_from(&derived.id);
                     for dl in &derived_links {
-                        if dl.link_type == "verified_by" && dl.target_id.starts_with("TEST-")
-                            && !all_test_ids.contains(&dl.target_id) {
-                                all_test_ids.push(dl.target_id.clone());
-                            }
+                        if dl.link_type == "verified_by"
+                            && dl.target_id.starts_with("TEST-")
+                            && !all_test_ids.contains(&dl.target_id)
+                        {
+                            all_test_ids.push(dl.target_id.clone());
+                        }
                     }
                     // Mark as processed
                     processed_reqs.insert(derived.id.clone());
@@ -504,10 +506,12 @@ pub async fn get_verification_matrix(
         // Also check incoming links (tests that verify this requirement)
         let links_to = cache.get_links_to(&req_id);
         for link in &links_to {
-            if link.link_type == "verifies" && link.source_id.starts_with("TEST-")
-                && !all_test_ids.contains(&link.source_id) {
-                    all_test_ids.push(link.source_id.clone());
-                }
+            if link.link_type == "verifies"
+                && link.source_id.starts_with("TEST-")
+                && !all_test_ids.contains(&link.source_id)
+            {
+                all_test_ids.push(link.source_id.clone());
+            }
         }
 
         // Build test info with results

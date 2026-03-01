@@ -106,8 +106,7 @@ pub enum QuoteSortField {
 }
 
 /// Input for creating a new quote
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateQuote {
     /// Quote title
     pub title: String,
@@ -154,7 +153,6 @@ pub struct CreateQuote {
     #[serde(default)]
     pub tags: Vec<String>,
 }
-
 
 /// Input for updating an existing quote
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

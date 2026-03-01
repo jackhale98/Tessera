@@ -8,8 +8,8 @@ use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tdt_core::services::{
-    ApproveEntityInput, ApprovalResult, ReleaseEntityInput, RejectEntityInput,
-    SubmitEntityInput, WorkflowGuard, WorkflowService,
+    ApprovalResult, ApproveEntityInput, RejectEntityInput, ReleaseEntityInput, SubmitEntityInput,
+    WorkflowGuard, WorkflowService,
 };
 
 /// Input for approving an entity via Tauri

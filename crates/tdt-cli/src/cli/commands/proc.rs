@@ -991,7 +991,11 @@ fn run_flow(args: FlowArgs, global: &GlobalOpts) -> Result<()> {
                     if let Ok(ctrl) = serde_yml::from_str::<serde_json::Value>(&content) {
                         let ctrl_id = ctrl.get("id").and_then(|v| v.as_str()).unwrap_or("");
                         let ctrl_title = ctrl.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                        let proc_id = ctrl.get("links").and_then(|l| l.get("process")).and_then(|v| v.as_str()).unwrap_or("");
+                        let proc_id = ctrl
+                            .get("links")
+                            .and_then(|l| l.get("process"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
 
                         if !proc_id.is_empty() {
                             let short = short_ids
@@ -1016,7 +1020,11 @@ fn run_flow(args: FlowArgs, global: &GlobalOpts) -> Result<()> {
                     if let Ok(work) = serde_yml::from_str::<serde_json::Value>(&content) {
                         let work_id = work.get("id").and_then(|v| v.as_str()).unwrap_or("");
                         let work_title = work.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                        let proc_id = work.get("links").and_then(|l| l.get("process")).and_then(|v| v.as_str()).unwrap_or("");
+                        let proc_id = work
+                            .get("links")
+                            .and_then(|l| l.get("process"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
 
                         if !proc_id.is_empty() {
                             let short = short_ids

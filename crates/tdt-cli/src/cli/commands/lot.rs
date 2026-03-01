@@ -10,9 +10,7 @@ use crate::cli::{GlobalOpts, OutputFormat};
 use std::collections::HashMap;
 use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::{EntityId, EntityPrefix};
-use tdt_core::core::manufacturing::{
-    step_requires_signature, LotWorkflow, LotWorkflowConfig,
-};
+use tdt_core::core::manufacturing::{step_requires_signature, LotWorkflow, LotWorkflowConfig};
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::{Config, Git};
@@ -1121,7 +1119,12 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                             status_styled
                         );
                     } else {
-                        print!("  {}. {} [{}]", i + 1, style(&proc_display).cyan(), status_styled);
+                        print!(
+                            "  {}. {} [{}]",
+                            i + 1,
+                            style(&proc_display).cyan(),
+                            status_styled
+                        );
                     }
                     if let Some(ref date) = step.completed_date {
                         print!(" - {}", date);
@@ -1724,7 +1727,9 @@ fn run_complete(args: CompleteArgs, global: &GlobalOpts) -> Result<()> {
         println!();
         println!(
             "{}",
-            style("Warning: Pending approvals on WI steps").yellow().bold()
+            style("Warning: Pending approvals on WI steps")
+                .yellow()
+                .bold()
         );
         for (proc_step, wi_id, step_num) in &pending_approvals {
             println!(
@@ -1894,7 +1899,10 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
                     "execution": wi_exec,
                 });
                 if global.output == OutputFormat::Json {
-                    println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&result).unwrap_or_default()
+                    );
                 } else {
                     println!("{}", serde_yml::to_string(&result).unwrap_or_default());
                 }
@@ -1955,11 +1963,10 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
     let operator = args.operator.unwrap_or_else(|| config.author().to_string());
 
     // Resolve deviation short ID if provided
-    let deviation_id = args.deviation.as_ref().map(|dev_id| {
-        short_ids
-            .resolve(dev_id)
-            .unwrap_or_else(|| dev_id.clone())
-    });
+    let deviation_id = args
+        .deviation
+        .as_ref()
+        .map(|dev_id| short_ids.resolve(dev_id).unwrap_or_else(|| dev_id.clone()));
 
     if deviation_id.is_some() && !global.quiet {
         eprintln!(
@@ -2012,7 +2019,11 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
         .unwrap_or_else(|| format_short_id(&result.lot.id));
 
     // Output
-    let status = if args.complete { "completed" } else { "updated" };
+    let status = if args.complete {
+        "completed"
+    } else {
+        "updated"
+    };
     match global.output {
         OutputFormat::Json => {
             let json_result = serde_json::json!({
@@ -2023,7 +2034,10 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
                 "signed": args.sign,
                 "completed": args.complete,
             });
-            println!("{}", serde_json::to_string_pretty(&json_result).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json_result).unwrap_or_default()
+            );
         }
         OutputFormat::Yaml => {
             let yaml_result = serde_json::json!({

@@ -8,9 +8,7 @@ use tdt_core::core::{
     cache::{CachedLink, EntityFilter},
     identity::EntityPrefix,
 };
-use tdt_core::services::{
-    CoverageReport, DesignStructureMatrix, TraceabilityService,
-};
+use tdt_core::services::{CoverageReport, DesignStructureMatrix, TraceabilityService};
 
 use super::entity_dir_name;
 

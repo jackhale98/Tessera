@@ -331,14 +331,12 @@ pub fn get_reciprocal_link_type(
 pub fn is_downstream_link(link_type: &str) -> bool {
     match link_type {
         // Upstream-pointing links (target is a parent/dependency/source)
-        "verifies" | "satisfies" | "mitigates"
-        | "requirement" | "requirements"
-        | "component" | "assembly" | "process" | "feature"
-        | "derives_from" | "allocated_from"
-        | "from_result" | "capa" | "supplier"
-        | "originates_from" | "caused_by" | "controls_hazard"
-        | "added_by_capa" | "modified_by_capa"
-        | "replaces" | "affects" => false,
+        "verifies" | "satisfies" | "mitigates" | "requirement" | "requirements" | "component"
+        | "assembly" | "process" | "feature" | "derives_from" | "allocated_from"
+        | "from_result" | "capa" | "supplier" | "originates_from" | "caused_by"
+        | "controls_hazard" | "added_by_capa" | "modified_by_capa" | "replaces" | "affects" => {
+            false
+        }
 
         // Everything else is downstream-pointing (target is a child/dependent/product)
         // Includes: verified_by, satisfied_by, mitigated_by, allocated_to,

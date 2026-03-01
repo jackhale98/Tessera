@@ -79,12 +79,19 @@ pub struct PathArgs {
 }
 
 /// Configuration key categories for organized display
-type ConfigCategory = (&'static str, &'static [(&'static str, &'static str, &'static str)]);
+type ConfigCategory = (
+    &'static str,
+    &'static [(&'static str, &'static str, &'static str)],
+);
 const CONFIG_CATEGORIES: &[ConfigCategory] = &[
     (
         "General",
         &[
-            ("author", "Default author for new entities", "\"Jane Smith\""),
+            (
+                "author",
+                "Default author for new entities",
+                "\"Jane Smith\"",
+            ),
             ("editor", "Editor command for `tdt edit`", "vim"),
             ("pager", "Pager command for long output", "less"),
             (
@@ -117,11 +124,7 @@ const CONFIG_CATEGORIES: &[ConfigCategory] = &[
                 "Merge PR automatically on approval",
                 "false  # true/false",
             ),
-            (
-                "workflow.base_branch",
-                "Target branch for PRs",
-                "main",
-            ),
+            ("workflow.base_branch", "Target branch for PRs", "main"),
         ],
     ),
     (
@@ -253,11 +256,13 @@ fn run_show(args: ShowArgs) -> Result<()> {
         );
         print_config_value(
             "workflow.default_approvals.require_unique_approvers",
-            Some(if config.workflow.default_approvals.require_unique_approvers {
-                "true"
-            } else {
-                "false"
-            }),
+            Some(
+                if config.workflow.default_approvals.require_unique_approvers {
+                    "true"
+                } else {
+                    "false"
+                },
+            ),
         );
         print_config_value(
             "workflow.default_approvals.require_signature",

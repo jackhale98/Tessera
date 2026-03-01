@@ -432,14 +432,10 @@ pub async fn list_results_full(
     state: State<'_, AppState>,
 ) -> CommandResult<Vec<TestResult>> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let filter = build_result_filter(&params);
@@ -452,14 +448,10 @@ pub async fn list_results_full(
 #[tauri::command]
 pub async fn get_result(id: String, state: State<'_, AppState>) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.get_required(&id)?;
@@ -474,14 +466,10 @@ pub async fn create_result(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let test_id: EntityId = input
         .test_id
@@ -526,14 +514,10 @@ pub async fn update_result(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let update_input = UpdateResult {
         title: input.title.map(Some),
@@ -567,14 +551,10 @@ pub async fn delete_result(
     state: State<'_, AppState>,
 ) -> CommandResult<()> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     service.delete(&id, force.unwrap_or(false))?;
@@ -593,14 +573,10 @@ pub async fn add_result_step(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let step_result = parse_step_result(&input.result).ok_or_else(|| {
         CommandError::InvalidInput(format!("Invalid step result: {}", input.result))
@@ -636,14 +612,10 @@ pub async fn update_result_step(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let step_result = result.as_ref().and_then(|r| parse_step_result(r));
     let measurement_opt = measurement.map(|m| Some(measurement_from_input(m)));
@@ -672,14 +644,10 @@ pub async fn remove_result_step(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.remove_step_result(&id, step)?;
@@ -698,14 +666,10 @@ pub async fn record_result_failure(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.record_failure(
@@ -730,14 +694,10 @@ pub async fn remove_result_failure(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.remove_failure(&id, index)?;
@@ -756,14 +716,10 @@ pub async fn record_result_deviation(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result =
@@ -783,14 +739,10 @@ pub async fn remove_result_deviation(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.remove_deviation(&id, index)?;
@@ -809,14 +761,10 @@ pub async fn add_result_attachment(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let attachment_type = input
         .attachment_type
@@ -846,14 +794,10 @@ pub async fn remove_result_attachment(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.remove_attachment(&id, &filename)?;
@@ -872,14 +816,10 @@ pub async fn add_result_equipment(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.add_equipment(
@@ -904,14 +844,10 @@ pub async fn remove_result_equipment(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.remove_equipment(&id, &name)?;
@@ -930,14 +866,10 @@ pub async fn set_result_sample_info(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.set_sample_info(&id, sample_info_from_input(sample_info))?;
@@ -956,14 +888,10 @@ pub async fn set_result_environment(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.set_environment(&id, environment_from_input(environment))?;
@@ -982,14 +910,10 @@ pub async fn mark_result_reviewed(
     state: State<'_, AppState>,
 ) -> CommandResult<TestResult> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let mut cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_mut()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_mut().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.mark_reviewed(&id, reviewer)?;
@@ -1007,14 +931,10 @@ pub async fn get_results_by_test(
     state: State<'_, AppState>,
 ) -> CommandResult<Vec<TestResult>> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let results = service.get_results_for_test(&test_id)?;
@@ -1029,14 +949,10 @@ pub async fn get_latest_result_for_test(
     state: State<'_, AppState>,
 ) -> CommandResult<Option<TestResult>> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let result = service.get_latest_result_for_test(&test_id)?;
@@ -1048,14 +964,10 @@ pub async fn get_latest_result_for_test(
 #[tauri::command]
 pub async fn get_result_stats(state: State<'_, AppState>) -> CommandResult<ResultStats> {
     let project_guard = state.project.lock().unwrap();
-    let project = project_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let cache_guard = state.cache.lock().unwrap();
-    let cache = cache_guard
-        .as_ref()
-        .ok_or(CommandError::NoProject)?;
+    let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let service = ResultService::new(project, cache);
     let stats = service.stats()?;

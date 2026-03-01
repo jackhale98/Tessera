@@ -503,15 +503,19 @@ impl<'a> RiskService<'a> {
         let (path, mut risk) = self.find_risk(id)?;
 
         // Store initial risk if this is first mitigation and we have S/O/D
-        if risk.mitigations.is_empty() && risk.initial_risk.is_none()
-            && risk.severity.is_some() && risk.occurrence.is_some() && risk.detection.is_some() {
-                risk.initial_risk = Some(InitialRisk {
-                    severity: risk.severity,
-                    occurrence: risk.occurrence,
-                    detection: risk.detection,
-                    rpn: risk.rpn,
-                });
-            }
+        if risk.mitigations.is_empty()
+            && risk.initial_risk.is_none()
+            && risk.severity.is_some()
+            && risk.occurrence.is_some()
+            && risk.detection.is_some()
+        {
+            risk.initial_risk = Some(InitialRisk {
+                severity: risk.severity,
+                occurrence: risk.occurrence,
+                detection: risk.detection,
+                rpn: risk.rpn,
+            });
+        }
 
         risk.mitigations.push(mitigation);
         risk.revision += 1;

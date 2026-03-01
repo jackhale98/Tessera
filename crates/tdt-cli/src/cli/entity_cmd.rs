@@ -286,11 +286,7 @@ pub fn output_new_entity(
             println!(
                 "   {} {}",
                 style("?").dim(),
-                style(format!(
-                    "See all fields: tdt schema show {}",
-                    schema_type
-                ))
-                .dim()
+                style(format!("See all fields: tdt schema show {}", schema_type)).dim()
             );
         }
     }
@@ -651,6 +647,5 @@ pub fn add_inferred_link_to_file(
     target_prefix: EntityPrefix,
 ) -> std::result::Result<String, String> {
     use tdt_core::core::links::add_inferred_link;
-    add_inferred_link(file_path, source_prefix, target_id, target_prefix)
-        .map_err(|e| e.to_string())
+    add_inferred_link(file_path, source_prefix, target_id, target_prefix).map_err(|e| e.to_string())
 }

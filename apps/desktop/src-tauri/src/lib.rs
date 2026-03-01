@@ -1,8 +1,8 @@
 //! Tessera Desktop - Tauri application library
 
+use tauri::Manager;
 use tdt_tauri_commands::commands;
 use tdt_tauri_commands::state::AppState;
-use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

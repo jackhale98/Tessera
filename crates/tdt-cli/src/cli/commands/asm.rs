@@ -1531,13 +1531,13 @@ fn run_cost(args: CostArgs) -> Result<()> {
                         && !unselected_warnings
                             .iter()
                             .any(|(id, _, _)| id == &line.component_id)
-                        {
-                            unselected_warnings.push((
-                                line.component_id.clone(),
-                                line.title.clone(),
-                                cmp_quotes.len(),
-                            ));
-                        }
+                    {
+                        unselected_warnings.push((
+                            line.component_id.clone(),
+                            line.title.clone(),
+                            cmp_quotes.len(),
+                        ));
+                    }
                 }
             }
         }

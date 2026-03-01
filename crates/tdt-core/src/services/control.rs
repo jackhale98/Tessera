@@ -98,8 +98,7 @@ pub enum ControlSortField {
 }
 
 /// Input for creating a new control
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateControl {
     /// Control title
     pub title: String,
@@ -135,7 +134,6 @@ pub struct CreateControl {
     #[serde(default)]
     pub tags: Vec<String>,
 }
-
 
 /// Input for updating an existing control
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -299,7 +299,13 @@ fn test_link_order_symmetry_capa_proc() {
     create_test_process(&tmp, "Assembly", "assembly");
 
     // CAPA -> PROC: should add processes_modified + modified_by_capa
-    assert_link_symmetry(&tmp, "CAPA@1", "PROC@1", "processes_modified", "modified_by_capa");
+    assert_link_symmetry(
+        &tmp,
+        "CAPA@1",
+        "PROC@1",
+        "processes_modified",
+        "modified_by_capa",
+    );
 }
 
 #[test]
@@ -309,7 +315,13 @@ fn test_link_order_symmetry_proc_capa() {
     create_test_process(&tmp, "Assembly", "assembly");
 
     // PROC -> CAPA: should add modified_by_capa + processes_modified (reverse)
-    assert_link_symmetry(&tmp, "PROC@1", "CAPA@1", "modified_by_capa", "processes_modified");
+    assert_link_symmetry(
+        &tmp,
+        "PROC@1",
+        "CAPA@1",
+        "modified_by_capa",
+        "processes_modified",
+    );
 }
 
 // ============================================================================
