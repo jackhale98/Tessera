@@ -23,7 +23,10 @@
 		ChevronRight,
 		XCircle,
 		AlertTriangle,
-		History
+		History,
+		Zap,
+		SkipForward,
+		Plus
 	} from 'lucide-svelte';
 
 	const id = $derived($page.params.id ?? '');
@@ -39,6 +42,10 @@
 	// Modal states
 	let showStepModal = $state(false);
 	let selectedStepIndex = $state<number | null>(null);
+	let showForceCompleteDialog = $state(false);
+
+	// Next step tracking
+	let nextStepIndex = $state<number | null>(null);
 
 	// Step update form data
 	let stepStatus = $state('completed');
@@ -105,6 +112,16 @@
 			entity = entityResult as Record<string, unknown>;
 			linksFrom = fromLinks;
 			linksTo = toLinks;
+
+			// Load next step index
+			try {
+				nextStepIndex = await lots.getNextStep(id);
+			} catch {
+				// Compute locally as fallback
+				const steps = (entityResult as Record<string, unknown>)?.execution_steps as ExecutionStep[] ?? [];
+				const idx = steps.findIndex(s => s.status !== 'completed' && s.status !== 'skipped');
+				nextStepIndex = idx >= 0 ? idx : null;
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 			console.error('Failed to load lot:', e);
@@ -232,19 +249,36 @@
 
 		actionInProgress = true;
 		try {
-			await lots.updateStep(
-				id,
-				selectedStepIndex,
-				stepStatus,
-				stepOperator || undefined,
-				stepNotes || undefined
-			);
+			await lots.updateStep(id, selectedStepIndex, {
+				status: stepStatus,
+				operator: stepOperator || undefined,
+				notes: stepNotes || undefined
+			});
 			showStepModal = false;
 			await loadData();
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
 			actionInProgress = false;
+		}
+	}
+
+	async function handleForceComplete() {
+		actionInProgress = true;
+		try {
+			await lots.forceComplete(id);
+			showForceCompleteDialog = false;
+			await loadData();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			actionInProgress = false;
+		}
+	}
+
+	function advanceNextStep() {
+		if (nextStepIndex !== null) {
+			openStepModal(nextStepIndex);
 		}
 	}
 
@@ -323,6 +357,16 @@
 								<CheckCircle2 class="mr-2 h-4 w-4" />
 								Complete Lot
 							</Button>
+							{#if completedSteps < totalSteps}
+								<Button
+									variant="secondary"
+									onclick={() => { showForceCompleteDialog = true; }}
+									disabled={actionInProgress}
+								>
+									<SkipForward class="mr-2 h-4 w-4" />
+									Force Complete
+								</Button>
+							{/if}
 						{:else if lotStatus === 'on_hold'}
 							<Button
 								variant="default"
@@ -379,6 +423,56 @@
 									></div>
 								</div>
 							</div>
+							{#if nextStepIndex !== null && lotStatus === 'in_progress'}
+								<Button
+									class="mt-4 w-full"
+									onclick={advanceNextStep}
+									disabled={actionInProgress}
+								>
+									<Zap class="mr-2 h-4 w-4" />
+									Advance Step: {executionSteps[nextStepIndex]?.process_name ?? executionSteps[nextStepIndex]?.process_id ?? `Step ${nextStepIndex + 1}`}
+								</Button>
+							{/if}
+						</CardContent>
+					</Card>
+				{/if}
+
+				<!-- Quick Actions -->
+				{#if lotStatus === 'in_progress'}
+					<Card>
+						<CardHeader>
+							<CardTitle class="flex items-center gap-2">
+								<Zap class="h-5 w-5" />
+								Quick Actions
+							</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<div class="flex flex-wrap gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => goto(`/quality/ncrs/new?lotId=${id}`)}
+								>
+									<Plus class="mr-2 h-4 w-4" />
+									New NCR
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => goto(`/manufacturing/deviations/new?lotId=${id}`)}
+								>
+									<Plus class="mr-2 h-4 w-4" />
+									New Deviation
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => goto('/quality/capas/new')}
+								>
+									<Plus class="mr-2 h-4 w-4" />
+									New CAPA
+								</Button>
+							</div>
 						</CardContent>
 					</Card>
 				{/if}
@@ -410,7 +504,7 @@
 						<CardContent>
 							<div class="space-y-3">
 								{#each executionSteps as step, i}
-									<div class="flex items-center gap-4 rounded-lg border p-3">
+									<div class="flex items-center gap-4 rounded-lg border p-3 {i === nextStepIndex ? 'border-l-4 border-l-primary bg-primary/5' : ''}" >
 										<div class="flex h-8 w-8 items-center justify-center rounded-full {step.status === 'completed' ? 'bg-green-500/10 text-green-500' : step.status === 'in_progress' ? 'bg-blue-500/10 text-blue-500' : 'bg-muted text-muted-foreground'}">
 											{#if step.status === 'completed'}
 												<CheckCircle2 class="h-4 w-4" />
@@ -433,6 +527,11 @@
 											{/if}
 										</div>
 										<div class="flex items-center gap-2">
+											{#if i === nextStepIndex}
+												<Badge variant="default" class="bg-primary text-primary-foreground">
+													Next
+												</Badge>
+											{/if}
 											<Badge variant={getStepStatusVariant(step.status)}>
 												{formatStepStatus(step.status)}
 											</Badge>
@@ -635,6 +734,34 @@
 		</Card>
 	{/if}
 </div>
+
+<!-- Force Complete Confirmation Dialog -->
+<Dialog bind:open={showForceCompleteDialog}>
+	<DialogContent>
+		<DialogHeader>
+			<DialogTitle>Force Complete Lot</DialogTitle>
+			<DialogDescription>
+				Are you sure you want to force complete this lot? {totalSteps - completedSteps} step{totalSteps - completedSteps !== 1 ? 's' : ''} will be skipped.
+			</DialogDescription>
+		</DialogHeader>
+		<div class="py-4">
+			<div class="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
+				<div class="flex gap-2">
+					<AlertTriangle class="h-5 w-5 text-yellow-500 shrink-0" />
+					<p class="text-sm text-yellow-600 dark:text-yellow-400">
+						Incomplete execution steps will be marked as skipped. This action cannot be undone.
+					</p>
+				</div>
+			</div>
+		</div>
+		<DialogFooter>
+			<Button variant="outline" onclick={() => { showForceCompleteDialog = false; }}>Cancel</Button>
+			<Button variant="secondary" onclick={handleForceComplete} disabled={actionInProgress}>
+				Force Complete
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
 
 <!-- Update Step Modal -->
 <Dialog bind:open={showStepModal}>

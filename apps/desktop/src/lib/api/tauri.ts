@@ -580,7 +580,8 @@ export const assemblies = {
 	removeComponent: (assemblyId: string, componentId: string) =>
 		call<unknown>('remove_assembly_component', { assemblyId, componentId }),
 	updateComponentQuantity: (assemblyId: string, componentId: string, quantity: number) =>
-		call<unknown>('update_assembly_component_quantity', { assemblyId, componentId, quantity })
+		call<unknown>('update_assembly_component_quantity', { assemblyId, componentId, quantity }),
+	getRouting: (id: string) => call<string[]>('get_assembly_routing', { id })
 };
 
 /**
@@ -1047,8 +1048,24 @@ export const lots = {
 	resume: (id: string) => call<unknown>('resume_lot', { id }),
 	complete: (id: string) => call<unknown>('complete_lot', { id }),
 	scrap: (id: string) => call<unknown>('scrap_lot', { id }),
-	updateStep: (id: string, stepIndex: number, status: string, operator?: string, notes?: string) =>
-		call<unknown>('update_lot_step', { id, stepIndex, status, operator, notes }),
+	updateStep: (id: string, stepIndex: number, input: { status?: string; operator?: string; notes?: string }) =>
+		call<unknown>('update_lot_step', { id, stepIndex, input }),
+	addStep: (id: string, input: { process_id?: string }) =>
+		call<unknown>('add_lot_step', { id, input }),
+	getNextStep: (id: string) =>
+		call<number | null>('get_lot_next_step', { id }),
+	setProduct: (id: string, productId: string) =>
+		call<unknown>('set_lot_product', { id, productId }),
+	addNcr: (id: string, ncrId: string) =>
+		call<unknown>('add_lot_ncr', { id, ncrId }),
+	addMaterial: (id: string, input: { component_id?: string; supplier_lot?: string; quantity?: number }) =>
+		call<unknown>('add_lot_material', { id, input }),
+	removeMaterial: (id: string, componentId: string) =>
+		call<unknown>('remove_lot_material', { id, componentId }),
+	forceComplete: (id: string) =>
+		call<unknown>('force_complete_lot', { id }),
+	addResult: (id: string, resultId: string) =>
+		call<unknown>('add_lot_result', { id, resultId }),
 	getStats: () => call<LotStats>('get_lot_stats')
 };
 
