@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+		<div id="__error_display" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#111;color:#f66;padding:24px;font-family:monospace;font-size:14px;white-space:pre-wrap;overflow:auto"></div>
+		<script>
+			window.addEventListener('error', function(e) {
+				var el = document.getElementById('__error_display');
+				el.style.display = 'block';
+				el.textContent += 'ERROR: ' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || '') + '\n\n';
+			});
+			window.addEventListener('unhandledrejection', function(e) {
+				var el = document.getElementById('__error_display');
+				el.style.display = 'block';
+				el.textContent += 'PROMISE: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)) + '\n\n';
+			});
+		</script>
+	</body>
+</html>

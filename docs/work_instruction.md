@@ -356,6 +356,51 @@ tdt work delete WORK@1 --force
 tdt work archive WORK@1
 ```
 
+### Manage procedure steps
+
+Add, remove, and list procedure steps from the CLI without editing YAML directly:
+
+```bash
+# Add a step (auto-numbered if --step omitted)
+tdt work step add WORK@1 --action "Load raw material into fixture"
+
+# Add with verification, time estimate, and caution
+tdt work step add WORK@1 --action "Run CNC program" --step 2 \
+    --verification "Monitor spindle load, no chatter" \
+    --time 45 --caution "Keep hands clear of spindle"
+
+# Add a step requiring quality approval (hold point)
+tdt work step add WORK@1 --action "Final dimensional inspection" --step 3 \
+    --verification "All dims within tolerance" \
+    --require-approval --hold-point
+
+# Add with data collection fields and equipment
+tdt work step add WORK@1 --action "Measure bore diameter" --step 4 \
+    --verification "Diameter within 25.00 +/-0.025mm" \
+    --data-field "bore_diameter:Bore Diameter (mm)" \
+    --equipment "Bore Gauge" --require-approval
+
+# List all steps for a work instruction
+tdt work step list WORK@1
+
+# Remove a step by number
+tdt work step rm WORK@1 --step 3
+```
+
+**Step Add Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--action` | Action description (required) |
+| `--step` | Step number (defaults to next available) |
+| `--verification` | Verification/check point description |
+| `--caution` | Caution/warning note |
+| `--time` | Estimated time in minutes |
+| `--require-approval` | Mark step as requiring quality approval |
+| `--hold-point` | Mark step as a quality hold point |
+| `--data-field` | Data field to collect (`key:label` format, repeatable) |
+| `--equipment` | Equipment required (repeatable) |
+
 ## Best Practices
 
 ### Writing Effective Work Instructions

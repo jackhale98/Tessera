@@ -40,6 +40,88 @@ pub enum WorkCommands {
 
     /// Archive a work instruction (soft delete)
     Archive(ArchiveArgs),
+
+    /// Manage procedure steps
+    #[command(subcommand)]
+    Step(StepCommands),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum StepCommands {
+    /// Add a procedure step to a work instruction
+    Add(StepAddArgs),
+
+    /// Remove a procedure step from a work instruction
+    Rm(StepRmArgs),
+
+    /// List procedure steps for a work instruction
+    List(StepListArgs),
+}
+
+#[derive(clap::Args, Debug)]
+pub struct StepAddArgs {
+    /// Work instruction ID (WORK@N or WORK-xxx)
+    pub id: String,
+
+    /// Action description for this step
+    #[arg(long, short = 'a')]
+    pub action: String,
+
+    /// Step number (defaults to next available)
+    #[arg(long, short = 's')]
+    pub step: Option<u32>,
+
+    /// Verification/check point description
+    #[arg(long)]
+    pub verification: Option<String>,
+
+    /// Caution/warning note
+    #[arg(long)]
+    pub caution: Option<String>,
+
+    /// Estimated time in minutes
+    #[arg(long, short = 't')]
+    pub time: Option<f64>,
+
+    /// Mark step as requiring quality approval
+    #[arg(long)]
+    pub require_approval: bool,
+
+    /// Mark step as a quality hold point
+    #[arg(long)]
+    pub hold_point: bool,
+
+    /// Data field to collect (key:label format, can be repeated)
+    #[arg(long, short = 'd', value_parser = parse_data_field)]
+    pub data_field: Vec<(String, String)>,
+
+    /// Equipment required (name, can be repeated)
+    #[arg(long, short = 'e')]
+    pub equipment: Vec<String>,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct StepRmArgs {
+    /// Work instruction ID (WORK@N or WORK-xxx)
+    pub id: String,
+
+    /// Step number to remove
+    #[arg(long, short = 's')]
+    pub step: u32,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct StepListArgs {
+    /// Work instruction ID (WORK@N or WORK-xxx)
+    pub id: String,
+}
+
+fn parse_data_field(s: &str) -> std::result::Result<(String, String), String> {
+    let parts: Vec<&str> = s.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err("Data field must be in key:label format (e.g., diameter:\"Hole Diameter (mm)\")".to_string());
+    }
+    Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
 /// Column to display in list output
@@ -360,6 +442,11 @@ pub fn run(cmd: WorkCommands, global: &GlobalOpts) -> Result<()> {
         WorkCommands::Edit(args) => run_edit(args),
         WorkCommands::Delete(args) => run_delete(args),
         WorkCommands::Archive(args) => run_archive(args),
+        WorkCommands::Step(cmd) => match cmd {
+            StepCommands::Add(args) => run_step_add(args),
+            StepCommands::Rm(args) => run_step_rm(args),
+            StepCommands::List(args) => run_step_list(args),
+        },
     }
 }
 
@@ -805,4 +892,241 @@ fn run_archive(args: ArchiveArgs) -> Result<()> {
         true,
         args.quiet,
     )
+}
+
+fn run_step_add(args: StepAddArgs) -> Result<()> {
+    use tdt_core::entities::work_instruction::{ProcedureStep, StepApprovalRequirement, StepDataField};
+
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
+
+    let service = WorkInstructionService::new(&project, &cache);
+    let mut wi = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No work instruction found matching '{}'", args.id))?;
+
+    let display_id = short_ids
+        .get_short_id(&wi.id.to_string())
+        .unwrap_or_else(|| args.id.clone());
+
+    // Determine step number
+    let step_num = args.step.unwrap_or_else(|| {
+        wi.procedure
+            .iter()
+            .map(|s| s.step)
+            .max()
+            .unwrap_or(0)
+            + 1
+    });
+
+    // Check for duplicate step number
+    if wi.procedure.iter().any(|s| s.step == step_num) {
+        return Err(miette::miette!(
+            "Step {} already exists in {}. Use a different step number or remove it first.",
+            step_num,
+            display_id
+        ));
+    }
+
+    // Build the procedure step
+    let mut proc_step = ProcedureStep::new(step_num, args.action.clone());
+
+    if let Some(ref v) = args.verification {
+        proc_step.verification = Some(v.clone());
+    }
+    if let Some(ref c) = args.caution {
+        proc_step.caution = Some(c.clone());
+    }
+    if let Some(t) = args.time {
+        proc_step.estimated_time_minutes = Some(t);
+    }
+    if args.require_approval || args.hold_point {
+        proc_step.approval = Some(StepApprovalRequirement {
+            requires_signoff: args.require_approval || args.hold_point,
+            quality_hold_point: args.hold_point,
+            ..Default::default()
+        });
+    }
+    for (key, label) in &args.data_field {
+        proc_step.data_fields.push(StepDataField {
+            key: key.clone(),
+            label: label.clone(),
+            ..Default::default()
+        });
+    }
+    proc_step.equipment = args.equipment.clone();
+
+    // Add step and sort
+    wi.procedure.push(proc_step);
+    wi.procedure.sort_by_key(|s| s.step);
+    wi.entity_revision += 1;
+
+    // Save
+    let file_path = project
+        .root()
+        .join("manufacturing/work_instructions")
+        .join(format!("{}.tdt.yaml", wi.id));
+    let yaml = serde_yml::to_string(&wi).into_diagnostic()?;
+    std::fs::write(&file_path, yaml).into_diagnostic()?;
+
+    println!(
+        "{} Added step {} to {}",
+        style("✓").green(),
+        style(step_num).yellow(),
+        style(&display_id).cyan()
+    );
+    println!("   Action: {}", args.action);
+    if let Some(ref v) = args.verification {
+        println!("   Verification: {}", v);
+    }
+    if args.hold_point {
+        println!("   {} Quality hold point", style("⚠").yellow());
+    } else if args.require_approval {
+        println!("   {} Requires approval", style("⏳").yellow());
+    }
+    println!(
+        "   {} now has {} step(s)",
+        display_id,
+        wi.procedure.len()
+    );
+
+    super::utils::sync_cache(&project);
+    Ok(())
+}
+
+fn run_step_rm(args: StepRmArgs) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
+
+    let service = WorkInstructionService::new(&project, &cache);
+    let mut wi = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No work instruction found matching '{}'", args.id))?;
+
+    let display_id = short_ids
+        .get_short_id(&wi.id.to_string())
+        .unwrap_or_else(|| args.id.clone());
+
+    let before_len = wi.procedure.len();
+    wi.procedure.retain(|s| s.step != args.step);
+
+    if wi.procedure.len() == before_len {
+        return Err(miette::miette!(
+            "Step {} not found in {}",
+            args.step,
+            display_id
+        ));
+    }
+
+    wi.entity_revision += 1;
+
+    let file_path = project
+        .root()
+        .join("manufacturing/work_instructions")
+        .join(format!("{}.tdt.yaml", wi.id));
+    let yaml = serde_yml::to_string(&wi).into_diagnostic()?;
+    std::fs::write(&file_path, yaml).into_diagnostic()?;
+
+    println!(
+        "{} Removed step {} from {}",
+        style("✓").green(),
+        style(args.step).yellow(),
+        style(&display_id).cyan()
+    );
+    println!(
+        "   {} now has {} step(s)",
+        display_id,
+        wi.procedure.len()
+    );
+
+    super::utils::sync_cache(&project);
+    Ok(())
+}
+
+fn run_step_list(args: StepListArgs) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let short_ids = ShortIdIndex::load(&project);
+    let resolved_id = short_ids
+        .resolve(&args.id)
+        .unwrap_or_else(|| args.id.clone());
+
+    let service = WorkInstructionService::new(&project, &cache);
+    let wi = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No work instruction found matching '{}'", args.id))?;
+
+    let display_id = short_ids
+        .get_short_id(&wi.id.to_string())
+        .unwrap_or_else(|| args.id.clone());
+
+    if wi.procedure.is_empty() {
+        println!(
+            "{} has no procedure steps defined.",
+            style(&display_id).cyan()
+        );
+        println!(
+            "Add steps with: tdt work step add {} --action \"...\"",
+            display_id
+        );
+        return Ok(());
+    }
+
+    println!(
+        "{} - {} ({} steps)",
+        style(&display_id).cyan(),
+        style(&wi.title).bold(),
+        wi.procedure.len()
+    );
+    println!("{}", style("─".repeat(60)).dim());
+
+    for step in &wi.procedure {
+        let mut flags = Vec::new();
+        if step.is_hold_point() {
+            flags.push(style("HOLD").yellow().bold().to_string());
+        } else if step.requires_approval() {
+            flags.push(style("APPROVAL").yellow().to_string());
+        }
+        if !step.data_fields.is_empty() {
+            flags.push(format!("{}x data", step.data_fields.len()));
+        }
+        if !step.equipment.is_empty() {
+            flags.push(format!("{}x equip", step.equipment.len()));
+        }
+
+        let flag_str = if flags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", flags.join(", "))
+        };
+
+        println!(
+            "  {}. {}{}",
+            style(step.step).cyan(),
+            step.action,
+            style(&flag_str).dim()
+        );
+        if let Some(ref v) = step.verification {
+            println!("     {} Verify: {}", style("✓").dim(), v);
+        }
+        if let Some(ref c) = step.caution {
+            println!("     {} Caution: {}", style("⚠").yellow(), c);
+        }
+        if let Some(t) = step.estimated_time_minutes {
+            println!("     {} Est. {:.0} min", style("⏱").dim(), t);
+        }
+    }
+
+    Ok(())
 }

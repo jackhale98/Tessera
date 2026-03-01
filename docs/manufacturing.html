@@ -1057,11 +1057,26 @@
 
             <h3>Add Steps</h3>
 
-            <p>Steps are added by editing the work instruction YAML:</p>
+            <p>Steps can be added from the CLI or by editing the YAML directly:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Open work instruction in your editor to add steps</span>
+              <pre><code><span class="comment"># Add steps from the CLI</span>
+<span class="cmd">tdt work step add</span> WORK@1 --action <span class="string">"Load raw stock into vise"</span> \
+  --verification <span class="string">"Part seated firmly against parallels"</span> \
+  --caution <span class="string">"Wear safety glasses"</span> --time <span class="number">5</span>
+
+<span class="cmd">tdt work step add</span> WORK@1 --action <span class="string">"Run CNC program O1001"</span> --time <span class="number">45</span>
+
+<span class="comment"># Add a quality hold point requiring approval</span>
+<span class="cmd">tdt work step add</span> WORK@1 --action <span class="string">"Final dimensional inspection"</span> \
+  --verification <span class="string">"All dims within tolerance"</span> \
+  --require-approval --hold-point
+
+<span class="comment"># List all steps</span>
+<span class="cmd">tdt work step list</span> WORK@1
+
+<span class="comment"># Or edit the YAML directly</span>
 <span class="cmd">tdt work edit</span> WORK@1</code></pre>
             </div>
 
@@ -1152,7 +1167,15 @@
 <span class="comment"># Complete step 2 with approval required</span>
 <span class="cmd">tdt lot wi-step</span> LOT@1 -w WORK@1 -s <span class="number">2</span> --complete \
   -O <span class="string">"M. Chen"</span> --sign --require-approval \
-  -n <span class="string">"Assembly complete. Torque values within spec."</span></code></pre>
+  -n <span class="string">"Assembly complete. Torque values within spec."</span>
+
+<span class="comment"># For lots created with --from-routing, specify the process index</span>
+<span class="cmd">tdt lot wi-step</span> LOT@1 --process <span class="number">1</span> -w WORK@1 -s <span class="number">1</span> --complete</code></pre>
+            </div>
+
+            <div class="info-box">
+              <h4>Step Order Enforcement</h4>
+              <p>Steps must be completed in order &mdash; both within a work instruction (step 1 before step 2) and across processes (process 1 before process 2). To bypass this for an approved deviation, use <code>--deviation DEV@1</code>.</p>
             </div>
 
             <h3>Step Approval and Lot Completion</h3>
@@ -1258,16 +1281,23 @@
 
 <span class="comment"># Customer complaint</span>
 <span class="cmd">tdt ncr new</span> --title <span class="string">"Field failure - housing crack"</span> \
-  -T customer -S critical --no-edit</code></pre>
+  -T customer -S critical --no-edit
+
+<span class="comment"># Link NCR to production lot (bidirectional)</span>
+<span class="cmd">tdt link add</span> NCR@1 LOT@1</code></pre>
             </div>
 
             <h3>NCR Workflow</h3>
 
-            <p>Use <code>tdt ncr edit</code> to record containment, investigation, and root cause details in the YAML:</p>
+            <p>Advance an NCR through its workflow stages, then close with a disposition decision:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Edit NCR to add containment, investigation, and root cause</span>
+              <pre><code><span class="comment"># Advance NCR through workflow stages</span>
+<span class="cmd">tdt ncr advance</span> NCR@1                        <span class="comment"># Auto-advance to next stage</span>
+<span class="cmd">tdt ncr advance</span> NCR@1 --status investigation  <span class="comment"># Jump to specific stage</span>
+
+<span class="comment"># Edit NCR to add containment, investigation, and root cause</span>
 <span class="cmd">tdt ncr edit</span> NCR@1
 
 <span class="comment"># Close the NCR with disposition and rationale</span>
@@ -1329,11 +1359,15 @@
 
             <h3>Root Cause Analysis and Action Items</h3>
 
-            <p>Root cause analysis, action items, and detailed investigation are recorded by editing the CAPA YAML:</p>
+            <p>Advance the CAPA through its workflow stages as you investigate and implement actions:</p>
 
             <div class="code-block">
               <div class="code-header"><span class="code-lang">bash</span></div>
-              <pre><code><span class="comment"># Edit CAPA to add root cause analysis, actions, and owners</span>
+              <pre><code><span class="comment"># Advance CAPA through workflow stages</span>
+<span class="cmd">tdt capa advance</span> CAPA@1                         <span class="comment"># Auto-advance to next stage</span>
+<span class="cmd">tdt capa advance</span> CAPA@1 --status implementation  <span class="comment"># Jump to specific stage</span>
+
+<span class="comment"># Edit CAPA to add root cause analysis, actions, and owners</span>
 <span class="cmd">tdt capa edit</span> CAPA@1</code></pre>
             </div>
 

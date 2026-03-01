@@ -414,6 +414,10 @@ pub struct WiStepArgs {
     /// Mark the step as complete
     #[arg(long, short = 'c')]
     pub complete: bool,
+
+    /// Approved deviation ID to bypass step order enforcement (DEV@N or DEV-xxx)
+    #[arg(long)]
+    pub deviation: Option<String>,
 }
 
 /// View electronic router/traveler status
@@ -1138,14 +1142,43 @@ fn run_show(args: ShowArgs, global: &GlobalOpts) -> Result<()> {
                     lot.execution.len()
                 );
                 for (i, step) in lot.execution.iter().enumerate() {
-                    let proc = step.process.as_deref().unwrap_or("(unlinked)");
+                    let proc_id = step.process.as_deref().unwrap_or("(unlinked)");
+                    let proc_display = short_ids
+                        .get_short_id(proc_id)
+                        .unwrap_or_else(|| proc_id.to_string());
+                    // Try to load process title
+                    let proc_title = {
+                        let proc_file = project
+                            .root()
+                            .join("manufacturing/processes")
+                            .join(format!("{}.tdt.yaml", proc_id));
+                        if let Ok(content) = std::fs::read_to_string(&proc_file) {
+                            if let Ok(val) = serde_yml::from_str::<serde_json::Value>(&content) {
+                                val.get("title").and_then(|v| v.as_str()).map(String::from)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    };
                     let status_styled = match step.status {
                         ExecutionStatus::Pending => style("pending").dim(),
                         ExecutionStatus::InProgress => style("in_progress").yellow(),
                         ExecutionStatus::Completed => style("completed").green(),
                         ExecutionStatus::Skipped => style("skipped").dim(),
                     };
-                    print!("  {}. {} [{}]", i + 1, proc, status_styled);
+                    if let Some(ref title) = proc_title {
+                        print!(
+                            "  {}. {} - {} [{}]",
+                            i + 1,
+                            style(&proc_display).cyan(),
+                            title,
+                            status_styled
+                        );
+                    } else {
+                        print!("  {}. {} [{}]", i + 1, style(&proc_display).cyan(), status_styled);
+                    }
                     if let Some(ref date) = step.completed_date {
                         print!(" - {}", date);
                     }
@@ -1730,6 +1763,47 @@ fn run_complete(args: CompleteArgs, global: &GlobalOpts) -> Result<()> {
         ));
     }
 
+    // Check for pending approvals on WI steps
+    let mut pending_approvals: Vec<(usize, &str, u32)> = Vec::new();
+    for (i, step) in lot.execution.iter().enumerate() {
+        for wi_exec in &step.wi_step_executions {
+            if wi_exec.approval_status == ApprovalStatus::Pending {
+                let wi_display = short_ids
+                    .get_short_id(&wi_exec.work_instruction)
+                    .unwrap_or_else(|| wi_exec.work_instruction.clone());
+                pending_approvals.push((i + 1, wi_display.leak(), wi_exec.step_number));
+            }
+        }
+    }
+
+    if !pending_approvals.is_empty() && !args.yes {
+        println!();
+        println!(
+            "{}",
+            style("Warning: Pending approvals on WI steps").yellow().bold()
+        );
+        for (proc_step, wi_id, step_num) in &pending_approvals {
+            println!(
+                "  Process step {} | {} step {} - awaiting approval",
+                proc_step, wi_id, step_num
+            );
+        }
+        println!();
+        println!(
+            "Approve these steps first with: tdt lot approve {} --wi <WI> --step <N>",
+            display_id
+        );
+        println!();
+        print!("Complete lot with unapproved steps? [y/N] ");
+        std::io::Write::flush(&mut std::io::stdout()).into_diagnostic()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).into_diagnostic()?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Cancelled.");
+            return Ok(());
+        }
+    }
+
     // Update lot
     lot.lot_status = LotStatus::Completed;
     lot.completion_date = Some(chrono::Local::now().date_naive());
@@ -1874,6 +1948,94 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
             proc_idx + 1,
             lot.execution.len()
         ));
+    }
+
+    // Step order enforcement (skip for --show mode)
+    if !args.show && args.deviation.is_none() {
+        // 1. Check process sequencing: all preceding process steps must be completed
+        for i in 0..proc_idx {
+            let prev_step = &lot.execution[i];
+            if prev_step.status != ExecutionStatus::Completed
+                && prev_step.status != ExecutionStatus::Skipped
+            {
+                let prev_proc_id = prev_step
+                    .process
+                    .as_deref()
+                    .unwrap_or("unknown");
+                let prev_display = short_ids
+                    .get_short_id(prev_proc_id)
+                    .unwrap_or_else(|| format!("step {}", i + 1));
+                return Err(miette::miette!(
+                    "Cannot execute step on process {} (step {}): preceding process {} (step {}) is not completed.\n\
+                     Complete upstream process steps first, or use --deviation DEV@N to bypass with an approved deviation.",
+                    proc_idx + 1,
+                    proc_idx + 1,
+                    prev_display,
+                    i + 1
+                ));
+            }
+        }
+
+        // 2. Check WI step sequencing: previous steps for this WI must be completed
+        if args.step > 1 {
+            let exec_step = &lot.execution[proc_idx];
+            for prev_step_num in 1..args.step {
+                let prev_completed = exec_step
+                    .wi_step_executions
+                    .iter()
+                    .any(|e| {
+                        e.work_instruction == resolved_wi_id
+                            && e.step_number == prev_step_num
+                            && e.is_completed()
+                    });
+                if !prev_completed {
+                    return Err(miette::miette!(
+                        "Cannot execute WI step {}: step {} has not been completed.\n\
+                         Execute work instruction steps in order, or use --deviation DEV@N to bypass.",
+                        args.step,
+                        prev_step_num
+                    ));
+                }
+            }
+        }
+    }
+
+    // Validate deviation if provided
+    if let Some(ref dev_id) = args.deviation {
+        let resolved_dev = short_ids
+            .resolve(dev_id)
+            .unwrap_or_else(|| dev_id.clone());
+        // Check deviation exists and is approved
+        let dev_dir = project.root().join("manufacturing/deviations");
+        let dev_file = dev_dir.join(format!("{}.tdt.yaml", resolved_dev));
+        if !dev_file.exists() {
+            return Err(miette::miette!(
+                "Deviation '{}' not found. Create a deviation first with: tdt dev new",
+                dev_id
+            ));
+        }
+        if let Ok(content) = fs::read_to_string(&dev_file) {
+            if let Ok(dev) = serde_yml::from_str::<serde_json::Value>(&content) {
+                let dev_status = dev
+                    .get("dev_status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if dev_status != "approved" {
+                    return Err(miette::miette!(
+                        "Deviation '{}' is not approved (status: {}). Only approved deviations can bypass step ordering.",
+                        dev_id,
+                        dev_status
+                    ));
+                }
+            }
+        }
+        if !global.quiet {
+            eprintln!(
+                "{} Using deviation {} to bypass step order enforcement",
+                style("!").yellow(),
+                style(dev_id).cyan()
+            );
+        }
     }
 
     // Show mode - just display step status

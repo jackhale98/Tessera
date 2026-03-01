@@ -45,6 +45,32 @@ pub enum CapaCommands {
 
     /// Record effectiveness verification
     Verify(VerifyArgs),
+
+    /// Advance CAPA to the next workflow stage
+    Advance(CapaAdvanceArgs),
+}
+
+#[derive(clap::Args, Debug)]
+pub struct CapaAdvanceArgs {
+    /// CAPA ID or short ID (CAPA@N)
+    pub capa: String,
+
+    /// Target status (if omitted, advances to the next stage)
+    #[arg(long, short = 's')]
+    pub status: Option<CliCapaStatus>,
+
+    /// Notes about the status change
+    #[arg(long, short = 'n')]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CliCapaStatus {
+    Initiation,
+    Investigation,
+    Implementation,
+    Verification,
+    Closed,
 }
 
 /// CAPA type filter
@@ -333,6 +359,7 @@ pub fn run(cmd: CapaCommands, global: &GlobalOpts) -> Result<()> {
         CapaCommands::Delete(args) => run_delete(args),
         CapaCommands::Archive(args) => run_archive(args),
         CapaCommands::Verify(args) => run_verify(args, global),
+        CapaCommands::Advance(args) => run_capa_advance(args, global),
     }
 }
 
@@ -665,6 +692,33 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
     let short_id = short_ids.add(capa.id.to_string());
     super::utils::save_short_ids(&mut short_ids, &project);
 
+    // Create bidirectional links for --ncr flag
+    let mut ncr_link_added = false;
+    if let Some(ref ncr_id) = source_reference {
+        // Add NCR to CAPA's links.ncrs
+        if let Ok(_) = crate::cli::entity_cmd::add_inferred_link_to_file(
+            &file_path,
+            EntityPrefix::Capa,
+            ncr_id,
+            EntityPrefix::Ncr,
+        ) {
+            ncr_link_added = true;
+        }
+        // Add CAPA to NCR's links.capa (find NCR file)
+        let ncr_file = project
+            .root()
+            .join("manufacturing/ncrs")
+            .join(format!("{}.tdt.yaml", ncr_id));
+        if ncr_file.exists() {
+            let _ = crate::cli::entity_cmd::add_inferred_link_to_file(
+                &ncr_file,
+                EntityPrefix::Ncr,
+                &capa.id.to_string(),
+                EntityPrefix::Capa,
+            );
+        }
+    }
+
     // Handle --link flags
     let added_links = crate::cli::entity_cmd::process_link_flags(
         &file_path,
@@ -707,7 +761,17 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
                 style(&title).white()
             );
             if let Some(ref ncr_id) = source_reference {
-                println!("   Source: {}", style(ncr_id).cyan());
+                let ncr_display = short_ids
+                    .get_short_id(ncr_id)
+                    .unwrap_or_else(|| ncr_id.clone());
+                println!("   Source: {}", style(&ncr_display).cyan());
+                if ncr_link_added {
+                    println!(
+                        "   {} --[ncrs]--> {}",
+                        style("→").dim(),
+                        style(&ncr_display).yellow()
+                    );
+                }
             }
 
             // Show added links
@@ -1140,5 +1204,102 @@ fn run_verify(args: VerifyArgs, global: &GlobalOpts) -> Result<()> {
     // Sync cache after mutation
     super::utils::sync_cache(&project);
 
+    Ok(())
+}
+
+fn run_capa_advance(args: CapaAdvanceArgs, _global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = CapaService::new(&project, &cache);
+    let short_ids = ShortIdIndex::load(&project);
+
+    let resolved_id = short_ids
+        .resolve(&args.capa)
+        .unwrap_or_else(|| args.capa.clone());
+
+    let display_id = short_ids
+        .get_short_id(&resolved_id)
+        .unwrap_or_else(|| args.capa.clone());
+
+    let capa = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No CAPA found matching '{}'", args.capa))?;
+
+    // Determine target status
+    let target_status = if let Some(cli_status) = args.status {
+        match cli_status {
+            CliCapaStatus::Initiation => CapaStatus::Initiation,
+            CliCapaStatus::Investigation => CapaStatus::Investigation,
+            CliCapaStatus::Implementation => CapaStatus::Implementation,
+            CliCapaStatus::Verification => CapaStatus::Verification,
+            CliCapaStatus::Closed => {
+                return Err(miette::miette!(
+                    "Use 'tdt capa verify --result effective' to close a CAPA after verification"
+                ));
+            }
+        }
+    } else {
+        // Auto-advance to next stage
+        match capa.capa_status {
+            CapaStatus::Initiation => CapaStatus::Investigation,
+            CapaStatus::Investigation => CapaStatus::Implementation,
+            CapaStatus::Implementation => CapaStatus::Verification,
+            CapaStatus::Verification => {
+                return Err(miette::miette!(
+                    "CAPA {} is in verification stage. Use 'tdt capa verify' to record effectiveness.",
+                    display_id
+                ));
+            }
+            CapaStatus::Closed => {
+                return Err(miette::miette!("CAPA {} is already closed", display_id));
+            }
+        }
+    };
+
+    // Update CAPA YAML directly
+    let capa_file = project
+        .root()
+        .join("quality/capas")
+        .join(format!("{}.tdt.yaml", capa.id));
+    let content = std::fs::read_to_string(&capa_file).into_diagnostic()?;
+    let mut capa_yaml: serde_json::Value =
+        serde_yml::from_str(&content).into_diagnostic()?;
+
+    capa_yaml["capa_status"] = serde_json::json!(target_status.to_string());
+
+    if let Some(rev) = capa_yaml.get("entity_revision").and_then(|v| v.as_u64()) {
+        capa_yaml["entity_revision"] = serde_json::json!(rev + 1);
+    }
+
+    let yaml_out = serde_yml::to_string(&capa_yaml).into_diagnostic()?;
+    std::fs::write(&capa_file, yaml_out).into_diagnostic()?;
+
+    println!(
+        "{} CAPA {} advanced: {} → {}",
+        style("✓").green(),
+        style(&display_id).cyan(),
+        style(capa.capa_status.to_string()).dim(),
+        style(target_status.to_string()).yellow()
+    );
+
+    // Show next steps
+    match target_status {
+        CapaStatus::Investigation => {
+            println!("   Next: Investigate root cause, then advance to implementation");
+        }
+        CapaStatus::Implementation => {
+            println!("   Next: Implement corrective actions, then advance to verification");
+        }
+        CapaStatus::Verification => {
+            println!(
+                "   Next: Verify effectiveness: tdt capa verify {} --result <effective|partial|ineffective>",
+                display_id
+            );
+        }
+        _ => {}
+    }
+
+    super::utils::sync_cache(&project);
     Ok(())
 }

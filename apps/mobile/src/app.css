@@ -1,0 +1,207 @@
+@import 'tailwindcss';
+
+/* Custom CSS variables for theming - shared with desktop */
+@theme {
+	--color-background: var(--theme-background);
+	--color-foreground: var(--theme-foreground);
+	--color-card: var(--theme-card);
+	--color-card-foreground: var(--theme-card-foreground);
+	--color-popover: var(--theme-popover);
+	--color-popover-foreground: var(--theme-popover-foreground);
+	--color-primary: var(--theme-primary);
+	--color-primary-foreground: var(--theme-primary-foreground);
+	--color-secondary: var(--theme-secondary);
+	--color-secondary-foreground: var(--theme-secondary-foreground);
+	--color-muted: var(--theme-muted);
+	--color-muted-foreground: var(--theme-muted-foreground);
+	--color-accent: var(--theme-accent);
+	--color-accent-foreground: var(--theme-accent-foreground);
+	--color-destructive: var(--theme-destructive);
+	--color-destructive-foreground: var(--theme-destructive-foreground);
+	--color-border: var(--theme-border);
+	--color-input: var(--theme-input);
+	--color-ring: var(--theme-ring);
+
+	/* Status colors */
+	--color-success: var(--theme-success);
+	--color-warning: var(--theme-warning);
+	--color-info: var(--theme-info);
+	--color-error: var(--theme-error);
+
+	/* Sidebar - reused for bottom nav */
+	--color-sidebar: var(--theme-sidebar);
+	--color-sidebar-foreground: var(--theme-sidebar-foreground);
+	--color-sidebar-primary: var(--theme-sidebar-primary);
+	--color-sidebar-primary-foreground: var(--theme-sidebar-primary-foreground);
+	--color-sidebar-accent: var(--theme-sidebar-accent);
+	--color-sidebar-accent-foreground: var(--theme-sidebar-accent-foreground);
+	--color-sidebar-border: var(--theme-sidebar-border);
+	--color-sidebar-ring: var(--theme-sidebar-ring);
+
+	/* Border radius */
+	--radius-sm: 0.25rem;
+	--radius-md: 0.375rem;
+	--radius-lg: 0.5rem;
+	--radius-xl: 0.75rem;
+
+	/* Fonts */
+	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Dark theme (default) */
+:root,
+:root.dark {
+	--theme-background: oklch(0.145 0 0);
+	--theme-foreground: oklch(0.985 0 0);
+	--theme-card: oklch(0.165 0 0);
+	--theme-card-foreground: oklch(0.985 0 0);
+	--theme-popover: oklch(0.165 0 0);
+	--theme-popover-foreground: oklch(0.985 0 0);
+	--theme-primary: oklch(0.646 0.222 264.052);
+	--theme-primary-foreground: oklch(0.985 0 0);
+	--theme-secondary: oklch(0.269 0 0);
+	--theme-secondary-foreground: oklch(0.985 0 0);
+	--theme-muted: oklch(0.269 0 0);
+	--theme-muted-foreground: oklch(0.708 0 0);
+	--theme-accent: oklch(0.269 0 0);
+	--theme-accent-foreground: oklch(0.985 0 0);
+	--theme-destructive: oklch(0.704 0.191 22.216);
+	--theme-destructive-foreground: oklch(0.985 0 0);
+	--theme-border: oklch(0.269 0 0);
+	--theme-input: oklch(0.269 0 0);
+	--theme-ring: oklch(0.646 0.222 264.052);
+
+	/* Status colors */
+	--theme-success: oklch(0.723 0.191 142.495);
+	--theme-warning: oklch(0.828 0.189 84.429);
+	--theme-info: oklch(0.646 0.222 264.052);
+	--theme-error: oklch(0.704 0.191 22.216);
+
+	/* Sidebar / Bottom nav */
+	--theme-sidebar: oklch(0.125 0 0);
+	--theme-sidebar-foreground: oklch(0.985 0 0);
+	--theme-sidebar-primary: oklch(0.646 0.222 264.052);
+	--theme-sidebar-primary-foreground: oklch(0.985 0 0);
+	--theme-sidebar-accent: oklch(0.269 0 0);
+	--theme-sidebar-accent-foreground: oklch(0.985 0 0);
+	--theme-sidebar-border: oklch(0.269 0 0);
+	--theme-sidebar-ring: oklch(0.646 0.222 264.052);
+}
+
+/* Light theme */
+:root.light {
+	--theme-background: oklch(0.985 0 0);
+	--theme-foreground: oklch(0.145 0 0);
+	--theme-card: oklch(0.985 0 0);
+	--theme-card-foreground: oklch(0.145 0 0);
+	--theme-popover: oklch(0.985 0 0);
+	--theme-popover-foreground: oklch(0.145 0 0);
+	--theme-primary: oklch(0.546 0.245 264.052);
+	--theme-primary-foreground: oklch(0.985 0 0);
+	--theme-secondary: oklch(0.945 0 0);
+	--theme-secondary-foreground: oklch(0.145 0 0);
+	--theme-muted: oklch(0.945 0 0);
+	--theme-muted-foreground: oklch(0.45 0 0);
+	--theme-accent: oklch(0.945 0 0);
+	--theme-accent-foreground: oklch(0.145 0 0);
+	--theme-destructive: oklch(0.577 0.245 27.325);
+	--theme-destructive-foreground: oklch(0.985 0 0);
+	--theme-border: oklch(0.88 0 0);
+	--theme-input: oklch(0.88 0 0);
+	--theme-ring: oklch(0.546 0.245 264.052);
+
+	/* Status colors */
+	--theme-success: oklch(0.527 0.154 150.069);
+	--theme-warning: oklch(0.769 0.189 70.08);
+	--theme-info: oklch(0.546 0.245 264.052);
+	--theme-error: oklch(0.577 0.245 27.325);
+
+	/* Sidebar / Bottom nav */
+	--theme-sidebar: oklch(0.965 0 0);
+	--theme-sidebar-foreground: oklch(0.145 0 0);
+	--theme-sidebar-primary: oklch(0.546 0.245 264.052);
+	--theme-sidebar-primary-foreground: oklch(0.985 0 0);
+	--theme-sidebar-accent: oklch(0.945 0 0);
+	--theme-sidebar-accent-foreground: oklch(0.145 0 0);
+	--theme-sidebar-border: oklch(0.88 0 0);
+	--theme-sidebar-ring: oklch(0.546 0.245 264.052);
+}
+
+/* Base styles */
+@layer base {
+	html {
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		height: 100%;
+	}
+
+	body {
+		background-color: var(--theme-background);
+		color: var(--theme-foreground);
+		font-feature-settings: "rlig" 1, "calt" 1;
+		height: 100%;
+		overflow: hidden;
+		overscroll-behavior: none;
+	}
+
+	/* Scrollbar styling */
+	::-webkit-scrollbar {
+		width: 4px;
+		height: 4px;
+	}
+
+	::-webkit-scrollbar-track {
+		background-color: transparent;
+	}
+
+	::-webkit-scrollbar-thumb {
+		background-color: var(--theme-muted);
+		border-radius: 9999px;
+	}
+}
+
+/* Mobile-specific utilities */
+@layer utilities {
+	.text-balance {
+		text-wrap: balance;
+	}
+
+	.no-scrollbar::-webkit-scrollbar {
+		display: none;
+	}
+
+	.no-scrollbar {
+		-ms-overflow-style: none;
+		scrollbar-width: none;
+	}
+
+	.safe-top {
+		padding-top: env(safe-area-inset-top);
+	}
+
+	.safe-bottom {
+		padding-bottom: env(safe-area-inset-bottom);
+	}
+
+	.safe-left {
+		padding-left: env(safe-area-inset-left);
+	}
+
+	.safe-right {
+		padding-right: env(safe-area-inset-right);
+	}
+
+	/* Prevent text selection on interactive elements */
+	.touch-none-select {
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
+	}
+
+	/* Touch feedback */
+	.touch-highlight {
+		-webkit-tap-highlight-color: transparent;
+	}
+}

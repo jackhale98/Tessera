@@ -1,0 +1,236 @@
+//! Tessera Mobile - Tauri application library
+//!
+//! Mobile-optimized entry point that registers a subset of commands
+//! from the shared tdt-tauri-commands crate. Excludes version control,
+//! settings, stackups, mates, features, hazards, quotes, and suppliers.
+
+use tdt_tauri_commands::commands;
+use tdt_tauri_commands::state::AppState;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            #[cfg(debug_assertions)]
+            {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
+            Ok(())
+        })
+        .manage(AppState::new())
+        .invoke_handler(tauri::generate_handler![
+            // Project commands
+            commands::open_project,
+            commands::close_project,
+            commands::get_project_info,
+            commands::refresh_project,
+            // Generic entity commands
+            commands::list_entities,
+            commands::get_entity,
+            commands::save_entity,
+            commands::delete_entity,
+            commands::get_entity_count,
+            commands::get_all_entity_counts,
+            commands::search_entities,
+            // Requirement commands
+            commands::list_requirements,
+            commands::get_requirement,
+            commands::get_requirement_stats,
+            commands::get_verification_matrix,
+            // Risk commands
+            commands::list_risks,
+            commands::get_risk,
+            commands::create_risk,
+            commands::update_risk,
+            commands::delete_risk,
+            commands::add_risk_mitigation,
+            commands::get_risk_stats,
+            commands::get_risk_matrix,
+            commands::get_fmea_data,
+            // Component commands
+            commands::list_components,
+            commands::get_component,
+            commands::get_component_by_part_number,
+            commands::create_component,
+            commands::update_component,
+            commands::delete_component,
+            commands::get_component_stats,
+            commands::get_bom_cost_summary,
+            // Assembly commands
+            commands::list_assemblies,
+            commands::get_assembly,
+            commands::get_assembly_by_part_number,
+            commands::create_assembly,
+            commands::update_assembly,
+            commands::delete_assembly,
+            commands::add_assembly_component,
+            commands::remove_assembly_component,
+            commands::update_assembly_component_quantity,
+            commands::add_subassembly,
+            commands::remove_subassembly,
+            commands::get_bom_tree,
+            commands::calculate_assembly_cost,
+            commands::calculate_assembly_cost_detailed,
+            commands::calculate_assembly_mass,
+            commands::get_assembly_routing,
+            commands::set_assembly_routing,
+            commands::add_assembly_routing_process,
+            commands::remove_assembly_routing_process,
+            commands::get_assembly_stats,
+            // Test commands
+            commands::list_tests,
+            commands::get_test,
+            commands::create_test,
+            commands::update_test,
+            commands::delete_test,
+            commands::run_test,
+            commands::add_test_step,
+            commands::remove_test_step,
+            commands::add_test_equipment,
+            commands::remove_test_equipment,
+            commands::add_test_precondition,
+            commands::add_test_acceptance_criterion,
+            commands::set_test_sample_size,
+            commands::set_test_environment,
+            commands::add_test_verifies_link,
+            commands::add_test_mitigates_link,
+            commands::get_tests_by_requirement,
+            commands::get_tests_by_risk,
+            commands::get_test_stats,
+            // Result commands
+            commands::list_results,
+            commands::list_results_full,
+            commands::get_result,
+            commands::create_result,
+            commands::update_result,
+            commands::delete_result,
+            commands::add_result_step,
+            commands::update_result_step,
+            commands::remove_result_step,
+            commands::record_result_failure,
+            commands::remove_result_failure,
+            commands::record_result_deviation,
+            commands::remove_result_deviation,
+            commands::add_result_attachment,
+            commands::remove_result_attachment,
+            commands::add_result_equipment,
+            commands::remove_result_equipment,
+            commands::set_result_sample_info,
+            commands::set_result_environment,
+            commands::mark_result_reviewed,
+            commands::get_results_by_test,
+            commands::get_latest_result_for_test,
+            commands::get_result_stats,
+            // Process commands
+            commands::list_processes,
+            commands::get_process,
+            commands::create_process,
+            commands::update_process,
+            commands::delete_process,
+            commands::get_process_stats,
+            // Control commands
+            commands::list_controls,
+            commands::get_control,
+            commands::create_control,
+            commands::update_control,
+            commands::delete_control,
+            commands::get_control_stats,
+            // Work Instruction commands
+            commands::list_work_instructions,
+            commands::get_work_instruction,
+            commands::create_work_instruction,
+            commands::update_work_instruction,
+            commands::delete_work_instruction,
+            commands::get_work_instruction_stats,
+            // Lot commands
+            commands::list_lots,
+            commands::get_lot,
+            commands::create_lot,
+            commands::update_lot,
+            commands::delete_lot,
+            commands::set_lot_product,
+            commands::add_lot_material,
+            commands::remove_lot_material,
+            commands::add_lot_step,
+            commands::update_lot_step,
+            commands::remove_lot_step,
+            commands::put_lot_on_hold,
+            commands::resume_lot,
+            commands::complete_lot,
+            commands::force_complete_lot,
+            commands::scrap_lot,
+            commands::add_lot_ncr,
+            commands::remove_lot_ncr,
+            commands::add_lot_result,
+            commands::get_lot_next_step,
+            commands::get_lot_stats,
+            // Deviation commands
+            commands::list_deviations,
+            commands::get_deviation,
+            commands::create_deviation,
+            commands::update_deviation,
+            commands::delete_deviation,
+            commands::approve_deviation,
+            commands::reject_deviation,
+            commands::activate_deviation,
+            commands::close_deviation,
+            commands::expire_deviation,
+            commands::add_deviation_mitigation,
+            commands::get_deviation_stats,
+            commands::set_deviation_risk,
+            commands::add_deviation_process_link,
+            commands::add_deviation_lot_link,
+            commands::add_deviation_component_link,
+            // NCR commands
+            commands::list_ncrs,
+            commands::get_ncr,
+            commands::create_ncr,
+            commands::update_ncr,
+            commands::delete_ncr,
+            commands::close_ncr,
+            commands::advance_ncr_status,
+            commands::add_ncr_containment,
+            commands::complete_ncr_containment,
+            commands::set_ncr_detection,
+            commands::set_ncr_affected_items,
+            commands::set_ncr_defect,
+            commands::set_ncr_cost,
+            commands::set_ncr_component_link,
+            commands::set_ncr_capa_link,
+            commands::get_ncr_stats,
+            // CAPA commands
+            commands::list_capas,
+            commands::get_capa,
+            commands::create_capa,
+            commands::update_capa,
+            commands::delete_capa,
+            commands::advance_capa_status,
+            commands::set_capa_root_cause,
+            commands::add_capa_action,
+            commands::update_capa_action_status,
+            commands::verify_capa_effectiveness,
+            commands::close_capa,
+            commands::add_capa_ncr_link,
+            commands::add_capa_risk_link,
+            commands::get_capa_stats,
+            // Traceability commands
+            commands::get_links_from,
+            commands::get_links_to,
+            commands::trace_from,
+            commands::trace_to,
+            commands::get_coverage_report,
+            commands::add_link,
+            commands::remove_link,
+            commands::get_link_types,
+            // Cache commands
+            commands::sync_cache,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

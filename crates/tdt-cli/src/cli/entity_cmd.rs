@@ -640,3 +640,17 @@ pub fn process_link_flags(
 
     added_links
 }
+
+/// Add a link between two entities by inferring the link type.
+/// This is a convenience wrapper around the core add_inferred_link for use
+/// when the caller already knows both entity prefixes (e.g., CAPA --ncr flag).
+pub fn add_inferred_link_to_file(
+    file_path: &std::path::Path,
+    source_prefix: EntityPrefix,
+    target_id: &str,
+    target_prefix: EntityPrefix,
+) -> std::result::Result<String, String> {
+    use tdt_core::core::links::add_inferred_link;
+    add_inferred_link(file_path, source_prefix, target_id, target_prefix)
+        .map_err(|e| e.to_string())
+}

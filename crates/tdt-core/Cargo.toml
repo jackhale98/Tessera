@@ -52,6 +52,9 @@ rusqlite.workspace = true
 sha2.workspace = true
 csv.workspace = true
 
+# Git (pure-Rust, works on mobile)
+gix.workspace = true
+
 # CLI deps temporarily in core (TODO: refactor wizard module to CLI)
 clap.workspace = true
 dialoguer.workspace = true

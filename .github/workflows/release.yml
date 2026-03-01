@@ -243,10 +243,115 @@ jobs:
             target/${{ matrix.target }}/release/bundle/nsis/*.exe
           if-no-files-found: error
 
+  # Build Mobile app for Android
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager "ndk;27.0.12077973"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: apps/mobile
+        run: npm ci
+
+      - name: Initialize Tauri Android project
+        working-directory: apps/mobile
+        run: npx tauri android init
+
+      - name: Build Android APK
+        working-directory: apps/mobile
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+        run: npx tauri android build --apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tessera-mobile-android
+          path: |
+            apps/mobile/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+
+  # Build Mobile app for iOS
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: apps/mobile
+        run: npm ci
+
+      - name: Initialize Tauri iOS project
+        working-directory: apps/mobile
+        run: npx tauri ios init
+
+      # For signed builds, set up code signing:
+      # - Import Apple Developer certificate from secrets
+      # - Install provisioning profile
+      # See: https://docs.github.com/en/actions/deployment/deploying-xcode-applications/installing-an-apple-certificate-on-macos-runners
+      #
+      # Required secrets for signed builds:
+      #   APPLE_CERTIFICATE        - Base64-encoded .p12 certificate
+      #   APPLE_CERTIFICATE_PASSWORD - Certificate password
+      #   APPLE_PROVISIONING_PROFILE - Base64-encoded .mobileprovision
+      #   APPLE_TEAM_ID            - Apple Developer Team ID
+
+      - name: Build iOS (unsigned)
+        working-directory: apps/mobile
+        run: npx tauri ios build -- --allow-provisioning-updates
+        continue-on-error: true
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tessera-mobile-ios
+          path: |
+            apps/mobile/src-tauri/gen/apple/build/**/*.ipa
+            apps/mobile/src-tauri/gen/apple/build/**/*.app
+          if-no-files-found: warn
+
   # Create GitHub Release with all artifacts
   release:
     name: Create Release
-    needs: [build-cli, build-desktop]
+    needs: [build-cli, build-desktop, build-android, build-ios]
+    if: always() && needs.build-cli.result == 'success' && needs.build-desktop.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -268,12 +373,12 @@ jobs:
         run: |
           mkdir -p release
           cd artifacts
-          # Flatten artifact directories - each artifact is in its own subdirectory
-          for f in $(find . -mindepth 2 -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.msi" -o -name "*.exe" \)); do
-            cp "$f" ../release/ 2>/dev/null || true
-          done
-          # Also copy any files at root level
-          cp *.tar.gz *.zip *.dmg *.AppImage *.deb *.msi *.exe ../release/ 2>/dev/null || true
+          # Flatten artifact directories - use -print0/xargs to handle spaces in filenames
+          find . -mindepth 2 -type f \( \
+            -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" -o \
+            -name "*.AppImage" -o -name "*.deb" -o -name "*.msi" -o \
+            -name "*.exe" -o -name "*.apk" -o -name "*.ipa" \
+          \) -print0 | xargs -0 -I{} cp "{}" ../release/
           cd ../release
           # List what we have
           echo "Release files:"

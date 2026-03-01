@@ -3,7 +3,9 @@ resolver = "2"
 members = [
     "crates/tdt-core",
     "crates/tdt-cli",
+    "crates/tdt-tauri-commands",
     "apps/desktop/src-tauri",
+    "apps/mobile/src-tauri",
 ]
 
 [workspace.package]
@@ -51,6 +53,9 @@ pest_derive = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 csv = "1.4"
+
+# Git (pure-Rust, works on mobile)
+gix = { version = "0.72", default-features = false, features = ["basic", "revision", "status", "index", "blob-diff"] }
 
 # CLI-specific
 clap = { version = "4", features = ["derive", "env", "string"] }

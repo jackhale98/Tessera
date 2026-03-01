@@ -19,6 +19,9 @@ tauri-build = { version = "2", features = [] }
 # Core library (package renamed but lib is still tdt_core)
 tdt-core = { package = "tessera-design-toolkit-core", path = "../../../crates/tdt-core" }
 
+# Shared Tauri commands
+tdt-tauri-commands = { path = "../../../crates/tdt-tauri-commands" }
+
 # Tauri
 tauri = { version = "2", features = [] }
 tauri-plugin-fs = "2"

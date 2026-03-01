@@ -145,6 +145,7 @@ NCRs document quality issues - when products or processes don't meet specificati
 | `links.control` | EntityId | Control that detected |
 | `links.capa` | EntityId | Linked CAPA if opened |
 | `links.from_result` | EntityId | Test result ID that created this NCR |
+| `links.lot` | array[EntityId] | Production lot(s) where non-conformance was found |
 
 ## Example
 
@@ -239,6 +240,13 @@ tdt ncr new -i
 
 # Create and immediately edit
 tdt ncr new --title "New NCR" --edit
+
+# Create linked to a production lot
+tdt ncr new --title "Coating defect" --type internal --severity minor -L LOT@1
+
+# Create and add bidirectional link to lot
+tdt ncr new --title "Thin anodize coating" --type internal --severity minor
+tdt link add NCR@1 LOT@1   # Creates NCR→LOT and LOT→NCR links
 ```
 
 ### List NCRs
@@ -317,6 +325,22 @@ tdt ncr delete NCR@1 --force
 # Archive instead of delete (moves to .tdt/archive/)
 tdt ncr archive NCR@1
 ```
+
+### Advance NCR workflow
+
+Advance an NCR through its workflow stages (open → containment → investigation → disposition):
+
+```bash
+# Auto-advance to next stage
+tdt ncr advance NCR@1
+
+# Advance to a specific stage
+tdt ncr advance NCR@1 --status containment
+tdt ncr advance NCR@1 --status investigation
+tdt ncr advance NCR@1 --status disposition
+```
+
+The `advance` command auto-determines the next workflow stage. To close an NCR from `disposition`, use `ncr close` instead.
 
 ### Close an NCR
 

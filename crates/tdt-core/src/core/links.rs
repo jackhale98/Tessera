@@ -127,6 +127,10 @@ pub fn infer_link_type(source_prefix: EntityPrefix, target_prefix: EntityPrefix)
         (EntityPrefix::Ncr, EntityPrefix::Cmp) => Some("component".to_string()),
         (EntityPrefix::Ncr, EntityPrefix::Sup) => Some("supplier".to_string()),
         (EntityPrefix::Ncr, EntityPrefix::Proc) => Some("process".to_string()),
+        (EntityPrefix::Ncr, EntityPrefix::Lot) => Some("lot".to_string()),
+
+        // Lots linking to NCRs
+        (EntityPrefix::Lot, EntityPrefix::Ncr) => Some("ncrs".to_string()),
 
         // CAPAs
         (EntityPrefix::Capa, EntityPrefix::Ncr) => Some("ncrs".to_string()),
@@ -269,8 +273,12 @@ pub fn get_reciprocal_link_type(
         ("from_result", EntityPrefix::Rslt, _) => Some("ncrs".to_string()),
         ("ncrs", EntityPrefix::Ncr, EntityPrefix::Rslt) => Some("from_result".to_string()),
         ("ncrs", EntityPrefix::Ncr, EntityPrefix::Capa) => Some("capa".to_string()),
+        ("ncrs", EntityPrefix::Ncr, EntityPrefix::Lot) => Some("lot".to_string()),
         ("ncrs", EntityPrefix::Ncr, _) => None,
         ("capa", EntityPrefix::Capa, _) => Some("ncrs".to_string()),
+
+        // === NCR <-> LOT ===
+        ("lot", EntityPrefix::Lot, EntityPrefix::Ncr) => Some("ncrs".to_string()),
 
         // === CAPA -> Process/Control modifications ===
         ("processes_modified", EntityPrefix::Proc, _) => Some("modified_by_capa".to_string()),

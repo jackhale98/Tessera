@@ -140,6 +140,9 @@ pub enum NcrCommands {
 
     /// Close an NCR with disposition
     Close(CloseArgs),
+
+    /// Advance NCR to the next workflow stage
+    Advance(AdvanceArgs),
 }
 
 /// NCR type filter
@@ -405,6 +408,29 @@ pub struct CloseArgs {
     pub yes: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct AdvanceArgs {
+    /// NCR ID or short ID (NCR@N)
+    pub ncr: String,
+
+    /// Target status (if omitted, advances to the next stage)
+    #[arg(long, short = 's')]
+    pub status: Option<CliNcrStatus>,
+
+    /// Notes about the status change
+    #[arg(long, short = 'n')]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CliNcrStatus {
+    Open,
+    Containment,
+    Investigation,
+    Disposition,
+    Closed,
+}
+
 /// Run an NCR subcommand
 pub fn run(cmd: NcrCommands, global: &GlobalOpts) -> Result<()> {
     match cmd {
@@ -415,6 +441,7 @@ pub fn run(cmd: NcrCommands, global: &GlobalOpts) -> Result<()> {
         NcrCommands::Delete(args) => run_delete(args),
         NcrCommands::Archive(args) => run_archive(args),
         NcrCommands::Close(args) => run_close(args, global),
+        NcrCommands::Advance(args) => run_advance(args, global),
     }
 }
 
@@ -1278,5 +1305,102 @@ fn run_close(args: CloseArgs, global: &GlobalOpts) -> Result<()> {
     // Sync cache after mutation
     super::utils::sync_cache(&project);
 
+    Ok(())
+}
+
+fn run_advance(args: AdvanceArgs, _global: &GlobalOpts) -> Result<()> {
+    let project = Project::discover().map_err(|e| miette::miette!("{}", e))?;
+    let cache = EntityCache::open(&project).map_err(|e| miette::miette!("{}", e))?;
+    let service = NcrService::new(&project, &cache);
+    let short_ids = ShortIdIndex::load(&project);
+
+    let resolved_id = short_ids
+        .resolve(&args.ncr)
+        .unwrap_or_else(|| args.ncr.clone());
+
+    let display_id = short_ids
+        .get_short_id(&resolved_id)
+        .unwrap_or_else(|| args.ncr.clone());
+
+    let ncr = service
+        .get(&resolved_id)
+        .map_err(|e| miette::miette!("{}", e))?
+        .ok_or_else(|| miette::miette!("No NCR found matching '{}'", args.ncr))?;
+
+    // Determine target status
+    let target_status = if let Some(cli_status) = args.status {
+        match cli_status {
+            CliNcrStatus::Open => NcrStatus::Open,
+            CliNcrStatus::Containment => NcrStatus::Containment,
+            CliNcrStatus::Investigation => NcrStatus::Investigation,
+            CliNcrStatus::Disposition => NcrStatus::Disposition,
+            CliNcrStatus::Closed => {
+                return Err(miette::miette!(
+                    "Use 'tdt ncr close' to close an NCR (requires disposition decision)"
+                ));
+            }
+        }
+    } else {
+        // Auto-advance to next stage
+        match ncr.ncr_status {
+            NcrStatus::Open => NcrStatus::Containment,
+            NcrStatus::Containment => NcrStatus::Investigation,
+            NcrStatus::Investigation => NcrStatus::Disposition,
+            NcrStatus::Disposition => {
+                return Err(miette::miette!(
+                    "NCR {} is in disposition stage. Use 'tdt ncr close' to close with a disposition decision.",
+                    display_id
+                ));
+            }
+            NcrStatus::Closed => {
+                return Err(miette::miette!("NCR {} is already closed", display_id));
+            }
+        }
+    };
+
+    // Update NCR YAML directly
+    let ncr_file = project
+        .root()
+        .join("manufacturing/ncrs")
+        .join(format!("{}.tdt.yaml", ncr.id));
+    let content = std::fs::read_to_string(&ncr_file).into_diagnostic()?;
+    let mut ncr_yaml: serde_json::Value =
+        serde_yml::from_str(&content).into_diagnostic()?;
+
+    ncr_yaml["ncr_status"] = serde_json::json!(target_status.to_string());
+
+    if let Some(rev) = ncr_yaml.get("entity_revision").and_then(|v| v.as_u64()) {
+        ncr_yaml["entity_revision"] = serde_json::json!(rev + 1);
+    }
+
+    let yaml_out = serde_yml::to_string(&ncr_yaml).into_diagnostic()?;
+    std::fs::write(&ncr_file, yaml_out).into_diagnostic()?;
+
+    println!(
+        "{} NCR {} advanced: {} → {}",
+        style("✓").green(),
+        style(&display_id).cyan(),
+        style(ncr.ncr_status.to_string()).dim(),
+        style(target_status.to_string()).yellow()
+    );
+
+    // Show next steps
+    match target_status {
+        NcrStatus::Containment => {
+            println!("   Next: Define containment actions, then advance to investigation");
+        }
+        NcrStatus::Investigation => {
+            println!("   Next: Investigate root cause, then advance to disposition");
+        }
+        NcrStatus::Disposition => {
+            println!(
+                "   Next: Close with disposition: tdt ncr close {} --disposition <decision>",
+                display_id
+            );
+        }
+        _ => {}
+    }
+
+    super::utils::sync_cache(&project);
     Ok(())
 }

@@ -1309,6 +1309,16 @@ fn test_lot_wi_step_with_data() {
     let asm_id = create_asm_with_routing(&tmp, &proc_id);
     let lot_id = create_lot_from_routing(&tmp, &asm_id);
 
+    // Complete step 1 first (required for step order enforcement)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
+            "--step", "1", "--complete",
+        ])
+        .assert()
+        .success();
+
     // Complete step 2 with data and equipment (has approval requirement)
     tdt()
         .current_dir(tmp.path())
@@ -1429,6 +1439,16 @@ fn test_lot_router_show_pending() {
     let asm_id = create_asm_with_routing(&tmp, &proc_id);
     let lot_id = create_lot_from_routing(&tmp, &asm_id);
 
+    // Complete step 1 first (required for step order enforcement)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
+            "--step", "1", "--complete",
+        ])
+        .assert()
+        .success();
+
     // Complete step 2 (requires approval)
     tdt()
         .current_dir(tmp.path())
@@ -1466,6 +1486,16 @@ fn test_lot_approve_step() {
     let proc_id = create_process_with_wi(&tmp, &wi_id);
     let asm_id = create_asm_with_routing(&tmp, &proc_id);
     let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 1 first (required for step order enforcement)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
+            "--step", "1", "--complete",
+        ])
+        .assert()
+        .success();
 
     // Complete step 2 (requires quality approval)
     tdt()
@@ -1517,6 +1547,16 @@ fn test_lot_approve_with_comment() {
     let asm_id = create_asm_with_routing(&tmp, &proc_id);
     let lot_id = create_lot_from_routing(&tmp, &asm_id);
 
+    // Complete step 1 first (required for step order enforcement)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
+            "--step", "1", "--complete",
+        ])
+        .assert()
+        .success();
+
     // Complete step 2
     tdt()
         .current_dir(tmp.path())
@@ -1567,6 +1607,16 @@ fn test_lot_approve_reject() {
     let proc_id = create_process_with_wi(&tmp, &wi_id);
     let asm_id = create_asm_with_routing(&tmp, &proc_id);
     let lot_id = create_lot_from_routing(&tmp, &asm_id);
+
+    // Complete step 1 first (required for step order enforcement)
+    tdt()
+        .current_dir(tmp.path())
+        .args([
+            "lot", "wi-step", &lot_id, "--process", "0", "--wi", &wi_id,
+            "--step", "1", "--complete",
+        ])
+        .assert()
+        .success();
 
     // Complete step 2
     tdt()

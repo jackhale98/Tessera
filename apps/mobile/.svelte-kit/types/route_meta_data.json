@@ -1,0 +1,57 @@
+{
+	"/": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/browse": [
+		"src/routes/+layout.ts"
+	],
+	"/browse/entity/[id]": [
+		"src/routes/+layout.ts"
+	],
+	"/browse/[type]": [
+		"src/routes/+layout.ts"
+	],
+	"/lots": [
+		"src/routes/+layout.ts"
+	],
+	"/lots/[id]": [
+		"src/routes/+layout.ts"
+	],
+	"/more": [
+		"src/routes/+layout.ts"
+	],
+	"/more/deviations": [
+		"src/routes/+layout.ts"
+	],
+	"/more/deviations/new": [
+		"src/routes/+layout.ts"
+	],
+	"/more/deviations/[id]": [
+		"src/routes/+layout.ts"
+	],
+	"/more/traceability": [
+		"src/routes/+layout.ts"
+	],
+	"/project": [
+		"src/routes/+layout.ts"
+	],
+	"/quality": [
+		"src/routes/+layout.ts"
+	],
+	"/quality/capas": [
+		"src/routes/+layout.ts"
+	],
+	"/quality/capas/[id]": [
+		"src/routes/+layout.ts"
+	],
+	"/quality/ncrs": [
+		"src/routes/+layout.ts"
+	],
+	"/quality/ncrs/new": [
+		"src/routes/+layout.ts"
+	],
+	"/quality/ncrs/[id]": [
+		"src/routes/+layout.ts"
+	]
+}

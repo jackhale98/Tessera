@@ -1,10 +1,7 @@
 //! Tessera Desktop - Tauri application library
 
-pub mod commands;
-pub mod error;
-pub mod state;
-
-use state::AppState;
+use tdt_tauri_commands::commands;
+use tdt_tauri_commands::state::AppState;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

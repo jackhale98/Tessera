@@ -261,7 +261,7 @@ tdt capa new
 # Create with title and type
 tdt capa new --title "Tool Wear Fix" --type corrective
 
-# Create linked to an NCR
+# Create linked to an NCR (bidirectional: adds CAPA→NCR and NCR→CAPA links)
 tdt capa new --title "Address Bore NCR" --type corrective --ncr NCR@1
 
 # Interactive wizard
@@ -337,6 +337,22 @@ tdt capa delete CAPA@1 --force
 # Archive instead of delete (moves to .tdt/archive/)
 tdt capa archive CAPA@1
 ```
+
+### Advance CAPA workflow
+
+Advance a CAPA through its workflow stages (initiation → investigation → implementation → verification):
+
+```bash
+# Auto-advance to next stage
+tdt capa advance CAPA@1
+
+# Advance to a specific stage
+tdt capa advance CAPA@1 --status investigation
+tdt capa advance CAPA@1 --status implementation
+tdt capa advance CAPA@1 --status verification
+```
+
+The `advance` command auto-determines the next workflow stage. To close a CAPA from `verification`, use `capa verify` instead.
 
 ### Verify CAPA effectiveness
 

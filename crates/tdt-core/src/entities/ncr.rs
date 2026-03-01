@@ -353,6 +353,10 @@ pub struct NcrLinks {
     /// Supplier responsible for the non-conformance (incoming inspection, SCAR)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supplier: Option<EntityId>,
+
+    /// Production lot(s) where non-conformance was found
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lot: Vec<EntityId>,
 }
 
 /// An NCR entity - Non-Conformance Report

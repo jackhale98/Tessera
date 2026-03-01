@@ -317,6 +317,17 @@ tdt dev archive DEV@1
 6. **Execute** - Work proceeds under deviation
 7. **Expire** - Auto-expires on expiration date, or manual `tdt dev expire`
 
+## Use with Lot Step Execution
+
+Approved deviations can be used to bypass step order enforcement during lot execution. When a LOT's electronic router enforces sequential step execution, an approved deviation allows out-of-order step completion:
+
+```bash
+# Bypass step order enforcement with an approved deviation
+tdt lot wi-step LOT@1 --process 2 --wi WORK@2 --step 1 --complete --deviation DEV@1
+```
+
+The `--deviation` flag validates that the referenced DEV entity exists and has `dev_status: approved` before allowing the bypass.
+
 ## DEV vs NCR
 
 | Aspect | DEV (Deviation) | NCR (Non-Conformance) |

@@ -365,7 +365,26 @@ tdt lot wi-step LOT@1 --wi WORK@1 --step 5 --complete --require-approval
 
 # Show step status without making changes
 tdt lot wi-step LOT@1 --wi WORK@1 --step 1 --show
+
+# Bypass step order with an approved deviation
+tdt lot wi-step LOT@1 --process 2 --wi WORK@2 --step 1 --complete --deviation DEV@1
 ```
+
+### Step Order Enforcement
+
+WI steps are enforced to execute in order:
+
+1. **Process sequencing** — All preceding process steps (by routing order) must be completed before executing steps on the next process. For example, you cannot execute anodizing steps until the CNC machining process step is completed.
+2. **WI step sequencing** — Within a single work instruction, steps must be completed in numerical order (step 1 before step 2, etc.).
+
+If you need to bypass the step order (e.g., for an approved deviation from the standard process), use the `--deviation` flag with an approved DEV entity:
+
+```bash
+# Execute step on process 2 before process 1 is complete (with approved deviation)
+tdt lot wi-step LOT@1 --process 2 --wi WORK@2 --step 1 --complete --deviation DEV@1
+```
+
+The deviation entity must exist and have `dev_status: approved` to be accepted.
 
 ### View Router Status
 

@@ -159,6 +159,7 @@ Links are simple cross-references stored in the `links` section of entities. The
 | `process` | PROC | - | Process where defect was found |
 | `control` | CTRL | - | Control that detected the issue |
 | `capa` | CAPA | `ncrs` | Linked CAPA if opened |
+| `lot` | LOT | `ncrs` | Production lot(s) where non-conformance was found |
 
 #### CAPAs (CAPA)
 
@@ -223,6 +224,16 @@ Links are simple cross-references stored in the `links` section of entities. The
 |-----------|--------|------------|-------------|
 | `process` | PROC | `work_instructions` | Parent process (single-value) |
 | `controls` | CTRL | - | Related control plan items |
+
+#### Lots (LOT)
+
+| Link Type | Target | Reciprocal | Description |
+|-----------|--------|------------|-------------|
+| `product` | ASM/CMP | - | Product being manufactured (single-value) |
+| `processes` | PROC | - | Process entities in sequence |
+| `work_instructions` | WORK | - | Work instructions used |
+| `ncrs` | NCR | `lot` | NCRs raised during production |
+| `results` | RSLT | - | In-process inspection results |
 
 ## Managing Links
 
