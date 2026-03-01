@@ -52,6 +52,7 @@ declare module '$env/static/private' {
 	export const npm_config_noproxy: string;
 	export const HOME: string;
 	export const CONDA_SHLVL: string;
+	export const OLDPWD: string;
 	export const TERM_PROGRAM_VERSION: string;
 	export const SSH_TTY: string;
 	export const npm_package_json: string;
@@ -111,7 +112,6 @@ declare module '$env/static/private' {
 	export const NVM_RC_VERSION: string;
 	export const INIT_CWD: string;
 	export const EDITOR: string;
-	export const NODE_ENV: string;
 }
 
 /**
@@ -212,6 +212,7 @@ declare module '$env/dynamic/private' {
 		npm_config_noproxy: string;
 		HOME: string;
 		CONDA_SHLVL: string;
+		OLDPWD: string;
 		TERM_PROGRAM_VERSION: string;
 		SSH_TTY: string;
 		npm_package_json: string;
@@ -271,7 +272,6 @@ declare module '$env/dynamic/private' {
 		NVM_RC_VERSION: string;
 		INIT_CWD: string;
 		EDITOR: string;
-		NODE_ENV: string;
 		[key: `PUBLIC_${string}`]: undefined;
 		[key: `${string}`]: string | undefined;
 	}
