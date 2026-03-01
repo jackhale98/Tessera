@@ -9,10 +9,56 @@ use tdt_core::core::entity::Status;
 use tdt_core::entities::lot::{
     ExecutionStatus, ExecutionStep, Lot, LotStatus, MaterialUsed, WiStepExecution,
 };
+use tdt_core::core::{Config, Git, LotWorkflowConfig};
 use tdt_core::services::{
     ApproveWiStepInput, CreateLot, ExecuteWiStepInput, LotFilter, LotService, LotSortField,
     LotStats, SortDirection, UpdateLot, UpdateStepInput, WiStepExecutionResult,
 };
+
+/// Try to auto-commit a lot change. Returns the commit SHA on success, or None if
+/// auto-commit is disabled or the commit fails (non-fatal).
+fn try_auto_commit(
+    root: &std::path::Path,
+    lot: &Lot,
+    message: &str,
+) -> Option<String> {
+    let config = Config::load();
+    let wf_config = LotWorkflowConfig::from_config(&config);
+
+    if !wf_config.auto_commit {
+        return None;
+    }
+
+    let git = Git::new(root);
+    if !git.is_repo() {
+        return None;
+    }
+
+    // Stage the lot file
+    let lot_file = root
+        .join("manufacturing/lots")
+        .join(format!("{}.tdt.yaml", lot.id));
+
+    if let Err(e) = git.stage_file(&lot_file) {
+        log::warn!("Auto-commit: failed to stage lot file: {}", e);
+        return None;
+    }
+
+    // Commit
+    let result = if wf_config.sign_commits {
+        git.commit_signed(message)
+    } else {
+        git.commit(message)
+    };
+
+    match result {
+        Ok(sha) => Some(sha),
+        Err(e) => {
+            log::warn!("Auto-commit: failed to commit: {}", e);
+            None
+        }
+    }
+}
 
 /// List parameters for Lots
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -474,6 +520,22 @@ pub async fn update_lot_step(
         service.update_step(&id, step_index, update)?
     };
 
+    // Auto-commit if step was completed or skipped
+    if let Some(step) = lot.execution.get(step_index) {
+        if step.status == ExecutionStatus::Completed || step.status == ExecutionStatus::Skipped {
+            let operator = step.operator.as_deref().unwrap_or("unknown");
+            let lot_num = lot.lot_number.as_deref().unwrap_or(&id);
+            let msg = format!(
+                "lot({}): Step {} {} by {}",
+                lot_num,
+                step_index + 1,
+                if step.status == ExecutionStatus::Completed { "completed" } else { "skipped" },
+                operator
+            );
+            let _ = try_auto_commit(project.root(), &lot, &msg);
+        }
+    }
+
     // Sync cache
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
@@ -524,6 +586,11 @@ pub async fn put_lot_on_hold(id: String, state: State<'_, AppState>) -> CommandR
         service.put_on_hold(&id)?
     };
 
+    // Auto-commit
+    let lot_num = lot.lot_number.as_deref().unwrap_or(&id);
+    let msg = format!("lot({}): Put on hold", lot_num);
+    let _ = try_auto_commit(project.root(), &lot, &msg);
+
     // Sync cache
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
@@ -546,6 +613,11 @@ pub async fn resume_lot(id: String, state: State<'_, AppState>) -> CommandResult
         let service = LotService::new(project, cache);
         service.resume(&id)?
     };
+
+    // Auto-commit
+    let lot_num = lot.lot_number.as_deref().unwrap_or(&id);
+    let msg = format!("lot({}): Resumed", lot_num);
+    let _ = try_auto_commit(project.root(), &lot, &msg);
 
     // Sync cache
     drop(project_guard);
@@ -570,6 +642,11 @@ pub async fn complete_lot(id: String, state: State<'_, AppState>) -> CommandResu
         service.complete(&id)?
     };
 
+    // Auto-commit
+    let lot_num = lot.lot_number.as_deref().unwrap_or(&id);
+    let msg = format!("lot({}): Completed", lot_num);
+    let _ = try_auto_commit(project.root(), &lot, &msg);
+
     // Sync cache
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
@@ -593,6 +670,11 @@ pub async fn force_complete_lot(id: String, state: State<'_, AppState>) -> Comma
         service.complete_force(&id)?
     };
 
+    // Auto-commit
+    let lot_num = lot.lot_number.as_deref().unwrap_or(&id);
+    let msg = format!("lot({}): Force completed", lot_num);
+    let _ = try_auto_commit(project.root(), &lot, &msg);
+
     // Sync cache
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
@@ -615,6 +697,11 @@ pub async fn scrap_lot(id: String, state: State<'_, AppState>) -> CommandResult<
         let service = LotService::new(project, cache);
         service.scrap(&id)?
     };
+
+    // Auto-commit
+    let lot_num = lot.lot_number.as_deref().unwrap_or(&id);
+    let msg = format!("lot({}): Scrapped", lot_num);
+    let _ = try_auto_commit(project.root(), &lot, &msg);
 
     // Sync cache
     drop(project_guard);

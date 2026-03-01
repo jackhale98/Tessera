@@ -24,6 +24,9 @@ pub struct LotWorkflowConfig {
 
     /// Whether to create tags at lot lifecycle events
     pub create_tags: bool,
+
+    /// Whether to auto-commit lot changes (step completions, status changes)
+    pub auto_commit: bool,
 }
 
 impl Default for LotWorkflowConfig {
@@ -33,6 +36,7 @@ impl Default for LotWorkflowConfig {
             branch_pattern: "lot/{lot_number}".to_string(),
             sign_commits: false,
             create_tags: true,
+            auto_commit: true,
         }
     }
 }
@@ -60,6 +64,11 @@ impl LotWorkflowConfig {
                 .manufacturing
                 .as_ref()
                 .map(|m| m.create_tags)
+                .unwrap_or(true),
+            auto_commit: config
+                .manufacturing
+                .as_ref()
+                .map(|m| m.auto_commit)
                 .unwrap_or(true),
         }
     }

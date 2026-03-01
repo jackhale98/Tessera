@@ -1,8 +1,9 @@
 //! Tessera Mobile - Tauri application library
 //!
 //! Mobile-optimized entry point that registers a subset of commands
-//! from the shared tdt-tauri-commands crate. Excludes version control,
-//! settings, stackups, mates, features, hazards, quotes, and suppliers.
+//! from the shared tdt-tauri-commands crate. Includes version control
+//! (via gitoxide for local ops). Excludes settings, stackups, mates,
+//! features, hazards, quotes, and suppliers.
 
 use tdt_tauri_commands::commands;
 use tdt_tauri_commands::state::AppState;
@@ -228,6 +229,28 @@ pub fn run() {
             commands::add_link,
             commands::remove_link,
             commands::get_link_types,
+            // Version control commands
+            commands::get_git_status,
+            commands::get_vc_git_user,
+            commands::get_entity_history,
+            commands::get_entity_workflow_history,
+            commands::get_entity_file_diff,
+            commands::get_uncommitted_file_diff,
+            commands::list_git_branches,
+            commands::list_git_tags,
+            commands::checkout_git_branch,
+            commands::create_git_branch,
+            commands::stage_files,
+            commands::stage_entity,
+            commands::unstage_files,
+            commands::discard_changes,
+            commands::commit_changes,
+            commands::push_changes,
+            commands::pull_changes,
+            commands::fetch_changes,
+            commands::get_recent_commits,
+            commands::get_commit_details,
+            commands::get_commit_file_diff,
             // Cache commands
             commands::sync_cache,
         ])

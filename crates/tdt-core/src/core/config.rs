@@ -27,6 +27,14 @@ pub struct ManufacturingConfigSection {
     /// Whether to sign commits
     #[serde(default)]
     pub sign_commits: bool,
+
+    /// Whether to auto-commit lot changes (step completions, holds, etc.)
+    #[serde(default = "default_auto_commit")]
+    pub auto_commit: bool,
+}
+
+fn default_auto_commit() -> bool {
+    true
 }
 
 fn default_create_tags() -> bool {
