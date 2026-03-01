@@ -5,7 +5,7 @@
 	import { lots, ncrs } from '$lib/api/tauri.js';
 	import { MobileHeader } from '$lib/components/layout/index.js';
 	import { StatusBadge } from '$lib/components/common/index.js';
-	import { CheckCircle, Circle, Pause, Play, Flag, AlertTriangle, Plus, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { CheckCircle, Circle, Pause, Play, Flag, AlertTriangle, Plus, ChevronDown, ChevronUp, FileText } from 'lucide-svelte';
 
 	let lot = $state<Record<string, unknown> | null>(null);
 	let loading = $state(true);
@@ -24,7 +24,15 @@
 		started_at?: string;
 		completed_at?: string;
 		notes?: string;
+		work_instructions_used?: string[];
 	}
+
+	// WI step execution state
+	let wiStepExpanded = $state<string | null>(null);
+	let wiStepOperator = $state('');
+	let wiStepNumber = $state(1);
+	let wiStepComplete = $state(false);
+	let wiStepLoading = $state(false);
 
 	let steps = $derived<LotStep[]>((lot?.steps as LotStep[]) ?? []);
 	let completedCount = $derived(steps.filter(s => s.status === 'completed').length);
@@ -78,6 +86,28 @@
 		if (status === 'in_progress') return Play;
 		if (status === 'skipped') return Pause;
 		return Circle;
+	}
+
+	async function executeWiStep(processIndex: number, wiId: string) {
+		wiStepLoading = true;
+		try {
+			await lots.executeWiStep(lotId, {
+				work_instruction_id: wiId,
+				step_number: wiStepNumber,
+				process_index: processIndex,
+				operator: wiStepOperator || 'Unknown',
+				complete: wiStepComplete
+			});
+			wiStepExpanded = null;
+			wiStepOperator = '';
+			wiStepNumber = 1;
+			wiStepComplete = false;
+			await loadLot();
+		} catch (e) {
+			console.error('Failed to execute WI step:', e);
+		} finally {
+			wiStepLoading = false;
+		}
 	}
 </script>
 
@@ -183,6 +213,36 @@
 											</button>
 										{/if}
 									</div>
+									{#if step.work_instructions_used && step.work_instructions_used.length > 0}
+										<div class="wi-section">
+											<span class="wi-label">Work Instructions</span>
+											<div class="wi-list">
+												{#each step.work_instructions_used as wi}
+													<button
+														class="wi-btn"
+														class:expanded={wiStepExpanded === `${index}-${wi}`}
+														onclick={() => wiStepExpanded = wiStepExpanded === `${index}-${wi}` ? null : `${index}-${wi}`}
+													>
+														<FileText size={14} />
+														<span>{wi}</span>
+													</button>
+													{#if wiStepExpanded === `${index}-${wi}`}
+														<div class="wi-exec-form" onclick={(e) => e.stopPropagation()}>
+															<input type="text" placeholder="Operator" class="wi-input" bind:value={wiStepOperator} />
+															<input type="number" placeholder="Step #" min={1} class="wi-input" bind:value={wiStepNumber} />
+															<label class="wi-checkbox">
+																<input type="checkbox" bind:checked={wiStepComplete} />
+																<span>Complete</span>
+															</label>
+															<button class="step-action-btn primary" onclick={() => executeWiStep(index, wi)} disabled={wiStepLoading}>
+																{wiStepLoading ? "Executing..." : "Execute"}
+															</button>
+														</div>
+													{/if}
+												{/each}
+											</div>
+										</div>
+									{/if}
 								</div>
 							{/if}
 						</button>
@@ -405,6 +465,18 @@
 
 	.info-label { font-size: 11px; font-weight: 600; color: var(--theme-muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; }
 	.info-value { font-size: 15px; font-weight: 600; }
+
+	.wi-section { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--theme-border); }
+	.wi-label { font-size: 11px; font-weight: 600; color: var(--theme-muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; }
+	.wi-list { display: flex; flex-direction: column; gap: 6px; }
+	.wi-btn {
+		display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+		border: 1px solid var(--theme-border); background-color: var(--theme-card); color: var(--theme-foreground); cursor: pointer;
+	}
+	.wi-btn.expanded { border-color: var(--theme-primary); background-color: color-mix(in oklch, var(--theme-primary) 5%, var(--theme-card)); }
+	.wi-exec-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; background: var(--theme-muted); }
+	.wi-input { width: 100%; padding: 8px 10px; border: 1px solid var(--theme-border); border-radius: 8px; font-size: 13px; background: var(--theme-card); }
+	.wi-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 
 	.empty-text { font-size: 13px; color: var(--theme-muted-foreground); padding: 16px; text-align: center; }
 

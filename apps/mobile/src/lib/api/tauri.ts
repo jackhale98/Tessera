@@ -379,6 +379,7 @@ export interface CreateNcrInput {
 	severity?: string;
 	category?: string;
 	author: string;
+	lot_ids?: string[];
 }
 
 export interface CloseNcrInput {
@@ -474,6 +475,7 @@ export interface CreateLotInput {
 	product?: string;
 	notes?: string;
 	author: string;
+	from_routing?: boolean;
 }
 
 // ============================================================================
@@ -638,6 +640,10 @@ export const ncrs = {
 		call<unknown>('set_ncr_cost', { id, reworkCost, scrapCost }),
 	setCapaLink: (id: string, capaId: string) =>
 		call<unknown>('set_ncr_capa_link', { id, capaId }),
+	addLotLink: (id: string, lotId: string) =>
+		call<unknown>('add_ncr_lot_link', { id, lotId }),
+	removeLotLink: (id: string, lotId: string) =>
+		call<unknown>('remove_ncr_lot_link', { id, lotId }),
 	getStats: () => call<NcrStats>('get_ncr_stats')
 };
 
@@ -701,7 +707,49 @@ export const lots = {
 		call<unknown>('remove_lot_material', { id, componentId }),
 	addResult: (id: string, resultId: string) =>
 		call<unknown>('add_lot_result', { id, resultId }),
-	getStats: () => call<LotStats>('get_lot_stats')
+	getStats: () => call<LotStats>('get_lot_stats'),
+	executeWiStep: (id: string, input: {
+		work_instruction_id: string;
+		step_number: number;
+		process_index?: number;
+		operator: string;
+		data?: Record<string, unknown>;
+		equipment?: Record<string, string>;
+		notes?: string;
+		complete?: boolean;
+		deviation_id?: string;
+	}) => call<unknown>('execute_wi_step', { id, input }),
+	getWiStepStatus: (id: string, processIndex: number, wiId: string, stepNumber: number) =>
+		call<unknown>('get_wi_step_status', { id, processIndex, wiId, stepNumber }),
+	approveWiStep: (id: string, processIndex: number, wiId: string, stepNumber: number, input: {
+		approver: string;
+		comment?: string;
+		reject?: boolean;
+	}) => call<unknown>('approve_wi_step', { id, processIndex, wiId, stepNumber, input })
+};
+
+export const workInstructions = {
+	get: (id: string) => call<unknown>('get_work_instruction', { id }),
+	addStep: (id: string, input: { action: string; verification?: string; caution?: string; image?: string; estimated_time_minutes?: number }) =>
+		call<unknown>('add_work_instruction_step', { id, input }),
+	removeStep: (id: string, stepNumber: number) =>
+		call<unknown>('remove_work_instruction_step', { id, stepNumber }),
+	addTool: (id: string, input: { name: string; part_number?: string }) =>
+		call<unknown>('add_work_instruction_tool', { id, input }),
+	removeTool: (id: string, toolName: string) =>
+		call<unknown>('remove_work_instruction_tool', { id, toolName }),
+	addMaterial: (id: string, input: { name: string; specification?: string }) =>
+		call<unknown>('add_work_instruction_material', { id, input }),
+	removeMaterial: (id: string, materialName: string) =>
+		call<unknown>('remove_work_instruction_material', { id, materialName }),
+	addQualityCheck: (id: string, input: { at_step: number; characteristic: string; specification?: string }) =>
+		call<unknown>('add_work_instruction_quality_check', { id, input }),
+	removeQualityCheck: (id: string, atStep: number) =>
+		call<unknown>('remove_work_instruction_quality_check', { id, atStep }),
+	setSafety: (id: string, input: { ppe_required: { item: string; standard?: string }[]; hazards: { hazard: string; control?: string }[] }) =>
+		call<unknown>('set_work_instruction_safety', { id, input }),
+	clearSafety: (id: string) =>
+		call<unknown>('clear_work_instruction_safety', { id })
 };
 
 export const traceability = {
@@ -732,6 +780,7 @@ export const api = {
 	ncrs,
 	capas,
 	lots,
+	workInstructions,
 	traceability,
 	cache
 };

@@ -55,7 +55,7 @@ sha2 = "0.10"
 csv = "1.4"
 
 # Git (pure-Rust, works on mobile)
-gix = { version = "0.72", default-features = false, features = ["basic", "revision", "status", "index", "blob-diff"] }
+gix = { version = "0.72", default-features = false, features = ["basic", "revision", "status", "index", "blob-diff", "tree-editor"] }
 
 # CLI-specific
 clap = { version = "4", features = ["derive", "env", "string"] }

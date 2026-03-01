@@ -300,6 +300,47 @@
 		}
 	}
 
+	// WI Step execution state
+	let showWiStepModal = $state(false);
+	let wiStepProcessIndex = $state(0);
+	let wiStepWiId = $state('');
+	let wiStepNumber = $state(1);
+	let wiStepOperator = $state('');
+	let wiStepNotes = $state('');
+	let wiStepComplete = $state(false);
+
+	function openWiStepModal(processIndex: number, wiId: string) {
+		wiStepProcessIndex = processIndex;
+		wiStepWiId = wiId;
+		wiStepNumber = 1;
+		wiStepOperator = '';
+		wiStepNotes = '';
+		wiStepComplete = false;
+		showWiStepModal = true;
+	}
+
+	async function handleExecuteWiStep() {
+		if (!id || !wiStepWiId) return;
+		actionInProgress = true;
+		try {
+			await lots.executeWiStep(id, {
+				work_instruction_id: wiStepWiId,
+				step_number: wiStepNumber,
+				process_index: wiStepProcessIndex,
+				operator: wiStepOperator || 'Unknown',
+				notes: wiStepNotes || undefined,
+				complete: wiStepComplete
+			});
+			showWiStepModal = false;
+			loadedId = null;
+			loadData();
+		} catch (e) {
+			console.error('Failed to execute WI step:', e);
+		} finally {
+			actionInProgress = false;
+		}
+	}
+
 	$effect(() => {
 		// Only load if we have an ID and haven't already loaded this ID
 		if (id && id !== loadedId) {
@@ -524,6 +565,21 @@
 											{/if}
 											{#if step.notes}
 												<p class="text-sm text-muted-foreground mt-1">{step.notes}</p>
+											{/if}
+											{#if step.work_instructions_used && step.work_instructions_used.length > 0}
+												<div class="mt-2 flex flex-wrap gap-1">
+													{#each step.work_instructions_used as wi}
+														<Button
+															variant="outline"
+															size="sm"
+															class="h-6 text-xs"
+															onclick={() => openWiStepModal(i, wi)}
+														>
+															<FileText class="mr-1 h-3 w-3" />
+															{wi}
+														</Button>
+													{/each}
+												</div>
 											{/if}
 										</div>
 										<div class="flex items-center gap-2">
@@ -809,6 +865,66 @@
 			<Button variant="outline" onclick={() => { showStepModal = false; }}>Cancel</Button>
 			<Button onclick={handleUpdateStep} disabled={actionInProgress}>
 				Update Step
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- WI Step Execution Modal -->
+<Dialog bind:open={showWiStepModal}>
+	<DialogContent>
+		<DialogHeader>
+			<DialogTitle>Execute WI Step</DialogTitle>
+			<DialogDescription>
+				Execute a work instruction step for this lot process.
+			</DialogDescription>
+		</DialogHeader>
+		<div class="space-y-4 py-4">
+			<div class="space-y-2">
+				<Label>Work Instruction</Label>
+				<Input value={wiStepWiId} disabled />
+			</div>
+			<div class="space-y-2">
+				<Label for="wi_step_number">Step Number</Label>
+				<Input
+					id="wi_step_number"
+					type="number"
+					min={1}
+					bind:value={wiStepNumber}
+					placeholder="Step number"
+				/>
+			</div>
+			<div class="space-y-2">
+				<Label for="wi_step_operator">Operator</Label>
+				<Input
+					id="wi_step_operator"
+					bind:value={wiStepOperator}
+					placeholder="Enter operator name"
+				/>
+			</div>
+			<div class="space-y-2">
+				<Label for="wi_step_notes">Notes (optional)</Label>
+				<Textarea
+					id="wi_step_notes"
+					bind:value={wiStepNotes}
+					placeholder="Enter any notes..."
+					rows={3}
+				/>
+			</div>
+			<div class="flex items-center gap-2">
+				<input
+					type="checkbox"
+					id="wi_step_complete"
+					bind:checked={wiStepComplete}
+					class="h-4 w-4 rounded border-gray-300"
+				/>
+				<Label for="wi_step_complete">Mark step as complete</Label>
+			</div>
+		</div>
+		<DialogFooter>
+			<Button variant="outline" onclick={() => { showWiStepModal = false; }}>Cancel</Button>
+			<Button onclick={handleExecuteWiStep} disabled={actionInProgress || !wiStepOperator}>
+				Execute Step
 			</Button>
 		</DialogFooter>
 	</DialogContent>

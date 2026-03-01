@@ -25,6 +25,7 @@
 	let productId = $state('');
 	let routingSteps = $state<{ id: string; title: string }[]>([]);
 	let routingLoading = $state(false);
+	let fromRouting = $state(true);
 
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -97,21 +98,11 @@
 				quantity: quantity ?? undefined,
 				product: productId || undefined,
 				notes: notes.trim() || undefined,
-				author: $projectAuthor
+				author: $projectAuthor,
+				from_routing: fromRouting && routingSteps.length > 0 ? true : undefined
 			});
 
 			const newId = typeof result === 'string' ? result : (result as Record<string, unknown>)?.id as string;
-
-			// Add routing steps from assembly
-			if (newId && routingSteps.length > 0) {
-				for (const step of routingSteps) {
-					try {
-						await lots.addStep(newId, { process_id: step.id });
-					} catch (stepErr) {
-						console.error('Failed to add step:', step.id, stepErr);
-					}
-				}
-			}
 
 			await refreshProject();
 			goto(`/manufacturing/lots/${newId}`);
@@ -217,6 +208,17 @@
 							onClear={handleProductClear}
 							label="Product to manufacture"
 						/>
+						{#if routingSteps.length > 0}
+							<div class="mt-3 flex items-center gap-2">
+								<input
+									type="checkbox"
+									id="from_routing"
+									bind:checked={fromRouting}
+									class="h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="from_routing">Populate execution steps from routing</Label>
+							</div>
+						{/if}
 						<p class="mt-2 text-xs text-muted-foreground">
 							Select an assembly or component. If it has a routing defined, execution steps will be created automatically.
 						</p>

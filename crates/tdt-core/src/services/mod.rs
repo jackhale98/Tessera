@@ -86,8 +86,8 @@ pub use hazard::{
     HazardSortField, HazardStats, UpdateHazard,
 };
 pub use lot::{
-    CreateLot, LotFilter, LotService, LotSortField, LotStats, LotStatusCounts, UpdateLot,
-    UpdateStepInput,
+    ApproveWiStepInput, CreateLot, ExecuteWiStepInput, LotFilter, LotService, LotSortField,
+    LotStats, LotStatusCounts, UpdateLot, UpdateStepInput, WiStepExecutionResult,
 };
 pub use mate::{
     CreateMate, FitResultCounts, MateFilter, MateService, MateSortField, MateStats, MateTypeCounts,

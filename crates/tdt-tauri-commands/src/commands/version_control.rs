@@ -6,7 +6,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
 use tauri::State;
 use tdt_core::core::identity::EntityId;
 use tdt_core::core::workflow::ApprovalRecord;
@@ -287,48 +286,23 @@ pub async fn get_entity_history(
     // Find the entity file
     let entity_file = find_entity_file(project.root(), &id, cache)?;
 
-    // Build git log command
+    let git = Git::new(project.root());
     let limit_arg = limit.unwrap_or(50);
-    let output = Command::new("git")
-        .args([
-            "log",
-            "--format=%H|%h|%s|%an|%ae|%aI|%G?",
-            "--follow",
-            &format!("-{}", limit_arg),
-            "--",
-            &entity_file.to_string_lossy(),
-        ])
-        .current_dir(project.root())
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("does not have any commits yet") {
-            return Ok(Vec::new());
-        }
-        return Err(CommandError::Other(format!("Git error: {}", stderr)));
-    }
+    let log_entries = git
+        .file_log(&entity_file.to_string_lossy(), limit_arg)
+        .map_err(|e| CommandError::Other(format!("Failed to get entity history: {}", e)))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let commits: Vec<GitCommitInfo> = stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.split('|').collect();
-            if parts.len() >= 7 {
-                Some(GitCommitInfo {
-                    hash: parts[0].to_string(),
-                    short_hash: parts[1].to_string(),
-                    message: parts[2].to_string(),
-                    author: parts[3].to_string(),
-                    author_email: Some(parts[4].to_string()),
-                    date: parts[5].to_string(),
-                    is_signed: parts[6] == "G" || parts[6] == "U",
-                })
-            } else {
-                None
-            }
+    let commits: Vec<GitCommitInfo> = log_entries
+        .into_iter()
+        .map(|entry| GitCommitInfo {
+            hash: entry.hash,
+            short_hash: entry.short_hash,
+            message: entry.message,
+            author: entry.author,
+            author_email: Some(entry.author_email),
+            date: entry.date,
+            is_signed: entry.is_signed,
         })
         .collect();
 
@@ -447,25 +421,13 @@ pub async fn get_entity_file_diff(
     // Find the entity file
     let entity_file = find_entity_file(project.root(), &id, cache)?;
 
-    // Get the diff for that commit
-    let output = Command::new("git")
-        .args([
-            "show",
-            "--format=",
-            &commit_hash,
-            "--",
-            &entity_file.to_string_lossy(),
-        ])
-        .current_dir(project.root())
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+    let git = Git::new(project.root());
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(CommandError::Other(format!("Git error: {}", stderr)));
-    }
+    let diff = git
+        .show_commit_diff(&commit_hash, Some(&entity_file.to_string_lossy()))
+        .map_err(|e| CommandError::Other(format!("Failed to get entity diff: {}", e)))?;
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(diff)
 }
 
 // ============================================================================
@@ -482,56 +444,31 @@ pub async fn list_git_branches(state: State<'_, AppState>) -> CommandResult<Vec<
     let current_branch = git.current_branch().unwrap_or_default();
 
     // Get local branches
-    let output = Command::new("git")
-        .args([
-            "branch",
-            "-v",
-            "--format=%(refname:short)|%(objectname:short)|%(subject)",
-        ])
-        .current_dir(project.root())
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+    let local = git
+        .list_local_branches()
+        .map_err(|e| CommandError::Other(format!("Failed to list branches: {}", e)))?;
 
-    let mut branches: Vec<BranchInfo> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let parts: Vec<&str> = line.split('|').collect();
-            let name = parts.first().unwrap_or(&"").to_string();
-            BranchInfo {
-                is_current: name == current_branch,
-                name,
-                is_remote: false,
-                last_commit: parts.get(1).map(|s| s.to_string()),
-                last_message: parts.get(2).map(|s| s.to_string()),
-            }
+    let mut branches: Vec<BranchInfo> = local
+        .into_iter()
+        .map(|b| BranchInfo {
+            is_current: b.name == current_branch,
+            name: b.name,
+            is_remote: false,
+            last_commit: Some(b.commit[..7.min(b.commit.len())].to_string()),
+            last_message: Some(b.message),
         })
         .collect();
 
     // Get remote branches
-    let output = Command::new("git")
-        .args([
-            "branch",
-            "-r",
-            "-v",
-            "--format=%(refname:short)|%(objectname:short)|%(subject)",
-        ])
-        .current_dir(project.root())
-        .output();
-
-    if let Ok(output) = output {
-        let remote_branches: Vec<BranchInfo> = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|line| !line.is_empty() && !line.contains("HEAD"))
-            .map(|line| {
-                let parts: Vec<&str> = line.split('|').collect();
-                BranchInfo {
-                    name: parts.first().unwrap_or(&"").to_string(),
-                    is_current: false,
-                    is_remote: true,
-                    last_commit: parts.get(1).map(|s| s.to_string()),
-                    last_message: parts.get(2).map(|s| s.to_string()),
-                }
+    if let Ok(remote) = git.list_remote_branches() {
+        let remote_branches: Vec<BranchInfo> = remote
+            .into_iter()
+            .map(|b| BranchInfo {
+                is_current: false,
+                name: b.name,
+                is_remote: true,
+                last_commit: Some(b.commit[..7.min(b.commit.len())].to_string()),
+                last_message: Some(b.message),
             })
             .collect();
         branches.extend(remote_branches);
@@ -558,40 +495,9 @@ pub async fn list_git_tags(
     // Get detailed info for each tag
     let mut tags = Vec::new();
     for name in tag_names {
-        // Get tag info using git show
-        let output = Command::new("git")
-            .args([
-                "tag",
-                "-l",
-                "--format=%(taggername)|%(taggerdate:iso)|%(contents:subject)|%(objectname:short)",
-                &name,
-            ])
-            .current_dir(project.root())
-            .output();
-
-        let (tagger, date, message, commit) = if let Ok(output) = output {
-            let line = String::from_utf8_lossy(&output.stdout);
-            let parts: Vec<&str> = line.trim().split('|').collect();
-            (
-                parts
-                    .first()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string()),
-                parts
-                    .get(1)
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string()),
-                parts
-                    .get(2)
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string()),
-                parts
-                    .get(3)
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string()),
-            )
-        } else {
-            (None, None, None, None)
+        let (tagger, date, message, commit) = match git.tag_info(&name) {
+            Ok(info) => (info.tagger, info.date, info.message, info.commit),
+            Err(_) => (None, None, None, None),
         };
 
         tags.push(TagInfo {
@@ -696,21 +602,10 @@ pub async fn unstage_files(paths: Vec<String>, state: State<'_, AppState>) -> Co
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let output = Command::new("git")
-        .arg("restore")
-        .arg("--staged")
-        .args(&paths)
-        .current_dir(project.root())
-        .output()
+    let git = Git::new(project.root());
+    let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+    git.unstage_files(&path_refs)
         .map_err(|e| CommandError::Other(format!("Failed to unstage files: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(CommandError::Other(format!(
-            "Failed to unstage files: {}",
-            stderr
-        )));
-    }
 
     Ok(())
 }
@@ -721,40 +616,28 @@ pub async fn discard_changes(paths: Vec<String>, state: State<'_, AppState>) -> 
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
+    let git = Git::new(project.root());
+
     for path in &paths {
         let full_path = project.root().join(path);
 
-        // Check if file is untracked (not in git)
-        let check = Command::new("git")
-            .args(["ls-files", "--error-unmatch", path])
-            .current_dir(project.root())
-            .output();
+        // Check if file is tracked
+        let tracked = git.is_tracked(path).unwrap_or(false);
 
-        if let Ok(output) = check {
-            if output.status.success() {
-                // Tracked file: restore from HEAD
-                let restore = Command::new("git")
-                    .args(["restore", path])
-                    .current_dir(project.root())
-                    .output()
-                    .map_err(|e| {
-                        CommandError::Other(format!("Failed to restore {}: {}", path, e))
-                    })?;
-
-                if !restore.status.success() {
-                    let stderr = String::from_utf8_lossy(&restore.stderr);
-                    return Err(CommandError::Other(format!(
-                        "Failed to restore {}: {}",
-                        path, stderr
-                    )));
-                }
-            } else {
-                // Untracked file: delete it
-                if full_path.exists() {
-                    std::fs::remove_file(&full_path).map_err(|e| {
-                        CommandError::Other(format!("Failed to delete untracked file {}: {}", path, e))
-                    })?;
-                }
+        if tracked {
+            // Tracked file: restore from HEAD
+            git.restore_file(path).map_err(|e| {
+                CommandError::Other(format!("Failed to restore {}: {}", path, e))
+            })?;
+        } else {
+            // Untracked file: delete it
+            if full_path.exists() {
+                std::fs::remove_file(&full_path).map_err(|e| {
+                    CommandError::Other(format!(
+                        "Failed to delete untracked file {}: {}",
+                        path, e
+                    ))
+                })?;
             }
         }
     }
@@ -782,16 +665,10 @@ pub async fn commit_changes(
     let git = Git::new(project.root());
 
     // Get the number of staged files before commit
-    let output = Command::new("git")
-        .args(["diff", "--cached", "--name-only"])
-        .current_dir(project.root())
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to get staged files: {}", e)))?;
-
-    let files_changed = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
-        .count();
+    let files_changed = git
+        .staged_files()
+        .map_err(|e| CommandError::Other(format!("Failed to get staged files: {}", e)))?
+        .len();
 
     if files_changed == 0 {
         return Err(CommandError::Other(
@@ -886,44 +763,34 @@ pub async fn get_recent_commits(
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let limit_arg = limit.unwrap_or(50);
+    let git = Git::new(project.root());
 
-    let output = Command::new("git")
-        .args([
-            "log",
-            "--format=%H|%h|%s|%an|%ae|%aI|%G?",
-            &format!("-{}", limit_arg),
-        ])
-        .current_dir(project.root())
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("does not have any commits yet") {
-            return Ok(Vec::new());
-        }
-        return Err(CommandError::Other(format!("Git error: {}", stderr)));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let commits: Vec<GitCommitInfo> = stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.split('|').collect();
-            if parts.len() >= 7 {
-                Some(GitCommitInfo {
-                    hash: parts[0].to_string(),
-                    short_hash: parts[1].to_string(),
-                    message: parts[2].to_string(),
-                    author: parts[3].to_string(),
-                    author_email: Some(parts[4].to_string()),
-                    date: parts[5].to_string(),
-                    is_signed: parts[6] == "G" || parts[6] == "U",
-                })
-            } else {
-                None
+    let entries = git
+        .recent_commits(limit_arg)
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("does not have any commits") || msg.contains("head id") {
+                return CommandError::Other("No commits yet".to_string());
             }
+            CommandError::Other(format!("Failed to get commits: {}", msg))
+        });
+
+    let entries = match entries {
+        Ok(e) => e,
+        Err(CommandError::Other(ref msg)) if msg == "No commits yet" => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+
+    let commits: Vec<GitCommitInfo> = entries
+        .into_iter()
+        .map(|e| GitCommitInfo {
+            hash: e.hash,
+            short_hash: e.short_hash,
+            message: e.message,
+            author: e.author,
+            author_email: Some(e.author_email),
+            date: e.date,
+            is_signed: e.is_signed,
         })
         .collect();
 
@@ -982,74 +849,22 @@ pub async fn get_commit_details(
     let cache = cache_guard.as_ref();
 
     let root = project.root();
+    let git = Git::new(root);
 
     // Get commit metadata
-    let output = Command::new("git")
-        .args([
-            "show",
-            "--format=%H|%h|%B%n---END_MSG---|%an|%ae|%aI|%G?",
-            "--no-patch",
-            &hash,
-        ])
-        .current_dir(root)
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(CommandError::Other(format!("Git error: {}", stderr)));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stdout = stdout.trim();
-
-    // Parse: everything before ---END_MSG--- is full_hash|short_hash|message body
-    // After ---END_MSG--- is |author|email|date|sig
-    let (msg_part, meta_part) = stdout
-        .split_once("---END_MSG---")
-        .ok_or_else(|| CommandError::Other("Failed to parse commit output".to_string()))?;
-
-    let meta_parts: Vec<&str> = meta_part.split('|').collect();
-    // meta_parts: ["", author, email, date, sig]
-
-    let msg_lines: Vec<&str> = msg_part.split('|').collect();
-    let full_hash = msg_lines.first().unwrap_or(&"").to_string();
-    let short_hash_val = msg_lines.get(1).unwrap_or(&"").to_string();
-    let full_message = msg_lines
-        .get(2..)
-        .map(|s| s.join("|"))
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-
-    let author = meta_parts.get(1).unwrap_or(&"").to_string();
-    let author_email = meta_parts.get(2).map(|s| s.to_string());
-    let date = meta_parts.get(3).unwrap_or(&"").to_string();
-    let is_signed = meta_parts.get(4).map_or(false, |s| *s == "G" || *s == "U");
+    let (full_hash, short_hash_val, full_message, author, author_email, date, is_signed) = git
+        .commit_metadata(&hash)
+        .map_err(|e| CommandError::Other(format!("Failed to get commit details: {}", e)))?;
 
     // Get changed files with status
-    let output = Command::new("git")
-        .args([
-            "diff-tree",
-            "--no-commit-id",
-            "-r",
-            "--name-status",
-            &hash,
-        ])
-        .current_dir(root)
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+    let changed = git
+        .commit_changed_files(&hash)
+        .map_err(|e| CommandError::Other(format!("Failed to get changed files: {}", e)))?;
 
-    let files_stdout = String::from_utf8_lossy(&output.stdout);
-    let files: Vec<CommitFileInfo> = files_stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let parts: Vec<&str> = line.split('\t').collect();
-            let status_char = parts.first().unwrap_or(&"M");
-            let path = parts.get(1).unwrap_or(&"").to_string();
-
-            let change_type = match *status_char {
+    let files: Vec<CommitFileInfo> = changed
+        .into_iter()
+        .map(|(status, path)| {
+            let change_type = match status.as_str() {
                 "A" => "added",
                 "M" => "modified",
                 "D" => "deleted",
@@ -1081,28 +896,7 @@ pub async fn get_commit_details(
         .collect();
 
     // Get stat summary (insertions/deletions)
-    let output = Command::new("git")
-        .args(["diff-tree", "--no-commit-id", "--shortstat", "-r", &hash])
-        .current_dir(root)
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
-
-    let stat_stdout = String::from_utf8_lossy(&output.stdout);
-    let mut insertions: u32 = 0;
-    let mut deletions: u32 = 0;
-
-    for part in stat_stdout.split(',') {
-        let part = part.trim();
-        if part.contains("insertion") {
-            if let Some(num) = part.split_whitespace().next() {
-                insertions = num.parse().unwrap_or(0);
-            }
-        } else if part.contains("deletion") {
-            if let Some(num) = part.split_whitespace().next() {
-                deletions = num.parse().unwrap_or(0);
-            }
-        }
-    }
+    let (insertions, deletions) = git.commit_stats(&hash).unwrap_or((0, 0));
 
     Ok(CommitDetails {
         hash: full_hash,
@@ -1128,18 +922,13 @@ pub async fn get_commit_file_diff(
     let project_guard = state.project.lock().unwrap();
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
-    let output = Command::new("git")
-        .args(["show", "--format=", &commit_hash, "--", &file_path])
-        .current_dir(project.root())
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
+    let git = Git::new(project.root());
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(CommandError::Other(format!("Git error: {}", stderr)));
-    }
+    let diff = git
+        .show_commit_diff(&commit_hash, Some(&file_path))
+        .map_err(|e| CommandError::Other(format!("Failed to get commit diff: {}", e)))?;
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(diff)
 }
 
 // ============================================================================
@@ -1285,28 +1074,12 @@ pub async fn get_uncommitted_file_diff(
     let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
 
     let root = project.root();
+    let git = Git::new(root);
 
     // Try git diff for tracked files (both staged and unstaged)
-    let output = Command::new("git")
-        .args(["diff", "HEAD", "--", &path])
-        .current_dir(root)
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
-
-    let diff = String::from_utf8_lossy(&output.stdout).to_string();
-
-    if !diff.is_empty() {
-        return Ok(diff);
-    }
-
-    // If no diff from HEAD, try staged diff
-    let output = Command::new("git")
-        .args(["diff", "--cached", "--", &path])
-        .current_dir(root)
-        .output()
-        .map_err(|e| CommandError::Other(format!("Failed to run git: {}", e)))?;
-
-    let diff = String::from_utf8_lossy(&output.stdout).to_string();
+    let diff = git
+        .diff_file(&path)
+        .unwrap_or_default();
 
     if !diff.is_empty() {
         return Ok(diff);

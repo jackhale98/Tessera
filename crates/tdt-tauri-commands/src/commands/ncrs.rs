@@ -99,6 +99,7 @@ pub struct CreateNcrInput {
     pub severity: Option<String>,
     pub category: Option<String>,
     pub author: String,
+    pub lot_ids: Option<Vec<String>>,
 }
 
 /// Input for updating an NCR
@@ -336,6 +337,7 @@ pub async fn create_ncr(input: CreateNcrInput, state: State<'_, AppState>) -> Co
             tags: Vec::new(),
             status: None,
             author: input.author,
+            lot_ids: input.lot_ids.unwrap_or_default(),
         };
 
         service.create(create)?
@@ -716,6 +718,68 @@ pub async fn set_ncr_capa_link(
     };
 
     // Sync cache
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(ncr)
+}
+
+/// Add a lot link to an NCR
+#[tauri::command]
+pub async fn add_ncr_lot_link(
+    id: String,
+    lot_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Ncr> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let ncr = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = NcrService::new(project, cache);
+
+        let entity_id: EntityId = lot_id
+            .parse()
+            .map_err(|e| CommandError::InvalidInput(format!("Invalid Lot ID: {}", e)))?;
+
+        service.add_lot_link(&id, entity_id)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(ncr)
+}
+
+/// Remove a lot link from an NCR
+#[tauri::command]
+pub async fn remove_ncr_lot_link(
+    id: String,
+    lot_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Ncr> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let ncr = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = NcrService::new(project, cache);
+
+        let entity_id: EntityId = lot_id
+            .parse()
+            .map_err(|e| CommandError::InvalidInput(format!("Invalid Lot ID: {}", e)))?;
+
+        service.remove_lot_link(&id, &entity_id)?
+    };
+
     drop(project_guard);
     let mut cache_guard = state.cache.lock().unwrap();
     if let Some(cache) = cache_guard.as_mut() {

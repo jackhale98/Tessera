@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use tdt_core::core::cache::CachedEntity;
 use tdt_core::core::entity::Status;
-use tdt_core::entities::lot::{ExecutionStatus, ExecutionStep, Lot, LotStatus, MaterialUsed};
+use tdt_core::entities::lot::{
+    ExecutionStatus, ExecutionStep, Lot, LotStatus, MaterialUsed, WiStepExecution,
+};
 use tdt_core::services::{
-    CreateLot, LotFilter, LotService, LotSortField, LotStats, SortDirection, UpdateLot,
-    UpdateStepInput,
+    ApproveWiStepInput, CreateLot, ExecuteWiStepInput, LotFilter, LotService, LotSortField,
+    LotStats, SortDirection, UpdateLot, UpdateStepInput, WiStepExecutionResult,
 };
 
 /// List parameters for Lots
@@ -86,6 +88,7 @@ pub struct CreateLotInput {
     pub quantity: Option<u32>,
     pub product_id: Option<String>,
     pub author: String,
+    pub from_routing: Option<bool>,
 }
 
 /// Input for updating a Lot
@@ -248,6 +251,7 @@ pub async fn create_lot(input: CreateLotInput, state: State<'_, AppState>) -> Co
             status: None,
             tags: Vec::new(),
             author: input.author,
+            from_routing: input.from_routing.unwrap_or(false),
         };
 
         service.create(create)?
@@ -784,4 +788,173 @@ pub async fn get_lot_stats(state: State<'_, AppState>) -> CommandResult<LotStats
     let stats = service.stats()?;
 
     Ok(stats)
+}
+
+// ============================================================================
+// WI Step Execution Commands
+// ============================================================================
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExecuteWiStepDto {
+    pub work_instruction_id: String,
+    pub step_number: u32,
+    pub process_index: Option<usize>,
+    pub operator: String,
+    pub operator_email: Option<String>,
+    pub data: Option<std::collections::HashMap<String, serde_json::Value>>,
+    pub equipment: Option<std::collections::HashMap<String, String>>,
+    pub notes: Option<String>,
+    pub sign: Option<bool>,
+    pub require_approval: Option<bool>,
+    pub complete: Option<bool>,
+    pub deviation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WiStepExecutionResultDto {
+    pub lot: Lot,
+    pub process_index: usize,
+    pub step_number: u32,
+    pub was_completed: bool,
+    pub deviation_used: Option<String>,
+}
+
+impl From<WiStepExecutionResult> for WiStepExecutionResultDto {
+    fn from(r: WiStepExecutionResult) -> Self {
+        Self {
+            lot: r.lot,
+            process_index: r.process_index,
+            step_number: r.step_number,
+            was_completed: r.was_completed,
+            deviation_used: r.deviation_used,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApproveWiStepDto {
+    pub approver: String,
+    pub email: Option<String>,
+    pub role: Option<String>,
+    pub comment: Option<String>,
+    pub sign: Option<bool>,
+    pub reject: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn execute_wi_step(
+    id: String,
+    input: ExecuteWiStepDto,
+    state: State<'_, AppState>,
+) -> CommandResult<WiStepExecutionResultDto> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let result = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = LotService::new(project, cache);
+
+        let exec_input = ExecuteWiStepInput {
+            work_instruction_id: input.work_instruction_id,
+            step_number: input.step_number,
+            process_index: input.process_index,
+            operator: input.operator,
+            operator_email: input.operator_email,
+            data: input.data.unwrap_or_default(),
+            equipment: input.equipment.unwrap_or_default(),
+            notes: input.notes,
+            sign: input.sign.unwrap_or(false),
+            require_approval: input.require_approval.unwrap_or(false),
+            complete: input.complete.unwrap_or(false),
+            deviation_id: input.deviation_id,
+        };
+
+        service.execute_wi_step(&id, exec_input)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(WiStepExecutionResultDto::from(result))
+}
+
+#[tauri::command]
+pub async fn get_wi_step_status(
+    id: String,
+    process_index: usize,
+    wi_id: String,
+    step_number: u32,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<WiStepExecution>> {
+    let project = state.project.lock().unwrap();
+    let cache = state.cache.lock().unwrap();
+    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+
+    let service = LotService::new(project, cache);
+    Ok(service.get_wi_step_status(&id, process_index, &wi_id, step_number)?)
+}
+
+#[tauri::command]
+pub async fn approve_wi_step(
+    id: String,
+    process_index: usize,
+    wi_id: String,
+    step_number: u32,
+    input: ApproveWiStepDto,
+    state: State<'_, AppState>,
+) -> CommandResult<Lot> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let lot = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = LotService::new(project, cache);
+
+        let approve_input = ApproveWiStepInput {
+            approver: input.approver,
+            email: input.email,
+            role: input.role,
+            comment: input.comment,
+            sign: input.sign.unwrap_or(false),
+            reject: input.reject.unwrap_or(false),
+        };
+
+        service.approve_wi_step(&id, process_index, &wi_id, step_number, approve_input)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(lot)
+}
+
+#[tauri::command]
+pub async fn validate_lot_step_order(
+    id: String,
+    process_index: usize,
+    wi_id: String,
+    step_number: u32,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    let project = state.project.lock().unwrap();
+    let cache = state.cache.lock().unwrap();
+    let project = project.as_ref().ok_or(CommandError::NoProject)?;
+    let cache = cache.as_ref().ok_or(CommandError::NoProject)?;
+
+    let service = LotService::new(project, cache);
+    let lot = service
+        .get(&id)?
+        .ok_or_else(|| CommandError::NotFound(format!("Lot: {}", id)))?;
+
+    service.validate_step_order(&lot, process_index, &wi_id, step_number)?;
+    Ok(())
 }

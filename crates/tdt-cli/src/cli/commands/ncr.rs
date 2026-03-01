@@ -785,6 +785,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         tags: Vec::new(),
         status: None,
         author: config.author(),
+        lot_ids: Vec::new(),
     };
 
     let ncr = service

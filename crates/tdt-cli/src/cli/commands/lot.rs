@@ -11,14 +11,13 @@ use std::collections::HashMap;
 use tdt_core::core::cache::EntityCache;
 use tdt_core::core::identity::{EntityId, EntityPrefix};
 use tdt_core::core::manufacturing::{
-    create_execution_steps_from_routing, step_requires_signature, LotWorkflow, LotWorkflowConfig,
+    step_requires_signature, LotWorkflow, LotWorkflowConfig,
 };
 use tdt_core::core::project::Project;
 use tdt_core::core::shortid::ShortIdIndex;
 use tdt_core::core::{Config, Git};
 use tdt_core::entities::lot::{
-    ApprovalStatus, ExecutionStatus, Lot, LotStatus, StepApproval, WiStepExecution,
-    WorkInstructionRef,
+    ApprovalStatus, ExecutionStatus, Lot, LotStatus, StepApproval, WorkInstructionRef,
 };
 use tdt_core::entities::process::Process;
 use tdt_core::schema::wizard::SchemaWizard;
@@ -847,6 +846,7 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         tags: Vec::new(),
         status: None,
         author: config.author(),
+        from_routing: args.from_routing,
     };
 
     let lot = service
@@ -857,65 +857,9 @@ fn run_new(args: NewArgs, global: &GlobalOpts) -> Result<()> {
         .root()
         .join(format!("manufacturing/lots/{}.tdt.yaml", id));
 
-    // Handle --from-routing: populate execution steps from product routing
-    let mut execution_steps_added = 0;
+    // from_routing is now handled by the service layer in CreateLot
+    let execution_steps_added = lot.execution.len();
     let mut git_branch_created: Option<String> = None;
-
-    if args.from_routing {
-        if product.is_none() {
-            return Err(miette::miette!(
-                "--from-routing requires --product to be specified"
-            ));
-        }
-
-        // Use the lot we just created
-        let mut lot = lot.clone();
-
-        // Product already resolved
-        let resolved_prod = product.as_ref().unwrap();
-
-        // Try to load as assembly or component using services
-        let asm_service = tdt_core::services::AssemblyService::new(&project, &cache);
-        let cmp_service = tdt_core::services::ComponentService::new(&project, &cache);
-
-        let routing: Option<Vec<String>> = if resolved_prod.starts_with("ASM-") {
-            // Load assembly via service
-            asm_service
-                .get(resolved_prod)
-                .ok()
-                .flatten()
-                .and_then(|asm| asm.manufacturing.map(|m| m.routing))
-        } else if resolved_prod.starts_with("CMP-") {
-            // Load component via service
-            cmp_service
-                .get(resolved_prod)
-                .ok()
-                .flatten()
-                .and_then(|cmp| cmp.manufacturing.map(|m| m.routing))
-        } else {
-            None
-        };
-
-        if let Some(routing) = routing {
-            if !routing.is_empty() {
-                // Load all processes using service
-                let proc_service = tdt_core::services::ProcessService::new(&project, &cache);
-                let all_procs = proc_service.load_all().unwrap_or_default();
-                let processes: HashMap<String, Process> = all_procs
-                    .into_iter()
-                    .map(|p| (p.id.to_string(), p))
-                    .collect();
-
-                // Create execution steps from routing
-                lot.execution = create_execution_steps_from_routing(&routing, &processes);
-                execution_steps_added = lot.execution.len();
-
-                // Save the updated lot
-                let updated_yaml = serde_yml::to_string(&lot).into_diagnostic()?;
-                fs::write(&file_path, updated_yaml).into_diagnostic()?;
-            }
-        }
-    }
 
     // Handle --branch: create git branch for lot workflow
     let should_create_branch = args.branch
@@ -1910,141 +1854,35 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
         .resolve(&args.wi)
         .unwrap_or_else(|| args.wi.clone());
 
-    // Load lot using service
     let service = LotService::new(&project, &cache);
-    let mut lot = service
-        .get(&resolved_lot_id)
-        .map_err(|e| miette::miette!("{}", e))?
-        .ok_or_else(|| miette::miette!("No lot found matching '{}'", args.lot))?;
 
-    let display_id = short_ids
-        .get_short_id(&lot.id.to_string())
-        .unwrap_or_else(|| format_short_id(&lot.id));
-
-    // Find the process step
-    let proc_idx = if let Some(idx) = args.process {
-        idx.saturating_sub(1) // Convert 1-based to 0-based
-    } else {
-        // Find first process step that uses this WI
-        lot.execution
-            .iter()
-            .position(|step| {
-                step.work_instructions_used
-                    .iter()
-                    .any(|wi| wi.id == resolved_wi_id || wi.id.contains(&resolved_wi_id))
-            })
-            .or_else(|| {
-                // Or find first non-completed step
-                lot.execution
-                    .iter()
-                    .position(|s| s.status != ExecutionStatus::Completed)
-            })
-            .unwrap_or(0)
-    };
-
-    if proc_idx >= lot.execution.len() {
-        return Err(miette::miette!(
-            "Process step {} not found (lot has {} steps)",
-            proc_idx + 1,
-            lot.execution.len()
-        ));
-    }
-
-    // Step order enforcement (skip for --show mode)
-    if !args.show && args.deviation.is_none() {
-        // 1. Check process sequencing: all preceding process steps must be completed
-        for i in 0..proc_idx {
-            let prev_step = &lot.execution[i];
-            if prev_step.status != ExecutionStatus::Completed
-                && prev_step.status != ExecutionStatus::Skipped
-            {
-                let prev_proc_id = prev_step
-                    .process
-                    .as_deref()
-                    .unwrap_or("unknown");
-                let prev_display = short_ids
-                    .get_short_id(prev_proc_id)
-                    .unwrap_or_else(|| format!("step {}", i + 1));
-                return Err(miette::miette!(
-                    "Cannot execute step on process {} (step {}): preceding process {} (step {}) is not completed.\n\
-                     Complete upstream process steps first, or use --deviation DEV@N to bypass with an approved deviation.",
-                    proc_idx + 1,
-                    proc_idx + 1,
-                    prev_display,
-                    i + 1
-                ));
-            }
-        }
-
-        // 2. Check WI step sequencing: previous steps for this WI must be completed
-        if args.step > 1 {
-            let exec_step = &lot.execution[proc_idx];
-            for prev_step_num in 1..args.step {
-                let prev_completed = exec_step
-                    .wi_step_executions
-                    .iter()
-                    .any(|e| {
-                        e.work_instruction == resolved_wi_id
-                            && e.step_number == prev_step_num
-                            && e.is_completed()
-                    });
-                if !prev_completed {
-                    return Err(miette::miette!(
-                        "Cannot execute WI step {}: step {} has not been completed.\n\
-                         Execute work instruction steps in order, or use --deviation DEV@N to bypass.",
-                        args.step,
-                        prev_step_num
-                    ));
-                }
-            }
-        }
-    }
-
-    // Validate deviation if provided
-    if let Some(ref dev_id) = args.deviation {
-        let resolved_dev = short_ids
-            .resolve(dev_id)
-            .unwrap_or_else(|| dev_id.clone());
-        // Check deviation exists and is approved
-        let dev_dir = project.root().join("manufacturing/deviations");
-        let dev_file = dev_dir.join(format!("{}.tdt.yaml", resolved_dev));
-        if !dev_file.exists() {
-            return Err(miette::miette!(
-                "Deviation '{}' not found. Create a deviation first with: tdt dev new",
-                dev_id
-            ));
-        }
-        if let Ok(content) = fs::read_to_string(&dev_file) {
-            if let Ok(dev) = serde_yml::from_str::<serde_json::Value>(&content) {
-                let dev_status = dev
-                    .get("dev_status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if dev_status != "approved" {
-                    return Err(miette::miette!(
-                        "Deviation '{}' is not approved (status: {}). Only approved deviations can bypass step ordering.",
-                        dev_id,
-                        dev_status
-                    ));
-                }
-            }
-        }
-        if !global.quiet {
-            eprintln!(
-                "{} Using deviation {} to bypass step order enforcement",
-                style("!").yellow(),
-                style(dev_id).cyan()
-            );
-        }
-    }
-
-    // Show mode - just display step status
+    // Show mode — read-only via service
     if args.show {
-        let exec_step = &lot.execution[proc_idx];
-        let wi_exec = exec_step
-            .wi_step_executions
-            .iter()
-            .find(|e| e.work_instruction == resolved_wi_id && e.step_number == args.step);
+        let proc_idx = args.process.map(|p| p.saturating_sub(1));
+        let lot = service
+            .get(&resolved_lot_id)
+            .map_err(|e| miette::miette!("{}", e))?
+            .ok_or_else(|| miette::miette!("No lot found matching '{}'", args.lot))?;
+
+        let display_id = short_ids
+            .get_short_id(&lot.id.to_string())
+            .unwrap_or_else(|| format_short_id(&lot.id));
+
+        // Resolve process index
+        let proc_idx = proc_idx.unwrap_or_else(|| {
+            lot.execution
+                .iter()
+                .position(|step| {
+                    step.work_instructions_used
+                        .iter()
+                        .any(|wi| wi.id == resolved_wi_id)
+                })
+                .unwrap_or(0)
+        });
+
+        let wi_exec = service
+            .get_wi_step_status(&resolved_lot_id, proc_idx, &resolved_wi_id, args.step)
+            .map_err(|e| miette::miette!("{}", e))?;
 
         match global.output {
             OutputFormat::Json | OutputFormat::Yaml => {
@@ -2056,10 +1894,7 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
                     "execution": wi_exec,
                 });
                 if global.output == OutputFormat::Json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&result).unwrap_or_default()
-                    );
+                    println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
                 } else {
                     println!("{}", serde_yml::to_string(&result).unwrap_or_default());
                 }
@@ -2116,36 +1951,27 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
         return Ok(());
     }
 
-    // Execute step
+    // Execute mode — mutate via service
     let operator = args.operator.unwrap_or_else(|| config.author().to_string());
 
-    // Create or update WI step execution
-    let exec_step = &mut lot.execution[proc_idx];
+    // Resolve deviation short ID if provided
+    let deviation_id = args.deviation.as_ref().map(|dev_id| {
+        short_ids
+            .resolve(dev_id)
+            .unwrap_or_else(|| dev_id.clone())
+    });
 
-    // Find existing or create new
-    let existing_idx = exec_step
-        .wi_step_executions
-        .iter()
-        .position(|e| e.work_instruction == resolved_wi_id && e.step_number == args.step);
-
-    let mut wi_exec = if let Some(idx) = existing_idx {
-        exec_step.wi_step_executions.remove(idx)
-    } else {
-        WiStepExecution::new(resolved_wi_id.clone(), args.step)
-    };
-
-    // Update execution
-    wi_exec.operator = Some(operator.clone());
-    wi_exec.operator_email = get_git_email();
-
-    // Only mark as complete if --complete flag is set
-    if args.complete {
-        wi_exec.completed_at = Some(chrono::Utc::now());
+    if deviation_id.is_some() && !global.quiet {
+        eprintln!(
+            "{} Using deviation {} to bypass step order enforcement",
+            style("!").yellow(),
+            style(args.deviation.as_deref().unwrap_or("")).cyan()
+        );
     }
 
-    // Add data
+    // Build data map with type coercion
+    let mut data = std::collections::HashMap::new();
     for (key, value) in &args.data {
-        // Try to parse as number, otherwise use as string
         let json_val = if let Ok(num) = value.parse::<f64>() {
             serde_json::json!(num)
         } else if let Ok(bool_val) = value.parse::<bool>() {
@@ -2153,75 +1979,59 @@ fn run_wi_step(args: WiStepArgs, global: &GlobalOpts) -> Result<()> {
         } else {
             serde_json::json!(value)
         };
-        wi_exec.data.insert(key.clone(), json_val);
+        data.insert(key.clone(), json_val);
     }
 
-    // Add equipment
-    for (equipment, serial) in &args.equipment {
-        wi_exec
-            .equipment_used
-            .insert(equipment.clone(), serial.clone());
-    }
+    let equipment: std::collections::HashMap<String, String> = args
+        .equipment
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
-    // Add notes
-    if let Some(ref notes) = args.notes {
-        wi_exec.notes = Some(notes.clone());
-    }
+    let input = tdt_core::services::ExecuteWiStepInput {
+        work_instruction_id: resolved_wi_id.clone(),
+        step_number: args.step,
+        process_index: args.process.map(|p| p.saturating_sub(1)),
+        operator: operator.clone(),
+        operator_email: get_git_email(),
+        data,
+        equipment,
+        notes: args.notes.clone(),
+        sign: args.sign,
+        require_approval: args.require_approval,
+        complete: args.complete,
+        deviation_id,
+    };
 
-    // Handle signing
-    if args.sign {
-        wi_exec.operator_signature_verified = Some(true);
-        // Note: signing_key would be populated by git commit signing
-    }
+    let result = service
+        .execute_wi_step(&resolved_lot_id, input)
+        .map_err(|e| miette::miette!("{}", e))?;
 
-    // Set approval status
-    if args.require_approval {
-        wi_exec.approval_status = ApprovalStatus::Pending;
-    }
-
-    // Add back to execution step
-    exec_step.wi_step_executions.push(wi_exec.clone());
-    exec_step.wi_step_executions.sort_by_key(|e| e.step_number);
-
-    // Increment lot revision
-    lot.entity_revision += 1;
-
-    // Save lot
-    let lot_path = project
-        .root()
-        .join(format!("manufacturing/lots/{}.tdt.yaml", lot.id));
-    let yaml_content = serde_yml::to_string(&lot).into_diagnostic()?;
-    fs::write(&lot_path, &yaml_content).into_diagnostic()?;
+    let display_id = short_ids
+        .get_short_id(&result.lot.id.to_string())
+        .unwrap_or_else(|| format_short_id(&result.lot.id));
 
     // Output
-    let status = if args.complete {
-        "completed"
-    } else {
-        "updated"
-    };
+    let status = if args.complete { "completed" } else { "updated" };
     match global.output {
         OutputFormat::Json => {
-            let result = serde_json::json!({
-                "lot": lot.id.to_string(),
+            let json_result = serde_json::json!({
+                "lot": result.lot.id.to_string(),
                 "work_instruction": resolved_wi_id,
                 "step_number": args.step,
                 "operator": operator,
                 "signed": args.sign,
-                "approval_status": wi_exec.approval_status.to_string(),
                 "completed": args.complete,
             });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&result).unwrap_or_default()
-            );
+            println!("{}", serde_json::to_string_pretty(&json_result).unwrap_or_default());
         }
         OutputFormat::Yaml => {
-            let result = serde_json::json!({
-                "lot": lot.id.to_string(),
+            let yaml_result = serde_json::json!({
+                "lot": result.lot.id.to_string(),
                 "step": args.step,
                 "status": status,
             });
-            println!("{}", serde_yml::to_string(&result).unwrap_or_default());
+            println!("{}", serde_yml::to_string(&yaml_result).unwrap_or_default());
         }
         _ => {
             if args.complete {

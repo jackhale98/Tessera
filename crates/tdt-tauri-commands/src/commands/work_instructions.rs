@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use tdt_core::core::entity::Status;
-use tdt_core::entities::work_instruction::WorkInstruction;
+use tdt_core::entities::work_instruction::{
+    Hazard, Material, PpeItem, ProcedureStep, QualityCheck, Tool, WorkInstruction, WorkSafety,
+};
 use tdt_core::services::common::SortDirection;
 use tdt_core::services::work_instruction::{
     CreateWorkInstruction, UpdateWorkInstruction, WorkInstructionFilter, WorkInstructionService,
@@ -314,4 +316,354 @@ pub async fn get_work_instruction_stats(
 
     let service = WorkInstructionService::new(project, cache);
     Ok(service.stats()?)
+}
+
+// ============================================================================
+// Step Management Input DTOs
+// ============================================================================
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WiAddStepInput {
+    pub action: String,
+    pub verification: Option<String>,
+    pub caution: Option<String>,
+    pub image: Option<String>,
+    pub estimated_time_minutes: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddToolInput {
+    pub name: String,
+    pub part_number: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WiAddMaterialInput {
+    pub name: String,
+    pub specification: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddQualityCheckInput {
+    pub at_step: u32,
+    pub characteristic: String,
+    pub specification: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PpeItemInput {
+    pub item: String,
+    pub standard: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HazardInput {
+    pub hazard: String,
+    pub control: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetSafetyInput {
+    pub ppe_required: Vec<PpeItemInput>,
+    pub hazards: Vec<HazardInput>,
+}
+
+// ============================================================================
+// Step Management Commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn add_work_instruction_step(
+    id: String,
+    input: WiAddStepInput,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+
+        let step = ProcedureStep {
+            step: 0, // Will be renumbered by add_step
+            action: input.action,
+            verification: input.verification,
+            caution: input.caution,
+            image: input.image,
+            estimated_time_minutes: input.estimated_time_minutes,
+            approval: None,
+            data_fields: Vec::new(),
+            equipment: Vec::new(),
+        };
+        service.add_step(&id, step)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn remove_work_instruction_step(
+    id: String,
+    step_number: u32,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+        service.remove_step(&id, step_number)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn add_work_instruction_tool(
+    id: String,
+    input: AddToolInput,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+
+        let tool = Tool {
+            name: input.name,
+            part_number: input.part_number,
+        };
+        service.add_tool(&id, tool)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn remove_work_instruction_tool(
+    id: String,
+    tool_name: String,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+        service.remove_tool(&id, &tool_name)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn add_work_instruction_material(
+    id: String,
+    input: WiAddMaterialInput,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+
+        let material = Material {
+            name: input.name,
+            specification: input.specification,
+        };
+        service.add_material(&id, material)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn remove_work_instruction_material(
+    id: String,
+    material_name: String,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+        service.remove_material(&id, &material_name)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn add_work_instruction_quality_check(
+    id: String,
+    input: AddQualityCheckInput,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+
+        let check = QualityCheck {
+            at_step: input.at_step,
+            characteristic: input.characteristic,
+            specification: input.specification,
+        };
+        service.add_quality_check(&id, check)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn remove_work_instruction_quality_check(
+    id: String,
+    at_step: u32,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+        service.remove_quality_check(&id, at_step)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn set_work_instruction_safety(
+    id: String,
+    input: SetSafetyInput,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+
+        let safety = WorkSafety {
+            ppe_required: input
+                .ppe_required
+                .into_iter()
+                .map(|p| PpeItem {
+                    item: p.item,
+                    standard: p.standard,
+                })
+                .collect(),
+            hazards: input
+                .hazards
+                .into_iter()
+                .map(|h| Hazard {
+                    hazard: h.hazard,
+                    control: h.control,
+                })
+                .collect(),
+        };
+        service.set_safety(&id, safety)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
+}
+
+#[tauri::command]
+pub async fn clear_work_instruction_safety(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkInstruction> {
+    let project_guard = state.project.lock().unwrap();
+    let project = project_guard.as_ref().ok_or(CommandError::NoProject)?;
+
+    let work_instruction = {
+        let cache_guard = state.cache.lock().unwrap();
+        let cache = cache_guard.as_ref().ok_or(CommandError::NoProject)?;
+        let service = WorkInstructionService::new(project, cache);
+        service.clear_safety(&id)?
+    };
+
+    drop(project_guard);
+    let mut cache_guard = state.cache.lock().unwrap();
+    if let Some(cache) = cache_guard.as_mut() {
+        let _ = cache.sync();
+    }
+
+    Ok(work_instruction)
 }

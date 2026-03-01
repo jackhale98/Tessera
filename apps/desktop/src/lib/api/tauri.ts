@@ -861,6 +861,7 @@ export interface CreateNcrInput {
 	severity?: string;
 	category?: string;
 	author: string;
+	lot_ids?: string[];
 }
 
 export interface UpdateNcrInput {
@@ -895,6 +896,10 @@ export const ncrs = {
 		call<unknown>('set_ncr_cost', { id, reworkCost, scrapCost }),
 	setCapaLink: (id: string, capaId: string) =>
 		call<unknown>('set_ncr_capa_link', { id, capaId }),
+	addLotLink: (id: string, lotId: string) =>
+		call<unknown>('add_ncr_lot_link', { id, lotId }),
+	removeLotLink: (id: string, lotId: string) =>
+		call<unknown>('remove_ncr_lot_link', { id, lotId }),
 	getStats: () => call<NcrStats>('get_ncr_stats')
 };
 
@@ -1030,6 +1035,38 @@ export interface LotStats {
 	merged_branches: number;
 }
 
+export interface ExecuteWiStepInput {
+	work_instruction_id: string;
+	step_number: number;
+	process_index?: number;
+	operator: string;
+	operator_email?: string;
+	data?: Record<string, unknown>;
+	equipment?: Record<string, string>;
+	notes?: string;
+	sign?: boolean;
+	require_approval?: boolean;
+	complete?: boolean;
+	deviation_id?: string;
+}
+
+export interface WiStepExecutionResultDto {
+	lot: unknown;
+	process_index: number;
+	step_number: number;
+	was_completed: boolean;
+	deviation_used?: string;
+}
+
+export interface ApproveWiStepInput {
+	approver: string;
+	email?: string;
+	role?: string;
+	comment?: string;
+	sign?: boolean;
+	reject?: boolean;
+}
+
 export interface CreateLotInput {
 	title: string;
 	lot_number?: string;
@@ -1037,6 +1074,7 @@ export interface CreateLotInput {
 	product?: string;
 	notes?: string;
 	author: string;
+	from_routing?: boolean;
 }
 
 export const lots = {
@@ -1066,7 +1104,89 @@ export const lots = {
 		call<unknown>('force_complete_lot', { id }),
 	addResult: (id: string, resultId: string) =>
 		call<unknown>('add_lot_result', { id, resultId }),
-	getStats: () => call<LotStats>('get_lot_stats')
+	getStats: () => call<LotStats>('get_lot_stats'),
+	executeWiStep: (id: string, input: ExecuteWiStepInput) =>
+		call<WiStepExecutionResultDto>('execute_wi_step', { id, input }),
+	getWiStepStatus: (id: string, processIndex: number, wiId: string, stepNumber: number) =>
+		call<unknown>('get_wi_step_status', { id, processIndex, wiId, stepNumber }),
+	approveWiStep: (id: string, processIndex: number, wiId: string, stepNumber: number, input: ApproveWiStepInput) =>
+		call<unknown>('approve_wi_step', { id, processIndex, wiId, stepNumber, input }),
+	validateStepOrder: (id: string, processIndex: number, wiId: string, stepNumber: number) =>
+		call<void>('validate_lot_step_order', { id, processIndex, wiId, stepNumber })
+};
+
+/**
+ * Work Instructions API (specialized commands)
+ */
+export interface AddWiStepInput {
+	action: string;
+	verification?: string;
+	caution?: string;
+	image?: string;
+	estimated_time_minutes?: number;
+}
+
+export interface AddWiToolInput {
+	name: string;
+	part_number?: string;
+}
+
+export interface AddWiMaterialInput {
+	name: string;
+	specification?: string;
+}
+
+export interface AddWiQualityCheckInput {
+	at_step: number;
+	characteristic: string;
+	specification?: string;
+}
+
+export interface PpeItemInput {
+	item: string;
+	standard?: string;
+}
+
+export interface HazardInput {
+	hazard: string;
+	control?: string;
+}
+
+export interface SetWiSafetyInput {
+	ppe_required: PpeItemInput[];
+	hazards: HazardInput[];
+}
+
+export const workInstructions = {
+	list: (params?: Record<string, unknown>) =>
+		call<unknown>('list_work_instructions', { params }),
+	get: (id: string) => call<unknown>('get_work_instruction', { id }),
+	create: (input: Record<string, unknown>) =>
+		call<unknown>('create_work_instruction', { input }),
+	update: (id: string, input: Record<string, unknown>) =>
+		call<unknown>('update_work_instruction', { id, input }),
+	delete: (id: string) => call<void>('delete_work_instruction', { id }),
+	getStats: () => call<unknown>('get_work_instruction_stats'),
+	addStep: (id: string, input: AddWiStepInput) =>
+		call<unknown>('add_work_instruction_step', { id, input }),
+	removeStep: (id: string, stepNumber: number) =>
+		call<unknown>('remove_work_instruction_step', { id, stepNumber }),
+	addTool: (id: string, input: AddWiToolInput) =>
+		call<unknown>('add_work_instruction_tool', { id, input }),
+	removeTool: (id: string, toolName: string) =>
+		call<unknown>('remove_work_instruction_tool', { id, toolName }),
+	addMaterial: (id: string, input: AddWiMaterialInput) =>
+		call<unknown>('add_work_instruction_material', { id, input }),
+	removeMaterial: (id: string, materialName: string) =>
+		call<unknown>('remove_work_instruction_material', { id, materialName }),
+	addQualityCheck: (id: string, input: AddWiQualityCheckInput) =>
+		call<unknown>('add_work_instruction_quality_check', { id, input }),
+	removeQualityCheck: (id: string, atStep: number) =>
+		call<unknown>('remove_work_instruction_quality_check', { id, atStep }),
+	setSafety: (id: string, input: SetWiSafetyInput) =>
+		call<unknown>('set_work_instruction_safety', { id, input }),
+	clearSafety: (id: string) =>
+		call<unknown>('clear_work_instruction_safety', { id })
 };
 
 /**
@@ -1380,6 +1500,7 @@ export const api = {
 	ncrs,
 	capas,
 	lots,
+	workInstructions,
 	mates,
 	stackups,
 	traceability,

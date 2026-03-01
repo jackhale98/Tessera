@@ -13,7 +13,8 @@ use crate::core::identity::{EntityId, EntityPrefix};
 use crate::core::loader;
 use crate::core::project::Project;
 use crate::entities::lot::{
-    ExecutionStatus, ExecutionStep, Lot, LotStatus, MaterialUsed, WorkInstructionRef,
+    ApprovalStatus, ExecutionStatus, ExecutionStep, Lot, LotStatus, MaterialUsed, StepApproval,
+    WiStepExecution, WorkInstructionRef,
 };
 use crate::services::base::ServiceBase;
 use crate::services::common::{
@@ -92,6 +93,8 @@ pub struct CreateLot {
     pub status: Option<Status>,
     /// Author
     pub author: String,
+    /// Populate execution steps from product routing
+    pub from_routing: bool,
 }
 
 /// Input for updating an existing lot
@@ -154,6 +157,67 @@ pub struct UpdateStepInput {
     pub work_instructions_used: Option<Vec<String>>,
     /// Mark as signed
     pub signed: bool,
+}
+
+/// Input for executing a WI step within a lot's electronic router
+#[derive(Debug, Clone)]
+pub struct ExecuteWiStepInput {
+    /// Work instruction ID (WORK-xxx)
+    pub work_instruction_id: String,
+    /// Step number within the work instruction
+    pub step_number: u32,
+    /// Process step index (0-based); auto-detects if None
+    pub process_index: Option<usize>,
+    /// Operator name
+    pub operator: String,
+    /// Operator email
+    pub operator_email: Option<String>,
+    /// Data to record (key → value)
+    pub data: std::collections::HashMap<String, serde_json::Value>,
+    /// Equipment used (equipment → serial number)
+    pub equipment: std::collections::HashMap<String, String>,
+    /// Notes
+    pub notes: Option<String>,
+    /// Sign the step (GPG/SSH signature)
+    pub sign: bool,
+    /// Mark step as requiring approval
+    pub require_approval: bool,
+    /// Mark step as complete
+    pub complete: bool,
+    /// Approved deviation ID to bypass step order enforcement
+    pub deviation_id: Option<String>,
+}
+
+/// Result of executing a WI step
+#[derive(Debug, Clone, Serialize)]
+pub struct WiStepExecutionResult {
+    /// Updated lot
+    pub lot: Lot,
+    /// Process step index (0-based)
+    pub process_index: usize,
+    /// Step number executed
+    pub step_number: u32,
+    /// Whether the step was marked as completed
+    pub was_completed: bool,
+    /// Deviation ID used to bypass ordering (if any)
+    pub deviation_used: Option<String>,
+}
+
+/// Input for approving a WI step
+#[derive(Debug, Clone)]
+pub struct ApproveWiStepInput {
+    /// Approver name
+    pub approver: String,
+    /// Approver email
+    pub email: Option<String>,
+    /// Approver role
+    pub role: Option<String>,
+    /// Comment
+    pub comment: Option<String>,
+    /// Sign approval
+    pub sign: bool,
+    /// Reject instead of approve
+    pub reject: bool,
 }
 
 /// Service for managing lots
@@ -271,6 +335,38 @@ impl<'a> LotService<'a> {
         Err(ServiceError::NotFound(format!("Lot: {}", id)))
     }
 
+    /// Load routing from an assembly or component product ID
+    fn load_product_routing(&self, product_id: &str) -> Option<Vec<String>> {
+        use crate::entities::assembly::Assembly;
+        use crate::entities::component::Component;
+
+        if product_id.starts_with("ASM-") {
+            let dir = self.project.root().join("bom/assemblies");
+            if let Ok(Some((_, asm))) = loader::load_entity::<Assembly>(&dir, product_id) {
+                return asm.manufacturing.map(|m| m.routing);
+            }
+        } else if product_id.starts_with("CMP-") {
+            let dir = self.project.root().join("bom/components");
+            if let Ok(Some((_, cmp))) = loader::load_entity::<Component>(&dir, product_id) {
+                return cmp.manufacturing.map(|m| m.routing);
+            }
+        }
+        None
+    }
+
+    /// Load all processes as a HashMap keyed by ID
+    fn load_processes(&self) -> std::collections::HashMap<String, crate::entities::process::Process>
+    {
+        use crate::entities::process::Process;
+
+        let dir = self.project.root().join("manufacturing/processes");
+        let procs: Vec<Process> = loader::load_all(&dir).unwrap_or_default();
+        procs
+            .into_iter()
+            .map(|p| (p.id.to_string(), p))
+            .collect()
+    }
+
     /// List lots with filtering and sorting
     pub fn list(&self, filter: &LotFilter) -> ServiceResult<Vec<Lot>> {
         let mut lots = self.load_all()?;
@@ -366,6 +462,22 @@ impl<'a> LotService<'a> {
 
         if let Some(status) = input.status {
             lot.status = status;
+        }
+
+        // Populate execution steps from routing if requested
+        if input.from_routing {
+            if let Some(ref product_id) = lot.links.product {
+                let routing = self.load_product_routing(product_id);
+                if let Some(routing) = routing {
+                    if !routing.is_empty() {
+                        let processes = self.load_processes();
+                        lot.execution =
+                            crate::core::manufacturing::create_execution_steps_from_routing(
+                                &routing, &processes,
+                            );
+                    }
+                }
+            }
         }
 
         // Ensure directory exists
@@ -826,6 +938,276 @@ impl<'a> LotService<'a> {
 
         Ok(stats)
     }
+
+    // ========================================================================
+    // WI Step Execution (electronic router)
+    // ========================================================================
+
+    /// Validate process step ordering: all preceding process steps must be completed/skipped
+    pub fn validate_step_order(
+        &self,
+        lot: &Lot,
+        process_index: usize,
+        wi_id: &str,
+        step_number: u32,
+    ) -> ServiceResult<()> {
+        // 1. Check process sequencing
+        for i in 0..process_index {
+            let prev_step = &lot.execution[i];
+            if prev_step.status != ExecutionStatus::Completed
+                && prev_step.status != ExecutionStatus::Skipped
+            {
+                let prev_proc_id = prev_step.process.as_deref().unwrap_or("unknown");
+                return Err(ServiceError::ValidationFailed(format!(
+                    "Cannot execute step on process step {}: preceding process {} (step {}) is not completed",
+                    process_index + 1,
+                    prev_proc_id,
+                    i + 1
+                )));
+            }
+        }
+
+        // 2. Check WI step sequencing: previous WI steps must be completed
+        if step_number > 1 {
+            let exec_step = &lot.execution[process_index];
+            for prev_step_num in 1..step_number {
+                let prev_completed = exec_step.wi_step_executions.iter().any(|e| {
+                    e.work_instruction == wi_id
+                        && e.step_number == prev_step_num
+                        && e.is_completed()
+                });
+                if !prev_completed {
+                    return Err(ServiceError::ValidationFailed(format!(
+                        "Cannot execute WI step {}: step {} has not been completed",
+                        step_number, prev_step_num
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate a deviation can be used to bypass step ordering
+    pub fn validate_deviation_bypass(&self, deviation_id: &str) -> ServiceResult<()> {
+        use crate::entities::dev::Dev;
+
+        let dev_dir = self.project.root().join("manufacturing/deviations");
+        let dev = loader::load_entity::<Dev>(&dev_dir, deviation_id)?;
+
+        match dev {
+            Some((_, dev)) => {
+                let status_str = format!("{}", dev.dev_status);
+                if status_str != "approved" && status_str != "active" {
+                    return Err(ServiceError::ValidationFailed(format!(
+                        "Deviation '{}' is not approved (status: {}). Only approved/active deviations can bypass step ordering.",
+                        deviation_id, status_str
+                    )));
+                }
+                Ok(())
+            }
+            None => Err(ServiceError::NotFound(format!(
+                "Deviation: {}",
+                deviation_id
+            ))),
+        }
+    }
+
+    /// Get the status of a specific WI step execution
+    pub fn get_wi_step_status(
+        &self,
+        lot_id: &str,
+        process_index: usize,
+        wi_id: &str,
+        step_number: u32,
+    ) -> ServiceResult<Option<WiStepExecution>> {
+        let (_, lot) = self.find_lot(lot_id)?;
+
+        if process_index >= lot.execution.len() {
+            return Err(ServiceError::NotFound(format!(
+                "Process step {} not found (lot has {} steps)",
+                process_index + 1,
+                lot.execution.len()
+            )));
+        }
+
+        let exec_step = &lot.execution[process_index];
+        let wi_exec = exec_step
+            .wi_step_executions
+            .iter()
+            .find(|e| e.work_instruction == wi_id && e.step_number == step_number)
+            .cloned();
+
+        Ok(wi_exec)
+    }
+
+    /// Execute (record) a WI step within a lot's electronic router
+    pub fn execute_wi_step(
+        &self,
+        lot_id: &str,
+        input: ExecuteWiStepInput,
+    ) -> ServiceResult<WiStepExecutionResult> {
+        let (_, mut lot) = self.find_lot(lot_id)?;
+
+        // Resolve process index
+        let proc_idx = if let Some(idx) = input.process_index {
+            idx
+        } else {
+            // Find first process step that uses this WI
+            lot.execution
+                .iter()
+                .position(|step| {
+                    step.work_instructions_used
+                        .iter()
+                        .any(|wi| wi.id == input.work_instruction_id)
+                })
+                .or_else(|| {
+                    // Or find first non-completed step
+                    lot.execution
+                        .iter()
+                        .position(|s| s.status != ExecutionStatus::Completed)
+                })
+                .unwrap_or(0)
+        };
+
+        if proc_idx >= lot.execution.len() {
+            return Err(ServiceError::NotFound(format!(
+                "Process step {} not found (lot has {} steps)",
+                proc_idx + 1,
+                lot.execution.len()
+            )));
+        }
+
+        // Validate step ordering (unless deviation provided)
+        let deviation_used = if let Some(ref dev_id) = input.deviation_id {
+            self.validate_deviation_bypass(dev_id)?;
+            Some(dev_id.clone())
+        } else {
+            self.validate_step_order(&lot, proc_idx, &input.work_instruction_id, input.step_number)?;
+            None
+        };
+
+        // Find existing or create new WI step execution
+        let exec_step = &mut lot.execution[proc_idx];
+        let existing_idx = exec_step
+            .wi_step_executions
+            .iter()
+            .position(|e| {
+                e.work_instruction == input.work_instruction_id
+                    && e.step_number == input.step_number
+            });
+
+        let mut wi_exec = if let Some(idx) = existing_idx {
+            exec_step.wi_step_executions.remove(idx)
+        } else {
+            WiStepExecution::new(input.work_instruction_id.clone(), input.step_number)
+        };
+
+        // Apply updates
+        wi_exec.operator = Some(input.operator);
+        wi_exec.operator_email = input.operator_email;
+
+        if input.complete {
+            wi_exec.completed_at = Some(Utc::now());
+        }
+
+        for (key, value) in input.data {
+            wi_exec.data.insert(key, value);
+        }
+
+        for (equipment, serial) in input.equipment {
+            wi_exec.equipment_used.insert(equipment, serial);
+        }
+
+        if let Some(notes) = input.notes {
+            wi_exec.notes = Some(notes);
+        }
+
+        if input.sign {
+            wi_exec.operator_signature_verified = Some(true);
+        }
+
+        if input.require_approval {
+            wi_exec.approval_status = ApprovalStatus::Pending;
+        }
+
+        let was_completed = wi_exec.is_completed();
+
+        // Re-insert and sort
+        exec_step.wi_step_executions.push(wi_exec);
+        exec_step
+            .wi_step_executions
+            .sort_by_key(|e| e.step_number);
+
+        lot.entity_revision += 1;
+
+        // Save
+        let file_path = self.get_file_path(&lot.id);
+        self.base.save(&lot, &file_path, None)?;
+
+        Ok(WiStepExecutionResult {
+            lot,
+            process_index: proc_idx,
+            step_number: input.step_number,
+            was_completed,
+            deviation_used,
+        })
+    }
+
+    /// Approve or reject a WI step
+    pub fn approve_wi_step(
+        &self,
+        lot_id: &str,
+        process_index: usize,
+        wi_id: &str,
+        step_number: u32,
+        input: ApproveWiStepInput,
+    ) -> ServiceResult<Lot> {
+        let (_, mut lot) = self.find_lot(lot_id)?;
+
+        if process_index >= lot.execution.len() {
+            return Err(ServiceError::NotFound(format!(
+                "Process step {} not found",
+                process_index + 1
+            )));
+        }
+
+        let exec_step = &mut lot.execution[process_index];
+        let wi_exec = exec_step
+            .wi_step_executions
+            .iter_mut()
+            .find(|e| e.work_instruction == wi_id && e.step_number == step_number)
+            .ok_or_else(|| {
+                ServiceError::NotFound(format!(
+                    "WI step execution not found: {} step {}",
+                    wi_id, step_number
+                ))
+            })?;
+
+        let approval = StepApproval {
+            approver: input.approver,
+            email: input.email,
+            role: input.role,
+            timestamp: Utc::now(),
+            comment: input.comment,
+            signature_verified: if input.sign { Some(true) } else { None },
+            signing_key: None,
+        };
+
+        wi_exec.add_approval(approval);
+        wi_exec.approval_status = if input.reject {
+            ApprovalStatus::Rejected
+        } else {
+            ApprovalStatus::Approved
+        };
+
+        lot.entity_revision += 1;
+
+        let file_path = self.get_file_path(&lot.id);
+        self.base.save(&lot, &file_path, None)?;
+
+        Ok(lot)
+    }
 }
 
 #[cfg(test)]
@@ -851,6 +1233,7 @@ mod tests {
             tags: Vec::new(),
             status: None,
             author: "Test Author".to_string(),
+            from_routing: false,
         }
     }
 

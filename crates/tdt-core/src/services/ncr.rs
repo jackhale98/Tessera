@@ -108,6 +108,8 @@ pub struct CreateNcr {
     pub status: Option<Status>,
     /// Author
     pub author: String,
+    /// Lot IDs to link
+    pub lot_ids: Vec<String>,
 }
 
 /// Input for updating an existing NCR
@@ -438,7 +440,15 @@ impl<'a> NcrService<'a> {
             ncr_status: NcrStatus::Open,
             tags: input.tags,
             status: input.status.unwrap_or(Status::Draft),
-            links: NcrLinks::default(),
+            links: {
+                let mut links = NcrLinks::default();
+                links.lot = input
+                    .lot_ids
+                    .into_iter()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                links
+            },
             created: now,
             author: input.author,
             entity_revision: 1,
@@ -784,6 +794,43 @@ impl<'a> NcrService<'a> {
         Ok(ncr)
     }
 
+    /// Add a lot link
+    pub fn add_lot_link(&self, id: &str, lot_id: EntityId) -> ServiceResult<Ncr> {
+        let (_, mut ncr) = self.find_ncr(id)?;
+
+        if !ncr.links.lot.contains(&lot_id) {
+            ncr.links.lot.push(lot_id);
+        }
+        ncr.entity_revision += 1;
+
+        let file_path = self.get_file_path(&ncr.id);
+        self.base.save(&ncr, &file_path, None)?;
+
+        Ok(ncr)
+    }
+
+    /// Remove a lot link
+    pub fn remove_lot_link(&self, id: &str, lot_id: &EntityId) -> ServiceResult<Ncr> {
+        let (_, mut ncr) = self.find_ncr(id)?;
+
+        let original_len = ncr.links.lot.len();
+        ncr.links.lot.retain(|l| l != lot_id);
+
+        if ncr.links.lot.len() == original_len {
+            return Err(ServiceError::NotFound(format!(
+                "Lot link '{}' not found on NCR",
+                lot_id
+            )));
+        }
+
+        ncr.entity_revision += 1;
+
+        let file_path = self.get_file_path(&ncr.id);
+        self.base.save(&ncr, &file_path, None)?;
+
+        Ok(ncr)
+    }
+
     /// Calculate statistics
     pub fn stats(&self) -> ServiceResult<NcrStats> {
         let ncrs = self.load_all()?;
@@ -873,6 +920,7 @@ mod tests {
                 tags: Vec::new(),
                 status: None,
                 author: "author".to_string(),
+                lot_ids: Vec::new(),
             })
             .unwrap()
     }
@@ -894,6 +942,7 @@ mod tests {
                 tags: Vec::new(),
                 status: None,
                 author: "author".to_string(),
+                lot_ids: Vec::new(),
             })
             .unwrap();
 
@@ -1068,6 +1117,7 @@ mod tests {
                 tags: Vec::new(),
                 status: None,
                 author: "author".to_string(),
+                lot_ids: Vec::new(),
             })
             .unwrap();
         service
@@ -1082,6 +1132,7 @@ mod tests {
                 tags: Vec::new(),
                 status: None,
                 author: "author".to_string(),
+                lot_ids: Vec::new(),
             })
             .unwrap();
 
@@ -1120,6 +1171,7 @@ mod tests {
                 tags: Vec::new(),
                 status: None,
                 author: "author".to_string(),
+                lot_ids: Vec::new(),
             })
             .unwrap();
 
