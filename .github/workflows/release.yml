@@ -12,9 +12,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Wait for CI to pass before building releases
+  ci-gate:
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for CI workflow
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'Test'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 15
+
   # Build CLI for all platforms
   build-cli:
     name: Build CLI ${{ matrix.target }}
+    needs: ci-gate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -139,6 +153,7 @@ jobs:
   # Build Desktop app for all platforms
   build-desktop:
     name: Build Desktop ${{ matrix.platform }}
+    needs: ci-gate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -251,6 +266,7 @@ jobs:
   # Build Mobile app for Android
   build-android:
     name: Build Android
+    needs: ci-gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -320,6 +336,7 @@ jobs:
   # Build Mobile app for iOS
   build-ios:
     name: Build iOS
+    needs: ci-gate
     runs-on: macos-latest
     steps:
       - name: Checkout
