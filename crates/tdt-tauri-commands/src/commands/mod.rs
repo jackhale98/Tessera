@@ -49,7 +49,7 @@ pub(crate) fn entity_dir_name(prefix: EntityPrefix) -> &'static str {
         EntityPrefix::Capa => "manufacturing/capas",
         EntityPrefix::Quot => "bom/quotes",
         EntityPrefix::Sup => "bom/suppliers",
-        EntityPrefix::Haz => "risks/hazards",
+        EntityPrefix::Haz => "safety/hazards",
         EntityPrefix::Act => "actions",
     }
 }

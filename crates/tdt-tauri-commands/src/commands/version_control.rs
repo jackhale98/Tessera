@@ -150,6 +150,12 @@ pub struct CommitResult {
     pub message: String,
     /// Number of files committed
     pub files_changed: usize,
+    /// Whether the commit was signed (may differ from requested if signing failed)
+    #[serde(default)]
+    pub signed: bool,
+    /// Warning message (e.g., signing fallback)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 /// Result of a push operation
@@ -671,18 +677,35 @@ pub async fn commit_changes(
         ));
     }
 
-    // Commit
-    let hash = if sign {
-        git.commit_signed(&message)
+    // Commit (with graceful signing fallback)
+    let (hash, signed, warning) = if sign {
+        match git.commit_signed(&message) {
+            Ok(h) => (h, true, None),
+            Err(_) => {
+                // Signing failed (git binary or GPG not available) — fall back to unsigned
+                let h = git
+                    .commit(&message)
+                    .map_err(|e| CommandError::Other(format!("Failed to commit: {}", e)))?;
+                (
+                    h,
+                    false,
+                    Some("Signing unavailable — committed without signature".to_string()),
+                )
+            }
+        }
     } else {
-        git.commit(&message)
-    }
-    .map_err(|e| CommandError::Other(format!("Failed to commit: {}", e)))?;
+        let h = git
+            .commit(&message)
+            .map_err(|e| CommandError::Other(format!("Failed to commit: {}", e)))?;
+        (h, false, None)
+    };
 
     Ok(CommitResult {
         hash,
         message,
         files_changed,
+        signed,
+        warning,
     })
 }
 
