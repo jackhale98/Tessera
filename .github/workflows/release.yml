@@ -427,14 +427,9 @@ jobs:
           cat checksums.txt
 
       - name: Delete existing release if re-running
-        run: gh release delete ${{ github.ref_name }} -y --cleanup-tag || true
+        run: gh release delete ${{ github.ref_name }} -y || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Recreate tag
-        run: |
-          git tag -f ${{ github.ref_name }}
-          git push origin ${{ github.ref_name }} --force
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
