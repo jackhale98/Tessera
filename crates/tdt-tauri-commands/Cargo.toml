@@ -1,6 +1,6 @@
 [package]
 name = "tdt-tauri-commands"
-version = "0.7.0"
+version = "0.7.1"
 description = "Shared Tauri command handlers for TDT desktop and mobile apps"
 authors = ["Tessera Contributors"]
 license = "MIT"

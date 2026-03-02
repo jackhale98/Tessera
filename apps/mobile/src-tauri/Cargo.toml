@@ -1,6 +1,6 @@
 [package]
 name = "tdt-mobile"
-version = "0.7.0"
+version = "0.7.1"
 description = "Tessera Mobile - Engineering Artifact Management for iOS and Android"
 authors = ["Tessera Contributors"]
 license = "MIT"
