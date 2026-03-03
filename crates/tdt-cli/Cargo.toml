@@ -23,7 +23,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Core library (package renamed but lib is still tdt_core)
-tdt-core = { package = "tessera-design-toolkit-core", path = "../tdt-core" }
+tdt-core = { package = "tessera-design-toolkit-core", version.workspace = true, path = "../tdt-core" }
 
 # CLI
 clap.workspace = true
