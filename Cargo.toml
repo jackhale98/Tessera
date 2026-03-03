@@ -77,6 +77,15 @@ libc = "0.2.178"
 # Async (for Tauri)
 tokio = { version = "1", features = ["full"] }
 
+# Reduce debug build size
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 1
+
 # Optimize release builds for size
 [profile.release]
 opt-level = "z"

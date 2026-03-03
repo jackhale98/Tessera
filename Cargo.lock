@@ -5869,7 +5869,7 @@ dependencies = [
 
 [[package]]
 name = "tdt-desktop"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "chrono",
  "log",
@@ -5890,7 +5890,7 @@ dependencies = [
 
 [[package]]
 name = "tdt-mobile"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "log",
  "serde",
@@ -5905,7 +5905,7 @@ dependencies = [
 
 [[package]]
 name = "tdt-tauri-commands"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "chrono",
  "log",
@@ -5982,7 +5982,7 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "tessera-design-toolkit"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -6010,7 +6010,7 @@ dependencies = [
 
 [[package]]
 name = "tessera-design-toolkit-core"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "chrono",
  "clap",
