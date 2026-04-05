@@ -136,6 +136,7 @@ fn run_create(args: CreateArgs) -> Result<()> {
                 fix: false,
                 deep: false,
                 iterations: 10000,
+                verbose: false,
             });
 
         if let Err(e) = validate_result {

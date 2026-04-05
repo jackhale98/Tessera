@@ -159,6 +159,9 @@ impl<'a> ServiceBase<'a> {
         // Serialize to YAML
         let yaml = serde_yml::to_string(entity).map_err(|e| ServiceError::Yaml(e.to_string()))?;
 
+        // Convert long text fields to block scalars for readability and clean git diffs
+        let yaml = crate::yaml::template::to_block_scalars(&yaml);
+
         // For creation saves, enhance with template comments; for updates, write as-is
         let yaml = match prefix {
             Some(p) => crate::yaml::template::enhance_new_entity_yaml(&yaml, p),

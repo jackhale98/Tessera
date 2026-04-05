@@ -61,6 +61,10 @@ pub struct ValidateArgs {
     /// Monte Carlo iterations for deep analysis (default: 10000)
     #[arg(long, default_value = "10000")]
     pub iterations: u32,
+
+    /// Show passing files (default: only show warnings and errors)
+    #[arg(long, short = 'v')]
+    pub verbose: bool,
 }
 
 /// Validation statistics
@@ -351,7 +355,7 @@ pub fn run(args: ValidateArgs) -> Result<()> {
 
                 if calc_issues.is_empty() {
                     stats.files_passed += 1;
-                    if !args.summary {
+                    if args.verbose {
                         println!(
                             "{} {}",
                             style("✓").green(),
@@ -362,7 +366,7 @@ pub fn run(args: ValidateArgs) -> Result<()> {
                     // Has calculation issues but schema is valid
                     if args.fix {
                         stats.files_passed += 1;
-                        if !args.summary {
+                        if args.verbose {
                             println!(
                                 "{} {} (fixed)",
                                 style("✓").green(),

@@ -253,6 +253,115 @@ fn prefix_to_command(prefix: &str) -> &'static str {
     }
 }
 
+/// Fields that should use YAML block scalar (`|`) format when their value is long.
+///
+/// These are free-text fields where users write paragraphs. Block scalars make
+/// them readable in editors and produce clean single-line git diffs on edits.
+const BLOCK_SCALAR_FIELDS: &[&str] = &[
+    "text",
+    "description",
+    "objective",
+    "failure_mode",
+    "cause",
+    "effect",
+    "rationale",
+    "notes",
+    "problem_statement",
+    "root_cause",
+];
+
+/// Minimum string length before converting to block scalar.
+const BLOCK_SCALAR_THRESHOLD: usize = 60;
+
+/// Convert long single-line string values to YAML block scalar (`|`) format
+/// for known text fields.
+///
+/// Operates on serialized YAML text. Only converts top-level scalar fields
+/// listed in `BLOCK_SCALAR_FIELDS` whose values exceed `BLOCK_SCALAR_THRESHOLD`.
+///
+/// Handles bare strings, single-quoted, and double-quoted values. Leaves short
+/// values, arrays, nulls, and already-block-scalar values unchanged.
+pub fn to_block_scalars(yaml: &str) -> String {
+    let mut result = Vec::new();
+    let lines: Vec<&str> = yaml.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Only process top-level fields (no leading whitespace)
+        if !line.starts_with(' ') && !line.starts_with('#') {
+            if let Some(colon_pos) = line.find(": ") {
+                let field_name = &line[..colon_pos];
+
+                if BLOCK_SCALAR_FIELDS.contains(&field_name) {
+                    let raw_value = &line[colon_pos + 2..];
+
+                    if let Some(unquoted) = extract_scalar_value(raw_value) {
+                        if unquoted.len() >= BLOCK_SCALAR_THRESHOLD {
+                            result.push(format!("{}: |", field_name));
+                            result.push(format!("  {}", unquoted));
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        result.push(line.to_string());
+        i += 1;
+    }
+
+    let mut output = result.join("\n");
+    if yaml.ends_with('\n') && !output.ends_with('\n') {
+        output.push('\n');
+    }
+    output
+}
+
+/// Extract the unquoted string value from a YAML scalar.
+/// Returns None if the value is not a simple string (e.g., null, array, block scalar marker).
+fn extract_scalar_value(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+
+    // Skip nulls, empty, block scalar markers, arrays, mappings
+    if trimmed.is_empty()
+        || trimmed == "null"
+        || trimmed == "~"
+        || trimmed == "|"
+        || trimmed == ">"
+        || trimmed == "|-"
+        || trimmed == ">-"
+        || trimmed.starts_with('[')
+        || trimmed.starts_with('{')
+    {
+        return None;
+    }
+
+    // Single-quoted: 'value'
+    if trimmed.starts_with('\'') && trimmed.ends_with('\'') && trimmed.len() >= 2 {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        // Unescape single-quote escaping ('' -> ')
+        return Some(inner.replace("''", "'"));
+    }
+
+    // Double-quoted: "value"
+    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        // Basic unescape for common sequences
+        return Some(
+            inner
+                .replace("\\\"", "\"")
+                .replace("\\n", "\n")
+                .replace("\\\\", "\\"),
+        );
+    }
+
+    // Bare string (unquoted)
+    Some(trimmed.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,5 +575,60 @@ revision: 1
         assert_eq!(prefix_to_command("TEST"), "test");
         assert_eq!(prefix_to_command("CMP"), "cmp");
         assert_eq!(prefix_to_command("UNKNOWN"), "entity");
+    }
+
+    #[test]
+    fn test_block_scalar_long_description() {
+        let yaml = "id: RISK-123\ndescription: This is a very long description that exceeds the threshold and should be converted to block scalar format\nstatus: draft\n";
+        let result = to_block_scalars(yaml);
+        assert!(result.contains("description: |"));
+        assert!(result.contains("  This is a very long description"));
+        assert!(result.contains("status: draft"));
+    }
+
+    #[test]
+    fn test_block_scalar_short_value_unchanged() {
+        let yaml = "id: REQ-123\ntext: Short text\nstatus: draft\n";
+        let result = to_block_scalars(yaml);
+        assert!(result.contains("text: Short text"));
+        assert!(!result.contains("text: |"));
+    }
+
+    #[test]
+    fn test_block_scalar_single_quoted() {
+        let yaml = "id: REQ-123\ntext: 'This is a single-quoted string that is long enough to trigger the block scalar conversion threshold'\nstatus: draft\n";
+        let result = to_block_scalars(yaml);
+        assert!(result.contains("text: |"));
+        assert!(result.contains("  This is a single-quoted string"));
+    }
+
+    #[test]
+    fn test_block_scalar_non_text_field_unchanged() {
+        let yaml = "id: REQ-123\ntitle: This is a very long title that exceeds the threshold but title is not a block scalar field so it stays\nstatus: draft\n";
+        let result = to_block_scalars(yaml);
+        assert!(!result.contains("title: |"));
+        assert!(result.contains("title: This is a very long title"));
+    }
+
+    #[test]
+    fn test_block_scalar_null_unchanged() {
+        let yaml = "id: REQ-123\ndescription: null\nstatus: draft\n";
+        let result = to_block_scalars(yaml);
+        assert!(result.contains("description: null"));
+    }
+
+    #[test]
+    fn test_block_scalar_already_block() {
+        let yaml = "id: REQ-123\ntext: |\n  Already block scalar\nstatus: draft\n";
+        let result = to_block_scalars(yaml);
+        assert!(result.contains("text: |"));
+        assert!(result.contains("  Already block scalar"));
+    }
+
+    #[test]
+    fn test_block_scalar_preserves_trailing_newline() {
+        let yaml = "id: REQ-123\nstatus: draft\n";
+        let result = to_block_scalars(yaml);
+        assert!(result.ends_with('\n'));
     }
 }
