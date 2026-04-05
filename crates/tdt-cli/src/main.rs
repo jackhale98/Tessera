@@ -14,6 +14,14 @@ fn main() -> Result<()> {
             libc::signal(libc::SIGPIPE, libc::SIG_DFL);
         }
     }
+
+    // Enable ANSI escape code processing on Windows.
+    // Without this, console::style() color codes render as literal characters
+    // in PowerShell/cmd, breaking column alignment and line spacing.
+    #[cfg(windows)]
+    {
+        let _ = console::Term::stdout();
+    }
     // Install miette's fancy error handler for beautiful diagnostics
     miette::set_hook(Box::new(|_| {
         Box::new(
