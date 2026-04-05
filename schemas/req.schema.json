@@ -4,7 +4,16 @@
   "title": "Requirement",
   "description": "A design input or output requirement",
   "type": "object",
-  "required": ["id", "type", "title", "text", "status", "priority", "created", "author"],
+  "required": [
+    "id",
+    "type",
+    "title",
+    "text",
+    "status",
+    "priority",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -13,12 +22,21 @@
     },
     "type": {
       "type": "string",
-      "enum": ["input", "output"],
+      "enum": [
+        "input",
+        "output"
+      ],
       "description": "Design input or output"
     },
     "level": {
       "type": "string",
-      "enum": ["stakeholder", "system", "subsystem", "component", "detail"],
+      "enum": [
+        "stakeholder",
+        "system",
+        "subsystem",
+        "component",
+        "detail"
+      ],
       "default": "system",
       "description": "V-model requirement hierarchy level"
     },
@@ -79,13 +97,24 @@
     },
     "priority": {
       "type": "string",
-      "enum": ["low", "medium", "high", "critical"],
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
       "default": "medium",
       "description": "Priority level"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -95,35 +124,95 @@
         "satisfied_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of entities that satisfy this requirement"
         },
         "verified_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of tests that verify this requirement"
         },
         "derives_from": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "Parent requirement IDs this derives from"
         },
         "derived_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "Child requirement IDs derived from this"
         },
         "allocated_to": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "Feature IDs this requirement is allocated to"
         }

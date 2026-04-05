@@ -4,7 +4,13 @@
   "title": "DEV",
   "description": "A process deviation (pre-approved departure from standard process)",
   "type": "object",
-  "required": ["id", "title", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -18,23 +24,40 @@
       "description": "Short descriptive title"
     },
     "deviation_number": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "User-defined deviation number (e.g., DEV-2024-042)"
     },
     "deviation_type": {
       "type": "string",
-      "enum": ["temporary", "permanent", "emergency"],
+      "enum": [
+        "temporary",
+        "permanent",
+        "emergency"
+      ],
       "default": "temporary",
       "description": "Type of deviation"
     },
     "category": {
       "type": "string",
-      "enum": ["material", "process", "equipment", "tooling", "specification", "documentation"],
+      "enum": [
+        "material",
+        "process",
+        "equipment",
+        "tooling",
+        "specification",
+        "documentation"
+      ],
       "default": "material",
       "description": "Category of deviation"
     },
     "description": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Detailed description of the deviation"
     },
     "risk": {
@@ -42,17 +65,26 @@
       "properties": {
         "level": {
           "type": "string",
-          "enum": ["low", "medium", "high"],
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
           "default": "low",
           "description": "Risk level of the deviation"
         },
         "assessment": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Risk assessment text"
         },
         "mitigations": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Mitigation measures"
         }
       },
@@ -62,40 +94,70 @@
       "type": "object",
       "properties": {
         "approved_by": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Who approved the deviation"
         },
         "approval_date": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "format": "date",
           "description": "Date of approval"
         },
         "authorization_level": {
-          "type": ["string", "null"],
-          "enum": ["engineering", "quality", "management", null],
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "engineering",
+            "quality",
+            "management",
+            null
+          ],
           "description": "Level of authorization required"
         }
       },
       "description": "Approval information"
     },
     "effective_date": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date",
       "description": "Date the deviation becomes effective"
     },
     "expiration_date": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date",
       "description": "Date the deviation expires (null for permanent)"
     },
     "dev_status": {
       "type": "string",
-      "enum": ["pending", "approved", "active", "expired", "closed", "rejected"],
+      "enum": [
+        "pending",
+        "approved",
+        "active",
+        "expired",
+        "closed",
+        "rejected"
+      ],
       "default": "pending",
       "description": "Workflow status of the deviation"
     },
     "notes": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Additional notes"
     },
     "links": {
@@ -103,38 +165,133 @@
       "properties": {
         "processes": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Affected process entities"
         },
         "lots": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "LOT entities this applies to"
         },
         "components": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Affected component entities"
         },
         "requirements": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Requirements being deviated from"
         },
         "ncrs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Related NCRs (if deviation arose from NCR)"
         },
         "change_order": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "ECO/DCN reference if permanent"
         }
       }
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "description": "Document status"
     },
     "created": {

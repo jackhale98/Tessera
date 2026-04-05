@@ -503,8 +503,13 @@ fn run_add(args: AddLinkArgs) -> Result<()> {
     // Read the current file content
     let content = fs::read_to_string(&source.path).into_diagnostic()?;
 
-    // Add the link to the appropriate array
-    let updated_content = add_link_to_yaml(&content, &link_type, &target.id.to_string())?;
+    // Add the link to the appropriate array (with target title)
+    let updated_content = add_link_to_yaml(
+        &content,
+        &link_type,
+        &target.id.to_string(),
+        Some(&target.title),
+    )?;
 
     // Write back
     fs::write(&source.path, &updated_content).into_diagnostic()?;
@@ -529,8 +534,14 @@ fn run_add(args: AddLinkArgs) -> Result<()> {
     }
 
     if args.reciprocal && !args.no_reciprocal {
-        // Determine reciprocal link type and add it
-        match add_reciprocal_link(&project, &source.id, &target.id, &link_type) {
+        // Determine reciprocal link type and add it (pass source title for the reciprocal entry)
+        match add_reciprocal_link(
+            &project,
+            &source.id,
+            &target.id,
+            &link_type,
+            Some(&source.title),
+        ) {
             Ok(Some(recip_type)) => {
                 println!(
                     "{} Added reciprocal link: {} --[{}]--> {}",
@@ -654,17 +665,15 @@ fn run_show(args: ShowLinksArgs) -> Result<()> {
                                 found_links = true;
                                 println!("  {}:", style(key_str).cyan());
                                 for item in arr {
-                                    if let Some(id_str) = item.as_str() {
-                                        println!("    → {}", truncate_id(id_str));
-                                    }
+                                    print_link_entry(item);
                                 }
                             }
                         }
-                        // Handle single-value links (Option<EntityId>)
-                        else if let Some(id_str) = val.as_str() {
+                        // Handle single-value links
+                        else if tdt_core::core::links::extract_link_id(val).is_some() {
                             found_links = true;
                             println!("  {}:", style(key_str).cyan());
-                            println!("    → {}", truncate_id(id_str));
+                            print_link_entry(val);
                         }
                     }
                 }
@@ -705,6 +714,32 @@ fn truncate_id(id: &str) -> String {
         format!("{}...", &id[..13])
     } else {
         id.to_string()
+    }
+}
+
+/// Print a link entry with its title if available.
+/// Handles both `{id, title}` mappings and bare string entries.
+fn print_link_entry(entry: &serde_yml::Value) {
+    if let Some(m) = entry.as_mapping() {
+        let id = m
+            .get(&serde_yml::Value::String("id".to_string()))
+            .and_then(|v| v.as_str())
+            .unwrap_or("???");
+        let title = m
+            .get(&serde_yml::Value::String("title".to_string()))
+            .and_then(|v| v.as_str());
+        if let Some(title) = title {
+            println!(
+                "    {} {} - {}",
+                style("→").dim(),
+                truncate_id(id),
+                style(title).yellow()
+            );
+        } else {
+            println!("    {} {}", style("→").dim(), truncate_id(id));
+        }
+    } else if let Some(id_str) = entry.as_str() {
+        println!("    {} {}", style("→").dim(), truncate_id(id_str));
     }
 }
 
@@ -787,7 +822,12 @@ fn run_sync(args: SyncLinksArgs) -> Result<()> {
                     rule.reciprocal_link_type
                 );
             } else {
-                match add_explicit_link(&target_path, rule.reciprocal_link_type, &entity.id) {
+                match add_explicit_link(
+                    &target_path,
+                    rule.reciprocal_link_type,
+                    &entity.id,
+                    Some(&entity.title),
+                ) {
                     Ok(()) => {
                         fixed_count += 1;
                         println!(
@@ -849,7 +889,8 @@ fn run_sync(args: SyncLinksArgs) -> Result<()> {
     Ok(())
 }
 
-/// Check if an entity file has a specific link to a given target ID
+/// Check if an entity file has a specific link to a given target ID.
+/// Handles both `{id, title}` mappings and bare string entries.
 fn check_has_reciprocal(path: &std::path::Path, link_type: &str, target_id: &str) -> bool {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
@@ -869,8 +910,8 @@ fn check_has_reciprocal(path: &std::path::Path, link_type: &str, target_id: &str
     match links.get(link_type) {
         Some(serde_yml::Value::Sequence(arr)) => arr
             .iter()
-            .any(|v| v.as_str().map_or(false, |s| s == target_id)),
-        Some(serde_yml::Value::String(s)) => s == target_id,
+            .any(|v| tdt_core::core::links::extract_link_id(v) == Some(target_id)),
+        Some(v) => tdt_core::core::links::extract_link_id(v) == Some(target_id),
         _ => false,
     }
 }
@@ -1110,8 +1151,29 @@ fn get_search_dirs_for_query(project: &Project, query: &str) -> Vec<PathBuf> {
     }
 }
 
-/// Add a link to a YAML file
-fn add_link_to_yaml(content: &str, link_type: &str, target_id: &str) -> Result<String> {
+/// Build a link entry as a YAML Value with id and optional title.
+fn make_link_entry(target_id: &str, target_title: Option<&str>) -> serde_yml::Value {
+    let mut entry = serde_yml::Mapping::new();
+    entry.insert(
+        serde_yml::Value::String("id".to_string()),
+        serde_yml::Value::String(target_id.to_string()),
+    );
+    if let Some(title) = target_title {
+        entry.insert(
+            serde_yml::Value::String("title".to_string()),
+            serde_yml::Value::String(title.to_string()),
+        );
+    }
+    serde_yml::Value::Mapping(entry)
+}
+
+/// Add a link to a YAML file. Links are stored as `{id, title}` mappings.
+fn add_link_to_yaml(
+    content: &str,
+    link_type: &str,
+    target_id: &str,
+    target_title: Option<&str>,
+) -> Result<String> {
     // Parse YAML
     let mut value: serde_yml::Value = serde_yml::from_str(content).into_diagnostic()?;
 
@@ -1153,13 +1215,18 @@ fn add_link_to_yaml(content: &str, link_type: &str, target_id: &str) -> Result<S
     // Handle both array links and single-value links
     if let Some(arr) = link_value.as_sequence_mut() {
         // Array link - add to array if not already present
-        let new_value = serde_yml::Value::String(target_id.to_string());
-        if !arr.contains(&new_value) {
-            arr.push(new_value);
+        let already_present = arr
+            .iter()
+            .any(|v| tdt_core::core::links::extract_link_id(v) == Some(target_id));
+        if !already_present {
+            arr.push(make_link_entry(target_id, target_title));
         }
-    } else if link_value.is_null() || link_value.as_str().is_some() {
-        // Single-value link (null or existing string) - replace with new value
-        *link_value = serde_yml::Value::String(target_id.to_string());
+    } else if link_value.is_null()
+        || link_value.as_str().is_some()
+        || link_value.as_mapping().is_some()
+    {
+        // Single-value link - replace with new entry
+        *link_value = make_link_entry(target_id, target_title);
     } else {
         return Err(miette::miette!(
             "Link type '{}' has unexpected format (not array or single value)",
@@ -1182,7 +1249,7 @@ fn is_array_link_type(link_type: &str) -> bool {
     }
 }
 
-/// Remove a link from a YAML file
+/// Remove a link from a YAML file. Handles both `{id, title}` mappings and bare strings.
 fn remove_link_from_yaml(content: &str, link_type: &str, target_id: &str) -> Result<String> {
     // Parse YAML
     let mut value: serde_yml::Value = serde_yml::from_str(content).into_diagnostic()?;
@@ -1198,14 +1265,11 @@ fn remove_link_from_yaml(content: &str, link_type: &str, target_id: &str) -> Res
 
     // Handle both array links and single-value links
     if let Some(arr) = link_value.as_sequence_mut() {
-        // Array link - remove from array
-        let remove_value = serde_yml::Value::String(target_id.to_string());
-        arr.retain(|v| v != &remove_value);
-    } else if let Some(current) = link_value.as_str() {
-        // Single-value link - clear if it matches
-        if current == target_id {
-            *link_value = serde_yml::Value::Null;
-        }
+        // Array link - remove entry matching target_id
+        arr.retain(|v| tdt_core::core::links::extract_link_id(v) != Some(target_id));
+    } else if tdt_core::core::links::extract_link_id(link_value) == Some(target_id) {
+        // Single-value link matches - clear it
+        *link_value = serde_yml::Value::Null;
     }
 
     // Serialize back
@@ -1250,6 +1314,7 @@ fn add_reciprocal_link(
     source_id: &EntityId,
     target_id: &EntityId,
     link_type: &str,
+    source_title: Option<&str>,
 ) -> Result<Option<String>> {
     // Determine the reciprocal link type based on source link type and both entity types
     let target_prefix = target_id.prefix();
@@ -1265,9 +1330,10 @@ fn add_reciprocal_link(
     // Find the target entity file
     let target_path = find_entity_file(project, target_id)?;
 
-    // Read and update the target file
+    // Read and update the target file (source_title becomes the title for the reciprocal entry)
     let content = fs::read_to_string(&target_path).into_diagnostic()?;
-    let updated_content = add_link_to_yaml(&content, &recip_type, &source_id.to_string())?;
+    let updated_content =
+        add_link_to_yaml(&content, &recip_type, &source_id.to_string(), source_title)?;
     fs::write(&target_path, &updated_content).into_diagnostic()?;
 
     Ok(Some(recip_type))

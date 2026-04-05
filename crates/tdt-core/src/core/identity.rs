@@ -273,8 +273,37 @@ impl<'de> Deserialize<'de> for EntityId {
     where
         D: serde::Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        s.parse().map_err(serde::de::Error::custom)
+        use serde::de;
+
+        // Accept both a bare string ("ENTITY-ID") and a mapping ({id: "ENTITY-ID", title: "..."})
+        struct EntityIdVisitor;
+
+        impl<'de> de::Visitor<'de> for EntityIdVisitor {
+            type Value = EntityId;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string entity ID or a mapping with an 'id' field")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<EntityId, E> {
+                v.parse().map_err(de::Error::custom)
+            }
+
+            fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<EntityId, M::Error> {
+                let mut id: Option<String> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "id" {
+                        id = Some(map.next_value()?);
+                    } else {
+                        let _: de::IgnoredAny = map.next_value()?;
+                    }
+                }
+                let id_str = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                id_str.parse().map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(EntityIdVisitor)
     }
 }
 

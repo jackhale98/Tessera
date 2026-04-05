@@ -4,7 +4,13 @@
   "title": "Supplier",
   "description": "A supplier entity for components and assemblies",
   "type": "object",
-  "required": ["id", "name", "status", "created", "author"],
+  "required": [
+    "id",
+    "name",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -17,24 +23,52 @@
       "description": "Company name"
     },
     "short_name": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Short name for display"
     },
     "website": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Website URL"
     },
     "contacts": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "role": { "type": ["string", "null"] },
-          "email": { "type": ["string", "null"] },
-          "phone": { "type": ["string", "null"] },
-          "primary": { "type": "boolean", "default": false }
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary": {
+            "type": "boolean",
+            "default": false
+          }
         }
       },
       "description": "Contact people"
@@ -46,25 +80,64 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["headquarters", "manufacturing", "shipping", "billing"],
+            "enum": [
+              "headquarters",
+              "manufacturing",
+              "shipping",
+              "billing"
+            ],
             "default": "headquarters"
           },
-          "street": { "type": ["string", "null"] },
-          "city": { "type": ["string", "null"] },
-          "state": { "type": ["string", "null"] },
-          "postal": { "type": ["string", "null"] },
-          "country": { "type": ["string", "null"] }
+          "street": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "postal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       },
       "description": "Physical addresses"
     },
     "payment_terms": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Default payment terms"
     },
     "currency": {
       "type": "string",
-      "enum": ["USD", "EUR", "GBP", "CNY", "JPY"],
+      "enum": [
+        "USD",
+        "EUR",
+        "GBP",
+        "CNY",
+        "JPY"
+      ],
       "default": "USD",
       "description": "Preferred currency"
     },
@@ -72,11 +145,26 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "expiry": { "type": ["string", "null"], "format": "date" },
-          "certificate_number": { "type": ["string", "null"] }
+          "name": {
+            "type": "string"
+          },
+          "expiry": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "certificate_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       },
       "description": "Quality certifications"
@@ -85,22 +173,46 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["machining", "sheet_metal", "casting", "injection", "extrusion", "pcb", "pcb_assembly", "cable_assembly", "assembly", "testing", "finishing", "packaging"]
+        "enum": [
+          "machining",
+          "sheet_metal",
+          "casting",
+          "injection",
+          "extrusion",
+          "pcb",
+          "pcb_assembly",
+          "cable_assembly",
+          "assembly",
+          "testing",
+          "finishing",
+          "packaging"
+        ]
       },
       "description": "Manufacturing capabilities"
     },
     "notes": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Notes about the supplier"
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "description": "Entity status"
     },
     "links": {
@@ -108,7 +220,21 @@
       "properties": {
         "approved_for": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Components this supplier is approved for"
         }
       }

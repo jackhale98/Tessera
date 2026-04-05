@@ -4,7 +4,14 @@
   "title": "Assembly",
   "description": "A collection of components and sub-assemblies",
   "type": "object",
-  "required": ["id", "part_number", "title", "status", "created", "author"],
+  "required": [
+    "id",
+    "part_number",
+    "title",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -36,7 +43,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["component_id", "quantity"],
+        "required": [
+          "component_id",
+          "quantity"
+        ],
         "properties": {
           "component_id": {
             "type": "string",
@@ -72,25 +82,56 @@
       "description": "Sub-assembly references"
     },
     "sw_class": {
-      "type": ["string", "null"],
-      "enum": ["A", "B", "C", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "A",
+        "B",
+        "C",
+        null
+      ],
       "description": "IEC 62304 Software Safety Class (A, B, or C)"
     },
     "asil": {
-      "type": ["string", "null"],
-      "enum": ["QM", "A", "B", "C", "D", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "QM",
+        "A",
+        "B",
+        "C",
+        "D",
+        null
+      ],
       "description": "ISO 26262 Automotive Safety Integrity Level"
     },
     "dal": {
-      "type": ["string", "null"],
-      "enum": ["E", "D", "C", "B", "A", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "E",
+        "D",
+        "C",
+        "B",
+        "A",
+        null
+      ],
       "description": "DO-178C Design Assurance Level"
     },
     "documents": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["type", "path"],
+        "required": [
+          "type",
+          "path"
+        ],
         "properties": {
           "type": {
             "type": "string",
@@ -113,11 +154,16 @@
       "properties": {
         "routing": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Ordered list of PROC IDs defining manufacturing routing"
         },
         "work_cell": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Default work cell/location"
         }
       },
@@ -132,7 +178,13 @@
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -142,18 +194,61 @@
         "risks": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of risks affecting this assembly"
         },
         "parent": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Parent assembly ID if this is a sub-assembly"
         },
         "related_to": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of related entities"
         }

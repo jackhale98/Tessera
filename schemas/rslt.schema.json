@@ -4,7 +4,16 @@
   "title": "Result",
   "description": "A test result or execution record",
   "type": "object",
-  "required": ["id", "test_id", "verdict", "executed_date", "executed_by", "status", "created", "author"],
+  "required": [
+    "id",
+    "test_id",
+    "verdict",
+    "executed_date",
+    "executed_by",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -28,7 +37,13 @@
     },
     "verdict": {
       "type": "string",
-      "enum": ["pass", "fail", "conditional", "incomplete", "not_applicable"],
+      "enum": [
+        "pass",
+        "fail",
+        "conditional",
+        "incomplete",
+        "not_applicable"
+      ],
       "description": "Overall test verdict"
     },
     "verdict_rationale": {
@@ -132,7 +147,9 @@
             "description": "Date calibration expires"
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "description": "Equipment used during the test"
     },
@@ -148,7 +165,12 @@
           },
           "result": {
             "type": "string",
-            "enum": ["pass", "fail", "skip", "not_applicable"],
+            "enum": [
+              "pass",
+              "fail",
+              "skip",
+              "not_applicable"
+            ],
             "description": "Result for this step"
           },
           "observed": {
@@ -182,7 +204,10 @@
             "description": "Additional notes for this step"
           }
         },
-        "required": ["step", "result"]
+        "required": [
+          "step",
+          "result"
+        ]
       },
       "description": "Results for each procedure step"
     },
@@ -204,7 +229,9 @@
             "description": "Justification for accepting the deviation"
           }
         },
-        "required": ["description"]
+        "required": [
+          "description"
+        ]
       },
       "description": "Any deviations from the test procedure"
     },
@@ -234,7 +261,9 @@
             "description": "ID of related action item"
           }
         },
-        "required": ["description"]
+        "required": [
+          "description"
+        ]
       },
       "description": "Details of any failures encountered"
     },
@@ -253,7 +282,14 @@
           },
           "type": {
             "type": "string",
-            "enum": ["data", "photo", "screenshot", "log", "report", "other"],
+            "enum": [
+              "data",
+              "photo",
+              "screenshot",
+              "log",
+              "report",
+              "other"
+            ],
             "description": "Type of attachment"
           },
           "description": {
@@ -261,7 +297,9 @@
             "description": "Description of the attachment"
           }
         },
-        "required": ["filename"]
+        "required": [
+          "filename"
+        ]
       },
       "description": "Supporting attachments (photos, data files, etc.)"
     },
@@ -275,7 +313,13 @@
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -283,17 +327,60 @@
       "type": "object",
       "properties": {
         "test": {
-          "type": "string",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
           "description": "ID of the test protocol (same as test_id)"
         },
         "created_ncr": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "ID of NCR created from a failed test result"
         },
         "actions": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of action items created from this result"
         }

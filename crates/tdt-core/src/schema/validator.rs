@@ -910,9 +910,11 @@ title: "Requirement Verification Test"
 objective: "Verify requirement REQ-01 is satisfied"
 links:
   verifies:
-    - REQ-01HC2JB7SMQX7RS1Y0GFKBHPTE
+    - id: REQ-01HC2JB7SMQX7RS1Y0GFKBHPTE
+      title: "Some Requirement"
   mitigates:
-    - RISK-01HC2JB7SMQX7RS1Y0GFKBHPTF
+    - id: RISK-01HC2JB7SMQX7RS1Y0GFKBHPTF
+      title: "Some Risk"
 status: approved
 created: 2024-01-01T00:00:00Z
 author: Test

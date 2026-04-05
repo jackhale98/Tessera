@@ -4,7 +4,16 @@
   "title": "Component",
   "description": "An individual part (purchased or manufactured)",
   "type": "object",
-  "required": ["id", "part_number", "title", "make_buy", "category", "status", "created", "author"],
+  "required": [
+    "id",
+    "part_number",
+    "title",
+    "make_buy",
+    "category",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -18,7 +27,10 @@
       "description": "Part number"
     },
     "revision": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "maxLength": 20,
       "description": "Part revision"
     },
@@ -29,52 +41,104 @@
       "description": "Short descriptive title"
     },
     "description": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Detailed description"
     },
     "make_buy": {
       "type": "string",
-      "enum": ["make", "buy"],
+      "enum": [
+        "make",
+        "buy"
+      ],
       "default": "buy",
       "description": "Make or buy decision"
     },
     "category": {
       "type": "string",
-      "enum": ["mechanical", "electrical", "software", "fastener", "consumable"],
+      "enum": [
+        "mechanical",
+        "electrical",
+        "software",
+        "fastener",
+        "consumable"
+      ],
       "default": "mechanical",
       "description": "Component category"
     },
     "sw_class": {
-      "type": ["string", "null"],
-      "enum": ["A", "B", "C", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "A",
+        "B",
+        "C",
+        null
+      ],
       "description": "IEC 62304 Software Safety Class (A, B, or C)"
     },
     "asil": {
-      "type": ["string", "null"],
-      "enum": ["QM", "A", "B", "C", "D", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "QM",
+        "A",
+        "B",
+        "C",
+        "D",
+        null
+      ],
       "description": "ISO 26262 Automotive Safety Integrity Level"
     },
     "dal": {
-      "type": ["string", "null"],
-      "enum": ["E", "D", "C", "B", "A", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "E",
+        "D",
+        "C",
+        "B",
+        "A",
+        null
+      ],
       "description": "DO-178C Design Assurance Level"
     },
     "material": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Material specification"
     },
     "mass_kg": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Mass in kilograms"
     },
     "unit_cost": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Unit cost"
     },
     "selected_quote": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "ID of the selected quote for this component"
     },
     "suppliers": {
@@ -83,29 +147,47 @@
         "type": "object",
         "properties": {
           "supplier_id": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Supplier entity ID (SUP-...) - links to SUP entity"
           },
           "name": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Supplier name (fallback if supplier_id not set)"
           },
           "supplier_pn": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Supplier's part number"
           },
           "lead_time_days": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 0,
             "description": "Lead time in days"
           },
           "moq": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 1,
             "description": "Minimum order quantity"
           },
           "unit_cost": {
-            "type": ["number", "null"],
+            "type": [
+              "number",
+              "null"
+            ],
             "minimum": 0,
             "description": "Unit cost from this supplier"
           }
@@ -117,7 +199,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["type", "path"],
+        "required": [
+          "type",
+          "path"
+        ],
         "properties": {
           "type": {
             "type": "string",
@@ -128,7 +213,10 @@
             "description": "Path to the document"
           },
           "revision": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Document revision"
           }
         }
@@ -140,27 +228,37 @@
       "properties": {
         "origin": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 3,
           "maxItems": 3,
           "description": "Origin point [x, y, z] in assembly coordinates"
         },
         "x_axis": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 3,
           "maxItems": 3,
           "description": "X-axis direction [dx, dy, dz] - unit vector"
         },
         "z_axis": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 3,
           "maxItems": 3,
           "description": "Z-axis direction [dx, dy, dz] - unit vector"
         }
       },
-      "required": ["origin", "x_axis", "z_axis"],
+      "required": [
+        "origin",
+        "x_axis",
+        "z_axis"
+      ],
       "description": "Component coordinate system for 3D tolerance analysis"
     },
     "datum_frame": {
@@ -189,11 +287,16 @@
       "properties": {
         "routing": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Ordered list of PROC IDs defining manufacturing routing"
         },
         "work_cell": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Default work cell/location"
         }
       },
@@ -208,7 +311,13 @@
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -218,42 +327,114 @@
         "risks": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of risks affecting this component"
         },
         "used_in": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of assemblies using this component"
         },
         "replaces": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of components this replaces"
         },
         "replaced_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of components that replace this"
         },
         "interchangeable_with": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of interchangeable components"
         },
         "related_to": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of related entities"
         }

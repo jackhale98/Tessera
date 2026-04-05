@@ -4,7 +4,13 @@
   "title": "NCR",
   "description": "A non-conformance report",
   "type": "object",
-  "required": ["id", "title", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -18,7 +24,10 @@
       "description": "Short descriptive title"
     },
     "ncr_number": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Company NCR number"
     },
     "report_date": {
@@ -32,17 +41,33 @@
     },
     "ncr_type": {
       "type": "string",
-      "enum": ["internal", "supplier", "customer"],
+      "enum": [
+        "internal",
+        "supplier",
+        "customer"
+      ],
       "description": "NCR type"
     },
     "severity": {
       "type": "string",
-      "enum": ["minor", "major", "critical"],
+      "enum": [
+        "minor",
+        "major",
+        "critical"
+      ],
       "description": "Severity level"
     },
     "category": {
       "type": "string",
-      "enum": ["dimensional", "cosmetic", "material", "functional", "documentation", "process", "packaging"],
+      "enum": [
+        "dimensional",
+        "cosmetic",
+        "material",
+        "functional",
+        "documentation",
+        "process",
+        "packaging"
+      ],
       "description": "Category of non-conformance"
     },
     "detection": {
@@ -50,34 +75,75 @@
       "properties": {
         "found_at": {
           "type": "string",
-          "enum": ["incoming", "in_process", "final", "customer", "field"]
+          "enum": [
+            "incoming",
+            "in_process",
+            "final",
+            "customer",
+            "field"
+          ]
         },
-        "found_by": { "type": "string" },
-        "found_date": { "type": "string", "format": "date" },
-        "operation": { "type": "string" }
+        "found_by": {
+          "type": "string"
+        },
+        "found_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "operation": {
+          "type": "string"
+        }
       },
       "description": "Detection information"
     },
     "affected_items": {
       "type": "object",
       "properties": {
-        "part_number": { "type": "string" },
-        "lot_number": { "type": "string" },
+        "part_number": {
+          "type": "string"
+        },
+        "lot_number": {
+          "type": "string"
+        },
         "serial_numbers": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "quantity_affected": { "type": "integer" }
+        "quantity_affected": {
+          "type": "integer"
+        }
       },
       "description": "Affected items"
     },
     "defect": {
       "type": "object",
       "properties": {
-        "characteristic": { "type": ["string", "null"] },
-        "specification": { "type": ["string", "null"] },
-        "actual": { "type": ["string", "null"] },
-        "deviation": { "type": ["number", "null"] }
+        "characteristic": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "specification": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actual": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deviation": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
       },
       "description": "Defect details"
     },
@@ -86,12 +152,22 @@
       "items": {
         "type": "object",
         "properties": {
-          "action": { "type": "string" },
-          "date": { "type": "string", "format": "date" },
-          "completed_by": { "type": "string" },
+          "action": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "completed_by": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
-            "enum": ["open", "completed"]
+            "enum": [
+              "open",
+              "completed"
+            ]
           }
         }
       },
@@ -101,49 +177,228 @@
       "type": "object",
       "properties": {
         "decision": {
-          "type": ["string", "null"],
-          "enum": ["use_as_is", "rework", "scrap", "return_to_supplier", null]
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "use_as_is",
+            "rework",
+            "scrap",
+            "return_to_supplier",
+            null
+          ]
         },
-        "decision_date": { "type": ["string", "null"], "format": "date" },
-        "decision_by": { "type": ["string", "null"] },
-        "justification": { "type": ["string", "null"] },
-        "mrb_required": { "type": "boolean" }
+        "decision_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "decision_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "justification": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mrb_required": {
+          "type": "boolean"
+        }
       },
       "description": "Disposition decision"
     },
     "cost_impact": {
       "type": "object",
       "properties": {
-        "rework_cost": { "type": "number" },
-        "scrap_cost": { "type": "number" },
-        "currency": { "type": "string" }
+        "rework_cost": {
+          "type": "number"
+        },
+        "scrap_cost": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        }
       },
       "description": "Cost impact"
     },
     "ncr_status": {
       "type": "string",
-      "enum": ["open", "containment", "investigation", "disposition", "closed"],
+      "enum": [
+        "open",
+        "containment",
+        "investigation",
+        "disposition",
+        "closed"
+      ],
       "description": "NCR workflow status"
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "description": "Current status"
     },
     "links": {
       "type": "object",
       "properties": {
-        "component": { "type": ["string", "null"], "description": "Component ID if NCR is part-specific" },
-        "supplier": { "type": ["string", "null"], "description": "Supplier ID for supplier-related NCRs (incoming inspection, etc.)" },
-        "process": { "type": ["string", "null"], "description": "Process ID if NCR is process-related" },
-        "control": { "type": ["string", "null"], "description": "Control plan item that detected the issue" },
-        "capa": { "type": ["string", "null"], "description": "CAPA opened for this NCR" },
-        "from_result": { "type": ["string", "null"], "description": "Test result ID that created this NCR" }
+        "component": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Component ID if NCR is part-specific"
+        },
+        "supplier": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Supplier ID for supplier-related NCRs (incoming inspection, etc.)"
+        },
+        "process": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Process ID if NCR is process-related"
+        },
+        "control": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Control plan item that detected the issue"
+        },
+        "capa": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "CAPA opened for this NCR"
+        },
+        "from_result": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Test result ID that created this NCR"
+        }
       }
     },
     "created": {

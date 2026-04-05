@@ -4,7 +4,14 @@
   "title": "Quote",
   "description": "A supplier quote for a component or assembly",
   "type": "object",
-  "required": ["id", "title", "supplier", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "supplier",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -22,24 +29,42 @@
       "description": "Supplier ID (SUP-...)"
     },
     "component": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Component ID this quote is for (mutually exclusive with assembly)"
     },
     "assembly": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Assembly ID this quote is for (mutually exclusive with component)"
     },
     "quote_ref": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Supplier's quote reference number"
     },
     "description": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Detailed description or notes"
     },
     "currency": {
       "type": "string",
-      "enum": ["USD", "EUR", "GBP", "CNY", "JPY"],
+      "enum": [
+        "USD",
+        "EUR",
+        "GBP",
+        "CNY",
+        "JPY"
+      ],
       "default": "USD",
       "description": "Currency for all prices"
     },
@@ -48,21 +73,40 @@
       "items": {
         "type": "object",
         "properties": {
-          "min_qty": { "type": "integer", "minimum": 1 },
-          "unit_price": { "type": "number" },
-          "lead_time_days": { "type": ["integer", "null"] }
+          "min_qty": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit_price": {
+            "type": "number"
+          },
+          "lead_time_days": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
         },
-        "required": ["min_qty", "unit_price"]
+        "required": [
+          "min_qty",
+          "unit_price"
+        ]
       },
       "description": "Price breaks (quantity-based pricing)"
     },
     "moq": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "minimum": 1,
       "description": "Minimum order quantity"
     },
     "tooling_cost": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Tooling cost (one-time)"
     },
     "nre_costs": {
@@ -70,42 +114,75 @@
       "items": {
         "type": "object",
         "properties": {
-          "description": { "type": "string" },
-          "cost": { "type": "number" },
-          "one_time": { "type": "boolean", "default": false }
+          "description": {
+            "type": "string"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "one_time": {
+            "type": "boolean",
+            "default": false
+          }
         },
-        "required": ["description", "cost"]
+        "required": [
+          "description",
+          "cost"
+        ]
       },
       "description": "Non-recurring engineering costs"
     },
     "lead_time_days": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "description": "Standard lead time in days"
     },
     "quote_date": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date",
       "description": "Date quote was received"
     },
     "valid_until": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date",
       "description": "Date quote expires"
     },
     "quote_status": {
       "type": "string",
-      "enum": ["pending", "received", "accepted", "rejected", "expired"],
+      "enum": [
+        "pending",
+        "received",
+        "accepted",
+        "rejected",
+        "expired"
+      ],
       "default": "pending",
       "description": "Quote-specific status"
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "description": "Entity status"
     },
     "links": {
@@ -113,7 +190,21 @@
       "properties": {
         "related_quotes": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Related quotes (e.g., competing quotes)"
         }
       }

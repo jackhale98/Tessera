@@ -4,7 +4,15 @@
   "title": "Test",
   "description": "A verification or validation test protocol",
   "type": "object",
-  "required": ["id", "type", "title", "objective", "status", "created", "author"],
+  "required": [
+    "id",
+    "type",
+    "title",
+    "objective",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -13,17 +21,30 @@
     },
     "type": {
       "type": "string",
-      "enum": ["verification", "validation"],
+      "enum": [
+        "verification",
+        "validation"
+      ],
       "description": "Test category - verification (meets specs) or validation (meets user needs)"
     },
     "test_level": {
       "type": "string",
-      "enum": ["unit", "integration", "system", "acceptance"],
+      "enum": [
+        "unit",
+        "integration",
+        "system",
+        "acceptance"
+      ],
       "description": "Level of testing in the V-model hierarchy"
     },
     "test_method": {
       "type": "string",
-      "enum": ["inspection", "analysis", "demonstration", "test"],
+      "enum": [
+        "inspection",
+        "analysis",
+        "demonstration",
+        "test"
+      ],
       "description": "IADT method - how the test is performed"
     },
     "title": {
@@ -77,7 +98,9 @@
             "description": "Whether calibration is required before use"
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       },
       "description": "Equipment and tools required for the test"
     },
@@ -104,7 +127,10 @@
             "description": "Pass/fail criteria for this step"
           }
         },
-        "required": ["step", "action"]
+        "required": [
+          "step",
+          "action"
+        ]
       },
       "description": "Step-by-step test procedure"
     },
@@ -139,11 +165,11 @@
       "properties": {
         "temperature": {
           "type": "string",
-          "description": "Temperature conditions (e.g., 23±2°C)"
+          "description": "Temperature conditions (e.g., 23\u00b12\u00b0C)"
         },
         "humidity": {
           "type": "string",
-          "description": "Humidity conditions (e.g., 50±10% RH)"
+          "description": "Humidity conditions (e.g., 50\u00b110% RH)"
         },
         "other": {
           "type": "string",
@@ -158,13 +184,24 @@
     },
     "priority": {
       "type": "string",
-      "enum": ["low", "medium", "high", "critical"],
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
       "default": "medium",
       "description": "Priority level"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -174,36 +211,122 @@
         "verifies": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of requirements this test verifies"
         },
         "validates": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of user needs this test validates"
         },
         "mitigates": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of risks whose mitigation this test verifies"
         },
         "component": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Component ID - item under test"
         },
         "assembly": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Assembly ID - item under test"
         },
         "depends_on": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of tests that must pass before this one"
         }

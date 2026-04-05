@@ -45,11 +45,14 @@ risk_level: medium
 
 links:
   related_to:
-    - REQ-01JEES3N5M6P7R8S9T0UVWXY1
+    - id: REQ-01JEES3N5M6P7R8S9T0UVWXY1
+      title: "Related Requirement"
   mitigated_by:
-    - REQ-01JEES3N5M6P7R8S9T0UVWXY2
+    - id: REQ-01JEES3N5M6P7R8S9T0UVWXY2
+      title: "Mitigation Requirement"
   verified_by:
-    - TEST-01JEES3N5M6P7R8S9T0UVWXY3
+    - id: TEST-01JEES3N5M6P7R8S9T0UVWXY3
+      title: "Verification Test"
 
 created: 2024-03-15T10:30:00Z
 author: "Test Author"

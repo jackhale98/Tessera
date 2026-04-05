@@ -4,7 +4,15 @@
   "title": "Hazard",
   "description": "A hazard - potential source of harm (ISO 14971, ISO 26262, IEC 61508)",
   "type": "object",
-  "required": ["id", "category", "title", "description", "status", "created", "author"],
+  "required": [
+    "id",
+    "category",
+    "title",
+    "description",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -13,7 +21,17 @@
     },
     "category": {
       "type": "string",
-      "enum": ["electrical", "mechanical", "thermal", "chemical", "biological", "radiation", "ergonomic", "software", "environmental"],
+      "enum": [
+        "electrical",
+        "mechanical",
+        "thermal",
+        "chemical",
+        "biological",
+        "radiation",
+        "ergonomic",
+        "software",
+        "environmental"
+      ],
       "description": "Hazard category by energy type or mechanism"
     },
     "title": {
@@ -35,17 +53,29 @@
       "description": "List of potential harms from this hazard"
     },
     "energy_level": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Energy level or magnitude (e.g., '300V DC', '500 psi', '150C')"
     },
     "severity": {
       "type": "string",
-      "enum": ["negligible", "minor", "serious", "severe", "catastrophic"],
+      "enum": [
+        "negligible",
+        "minor",
+        "serious",
+        "severe",
+        "catastrophic"
+      ],
       "default": "minor",
       "description": "Maximum severity of potential harm"
     },
     "exposure_scenario": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "How someone could be exposed to this hazard"
     },
     "affected_populations": {
@@ -64,7 +94,13 @@
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -74,35 +110,95 @@
         "originates_from": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of components/assemblies where this hazard originates"
         },
         "causes": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of risks caused by this hazard"
         },
         "controlled_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of controls that address this hazard"
         },
         "verified_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of tests that verify hazard controls"
         },
         "related_to": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of related requirements or other entities"
         }
@@ -150,7 +246,10 @@
             "description": "Optional approval comment"
           }
         },
-        "required": ["approver", "date"]
+        "required": [
+          "approver",
+          "date"
+        ]
       },
       "description": "Approval records for workflow"
     }

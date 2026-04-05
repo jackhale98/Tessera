@@ -4,7 +4,13 @@
   "title": "Control",
   "description": "A control plan item",
   "type": "object",
-  "required": ["id", "title", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -23,32 +29,63 @@
     },
     "control_type": {
       "type": "string",
-      "enum": ["spc", "inspection", "poka_yoke", "visual", "functional_test", "attribute"],
+      "enum": [
+        "spc",
+        "inspection",
+        "poka_yoke",
+        "visual",
+        "functional_test",
+        "attribute"
+      ],
       "description": "Type of control"
     },
     "control_category": {
       "type": "string",
-      "enum": ["variable", "attribute"],
+      "enum": [
+        "variable",
+        "attribute"
+      ],
       "description": "Control category"
     },
     "characteristic": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "nominal": { "type": "number" },
-        "upper_limit": { "type": "number" },
-        "lower_limit": { "type": "number" },
-        "units": { "type": "string" },
-        "critical": { "type": "boolean" }
+        "name": {
+          "type": "string"
+        },
+        "nominal": {
+          "type": "number"
+        },
+        "upper_limit": {
+          "type": "number"
+        },
+        "lower_limit": {
+          "type": "number"
+        },
+        "units": {
+          "type": "string"
+        },
+        "critical": {
+          "type": "boolean"
+        }
       },
       "description": "Characteristic being controlled"
     },
     "measurement": {
       "type": "object",
       "properties": {
-        "method": { "type": "string" },
-        "equipment": { "type": "string" },
-        "gage_rr_percent": { "type": ["number", "null"] }
+        "method": {
+          "type": "string"
+        },
+        "equipment": {
+          "type": "string"
+        },
+        "gage_rr_percent": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
       },
       "description": "Measurement method"
     },
@@ -57,19 +94,37 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["continuous", "periodic", "lot", "first_article"]
+          "enum": [
+            "continuous",
+            "periodic",
+            "lot",
+            "first_article"
+          ]
         },
-        "frequency": { "type": "string" },
-        "sample_size": { "type": "integer" }
+        "frequency": {
+          "type": "string"
+        },
+        "sample_size": {
+          "type": "integer"
+        }
       },
       "description": "Sampling plan"
     },
     "control_limits": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
-        "ucl": { "type": "number" },
-        "lcl": { "type": "number" },
-        "target": { "type": "number" }
+        "ucl": {
+          "type": "number"
+        },
+        "lcl": {
+          "type": "number"
+        },
+        "target": {
+          "type": "number"
+        }
       },
       "description": "SPC control limits"
     },
@@ -79,37 +134,130 @@
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "description": "Current status"
     },
     "links": {
       "type": "object",
       "properties": {
         "process": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Parent process ID"
         },
         "component": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Component ID being controlled"
         },
         "feature": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Feature ID being controlled"
         },
         "risks": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "IDs of risks this control mitigates"
         },
         "verifies": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "IDs of requirements this control verifies"
         }
       }

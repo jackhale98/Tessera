@@ -4,7 +4,13 @@
   "title": "Process",
   "description": "A manufacturing process definition",
   "type": "object",
-  "required": ["id", "title", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -23,11 +29,25 @@
     },
     "process_type": {
       "type": "string",
-      "enum": ["machining", "assembly", "inspection", "test", "finishing", "packaging", "handling", "heat_treat", "welding", "coating"],
+      "enum": [
+        "machining",
+        "assembly",
+        "inspection",
+        "test",
+        "finishing",
+        "packaging",
+        "handling",
+        "heat_treat",
+        "welding",
+        "coating"
+      ],
       "description": "Type of manufacturing process"
     },
     "operation_number": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Operation number (e.g., OP-010)"
     },
     "equipment": {
@@ -35,9 +55,15 @@
       "items": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "equipment_id": { "type": "string" },
-          "capability": { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "equipment_id": {
+            "type": "string"
+          },
+          "capability": {
+            "type": "string"
+          }
         }
       },
       "description": "Equipment used"
@@ -47,36 +73,69 @@
       "items": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "value": { "type": "number" },
-          "units": { "type": "string" },
-          "min": { "type": "number" },
-          "max": { "type": "number" }
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "units": {
+            "type": "string"
+          },
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          }
         }
       },
       "description": "Process parameters"
     },
     "cycle_time_minutes": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Cycle time in minutes"
     },
     "setup_time_minutes": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Setup time in minutes"
     },
     "capability": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
-        "cpk": { "type": "number" },
-        "ppk": { "type": "number" },
-        "sample_size": { "type": "integer" },
-        "study_date": { "type": "string", "format": "date" }
+        "cpk": {
+          "type": "number"
+        },
+        "ppk": {
+          "type": "number"
+        },
+        "sample_size": {
+          "type": "integer"
+        },
+        "study_date": {
+          "type": "string",
+          "format": "date"
+        }
       },
       "description": "Process capability data"
     },
     "operator_skill": {
       "type": "string",
-      "enum": ["entry", "intermediate", "advanced", "expert"],
+      "enum": [
+        "entry",
+        "intermediate",
+        "advanced",
+        "expert"
+      ],
       "description": "Required operator skill level"
     },
     "safety": {
@@ -84,11 +143,15 @@
       "properties": {
         "ppe": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "hazards": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       },
       "description": "Safety requirements"
@@ -114,7 +177,9 @@
         },
         "required_roles": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Roles required to approve (e.g., quality, engineering)"
         }
       },
@@ -122,12 +187,20 @@
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "description": "Current status"
     },
     "links": {
@@ -135,36 +208,139 @@
       "properties": {
         "produces": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "IDs of components produced by this process"
         },
         "supplier": {
-          "type": ["string", "null"],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Supplier ID if process is outsourced"
         },
         "controls": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "IDs of control plan items for this process"
         },
         "work_instructions": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "IDs of work instructions for this process"
         },
         "risks": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "IDs of risks associated with this process"
         },
         "related_to": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "IDs of other related entities"
         },
         "modified_by_capa": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "CAPA IDs that resulted in modifications to this process"
         }
       }

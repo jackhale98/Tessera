@@ -505,7 +505,7 @@ pub async fn add_link(
 
     // Use explicit link type if provided, otherwise infer
     if let Some(explicit_type) = link_type {
-        links::add_explicit_link(&source_path, &explicit_type, &target_id)
+        links::add_explicit_link(&source_path, &explicit_type, &target_id, None)
             .map_err(CommandError::Other)?;
         actual_link_type = explicit_type;
     } else {
@@ -514,6 +514,7 @@ pub async fn add_link(
             source_entity_id.prefix(),
             &target_id,
             target_entity_id.prefix(),
+            None,
         )
         .map_err(CommandError::Other)?;
     }
@@ -530,7 +531,7 @@ pub async fn add_link(
             .join(entity_dir_name(target_entity_id.prefix()));
         if let Some(target_path) = loader::find_entity_file(&target_dir, &target_id) {
             // Add reciprocal link (ignore errors - target may not support this link type)
-            let _ = links::add_explicit_link(&target_path, &reciprocal_type, &source_id);
+            let _ = links::add_explicit_link(&target_path, &reciprocal_type, &source_id, None);
         }
     }
 

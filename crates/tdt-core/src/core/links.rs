@@ -407,6 +407,7 @@ pub fn get_field_reference_rules(source_prefix: EntityPrefix) -> Vec<FieldRefere
 /// * `source_prefix` - Entity prefix of the source (e.g., EntityPrefix::Req)
 /// * `target_id` - Full ID of the target entity
 /// * `target_prefix` - Entity prefix of the target
+/// * `target_title` - Optional title of the target entity (stored alongside ID)
 ///
 /// # Returns
 /// * `Ok(link_type)` - The link type that was added
@@ -416,6 +417,7 @@ pub fn add_inferred_link(
     source_prefix: EntityPrefix,
     target_id: &str,
     target_prefix: EntityPrefix,
+    target_title: Option<&str>,
 ) -> Result<String, String> {
     // Infer the link type
     let link_type = infer_link_type(source_prefix, target_prefix).ok_or_else(|| {
@@ -430,7 +432,7 @@ pub fn add_inferred_link(
         std::fs::read_to_string(source_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     // Add the link
-    let updated_content = add_link_to_yaml(&content, &link_type, target_id)?;
+    let updated_content = add_link_to_yaml(&content, &link_type, target_id, target_title)?;
 
     // Write back
     std::fs::write(source_path, &updated_content)
@@ -439,11 +441,47 @@ pub fn add_inferred_link(
     Ok(link_type)
 }
 
+/// Build a link entry as a YAML Value with id and optional title.
+fn make_link_entry(target_id: &str, target_title: Option<&str>) -> serde_yml::Value {
+    let mut entry = serde_yml::Mapping::new();
+    entry.insert(
+        serde_yml::Value::String("id".to_string()),
+        serde_yml::Value::String(target_id.to_string()),
+    );
+    if let Some(title) = target_title {
+        entry.insert(
+            serde_yml::Value::String("title".to_string()),
+            serde_yml::Value::String(title.to_string()),
+        );
+    }
+    serde_yml::Value::Mapping(entry)
+}
+
+/// Extract the entity ID from a link entry (supports both `{id, title}` mappings and bare strings).
+pub fn extract_link_id(entry: &serde_yml::Value) -> Option<&str> {
+    if let Some(m) = entry.as_mapping() {
+        m.get(&serde_yml::Value::String("id".to_string()))
+            .and_then(|v| v.as_str())
+    } else {
+        entry.as_str()
+    }
+}
+
+/// Extract the entity ID from a link value that may be a mapping or bare string (for single-value links).
+fn extract_single_link_id(value: &serde_yml::Value) -> Option<&str> {
+    extract_link_id(value)
+}
+
 /// Add a link to YAML content.
 ///
 /// This function parses the YAML, adds the link to the appropriate field in the links section,
-/// and returns the updated YAML string.
-fn add_link_to_yaml(content: &str, link_type: &str, target_id: &str) -> Result<String, String> {
+/// and returns the updated YAML string. Links are stored as `{id, title}` mappings.
+fn add_link_to_yaml(
+    content: &str,
+    link_type: &str,
+    target_id: &str,
+    target_title: Option<&str>,
+) -> Result<String, String> {
     // Parse YAML
     let mut value: serde_yml::Value =
         serde_yml::from_str(content).map_err(|e| format!("Failed to parse YAML: {}", e))?;
@@ -486,13 +524,18 @@ fn add_link_to_yaml(content: &str, link_type: &str, target_id: &str) -> Result<S
     // Handle both array links and single-value links
     if let Some(arr) = link_value.as_sequence_mut() {
         // Array link - add to array if not already present
-        let new_value = serde_yml::Value::String(target_id.to_string());
-        if !arr.contains(&new_value) {
-            arr.push(new_value);
+        let already_present = arr
+            .iter()
+            .any(|v| extract_link_id(v) == Some(target_id));
+        if !already_present {
+            arr.push(make_link_entry(target_id, target_title));
         }
-    } else if link_value.is_null() || link_value.as_str().is_some() {
-        // Single-value link (null or existing string) - replace with new value
-        *link_value = serde_yml::Value::String(target_id.to_string());
+    } else if link_value.is_null()
+        || link_value.as_str().is_some()
+        || link_value.as_mapping().is_some()
+    {
+        // Single-value link - replace with new entry
+        *link_value = make_link_entry(target_id, target_title);
     } else {
         return Err(format!(
             "Link type '{}' has unexpected format (not array or single value)",
@@ -514,6 +557,7 @@ fn add_link_to_yaml(content: &str, link_type: &str, target_id: &str) -> Result<S
 /// * `source_path` - Path to the source entity file
 /// * `link_type` - The explicit link type field name (e.g., "mitigated_by", "verified_by")
 /// * `target_id` - Full ID of the target entity
+/// * `target_title` - Optional title of the target entity (stored alongside ID)
 ///
 /// # Returns
 /// * `Ok(())` - If the link was added successfully
@@ -522,13 +566,14 @@ pub fn add_explicit_link(
     source_path: &std::path::Path,
     link_type: &str,
     target_id: &str,
+    target_title: Option<&str>,
 ) -> Result<(), String> {
     // Read the file
     let content =
         std::fs::read_to_string(source_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     // Add the link
-    let updated_content = add_link_to_yaml(&content, link_type, target_id)?;
+    let updated_content = add_link_to_yaml(&content, link_type, target_id, target_title)?;
 
     // Write back
     std::fs::write(source_path, &updated_content)
@@ -551,7 +596,7 @@ fn is_array_link_type(link_type: &str) -> bool {
 /// Remove a link from YAML content.
 ///
 /// This function parses the YAML, removes the link from the appropriate field in the links section,
-/// and returns the updated YAML string.
+/// and returns the updated YAML string. Handles both `{id, title}` mappings and bare string entries.
 fn remove_link_from_yaml(
     content: &str,
     link_type: &str,
@@ -576,15 +621,9 @@ fn remove_link_from_yaml(
     // Handle both array links and single-value links
     let mut removed = false;
     if let Some(arr) = link_value.as_sequence_mut() {
-        // Array link - remove from array
+        // Array link - remove entry matching target_id
         let original_len = arr.len();
-        arr.retain(|v| {
-            if let Some(s) = v.as_str() {
-                s != target_id
-            } else {
-                true
-            }
-        });
+        arr.retain(|v| extract_link_id(v) != Some(target_id));
         removed = arr.len() < original_len;
 
         // If array is now empty, remove the entire key
@@ -593,15 +632,11 @@ fn remove_link_from_yaml(
                 links_map.remove(serde_yml::Value::String(link_type.to_string()));
             }
         }
-    } else if let Some(existing_id) = link_value.as_str() {
-        // Single-value link - set to null if it matches
-        if existing_id == target_id {
-            *link_value = serde_yml::Value::Null;
-            removed = true;
-            // Remove the key entirely if it's now null
-            if let Some(links_map) = links.as_mapping_mut() {
-                links_map.remove(serde_yml::Value::String(link_type.to_string()));
-            }
+    } else if extract_single_link_id(link_value) == Some(target_id) {
+        // Single-value link matches - remove the key
+        removed = true;
+        if let Some(links_map) = links.as_mapping_mut() {
+            links_map.remove(serde_yml::Value::String(link_type.to_string()));
         }
     }
 
@@ -655,6 +690,149 @@ pub fn remove_explicit_link(
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(())
+}
+
+/// Update all link entries in a YAML file with current entity titles.
+///
+/// For each link entry, looks up the entity ID in `titles` and sets or updates
+/// the `title` field. Also converts bare string entries to `{id, title}` mappings.
+///
+/// # Arguments
+/// * `content` - YAML file content as a string
+/// * `titles` - Map of entity ID → current title
+///
+/// # Returns
+/// Updated YAML string, or error message
+pub fn stamp_link_titles(
+    content: &str,
+    titles: &std::collections::HashMap<String, String>,
+) -> Result<String, String> {
+    let mut value: serde_yml::Value =
+        serde_yml::from_str(content).map_err(|e| format!("Failed to parse YAML: {}", e))?;
+
+    let mut changed = false;
+
+    if let Some(links) = value.get_mut("links") {
+        if let Some(links_map) = links.as_mapping_mut() {
+            for (_key, link_val) in links_map.iter_mut() {
+                if let Some(arr) = link_val.as_sequence_mut() {
+                    for item in arr.iter_mut() {
+                        if update_link_entry_title(item, titles) {
+                            changed = true;
+                        }
+                    }
+                } else {
+                    // Single-value link
+                    if update_link_entry_title(link_val, titles) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if !changed {
+        return Ok(content.to_string());
+    }
+
+    serde_yml::to_string(&value).map_err(|e| format!("Failed to serialize YAML: {}", e))
+}
+
+/// Check all link entries in YAML content for missing or stale titles.
+///
+/// Returns a list of (entity_id, current_title_in_link, actual_title) tuples
+/// for entries that need fixing.
+pub fn check_link_titles(
+    content: &str,
+    titles: &std::collections::HashMap<String, String>,
+) -> Vec<(String, Option<String>, String)> {
+    let mut issues = Vec::new();
+
+    let value: serde_yml::Value = match serde_yml::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return issues,
+    };
+
+    if let Some(links) = value.get("links") {
+        if let Some(links_map) = links.as_mapping() {
+            for (_key, link_val) in links_map.iter() {
+                if let Some(arr) = link_val.as_sequence() {
+                    for item in arr {
+                        check_entry_title(item, titles, &mut issues);
+                    }
+                } else {
+                    check_entry_title(link_val, titles, &mut issues);
+                }
+            }
+        }
+    }
+
+    issues
+}
+
+/// Check a single link entry for missing/stale title.
+fn check_entry_title(
+    entry: &serde_yml::Value,
+    titles: &std::collections::HashMap<String, String>,
+    issues: &mut Vec<(String, Option<String>, String)>,
+) {
+    let id = match extract_link_id(entry) {
+        Some(id) => id.to_string(),
+        None => return,
+    };
+
+    let actual_title = match titles.get(&id) {
+        Some(t) => t.clone(),
+        None => return, // Target entity not found - different validation concern
+    };
+
+    let current_title = entry
+        .as_mapping()
+        .and_then(|m| m.get(&serde_yml::Value::String("title".to_string())))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    if current_title.as_deref() != Some(&actual_title) {
+        issues.push((id, current_title, actual_title));
+    }
+}
+
+/// Update a single link entry's title from the titles map.
+/// Returns true if the entry was modified.
+fn update_link_entry_title(
+    entry: &mut serde_yml::Value,
+    titles: &std::collections::HashMap<String, String>,
+) -> bool {
+    // Handle mapping format {id: ..., title: ...}
+    if let Some(m) = entry.as_mapping_mut() {
+        if let Some(id) = m
+            .get(&serde_yml::Value::String("id".to_string()))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+        {
+            if let Some(title) = titles.get(&id) {
+                let current = m
+                    .get(&serde_yml::Value::String("title".to_string()))
+                    .and_then(|v| v.as_str());
+                if current != Some(title.as_str()) {
+                    m.insert(
+                        serde_yml::Value::String("title".to_string()),
+                        serde_yml::Value::String(title.clone()),
+                    );
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    // Handle bare string format - convert to mapping
+    if let Some(id) = entry.as_str().map(|s| s.to_string()) {
+        if let Some(title) = titles.get(&id) {
+            *entry = make_link_entry(&id, Some(title));
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

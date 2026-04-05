@@ -4,7 +4,15 @@
   "title": "Feature",
   "description": "A dimensional feature on a component with tolerances",
   "type": "object",
-  "required": ["id", "component", "feature_type", "title", "status", "created", "author"],
+  "required": [
+    "id",
+    "component",
+    "feature_type",
+    "title",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -18,7 +26,10 @@
     },
     "feature_type": {
       "type": "string",
-      "enum": ["internal", "external"],
+      "enum": [
+        "internal",
+        "external"
+      ],
       "description": "Feature type classification - internal (hole, bore, pocket) or external (shaft, boss)"
     },
     "title": {
@@ -35,7 +46,12 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "nominal", "plus_tol", "minus_tol"],
+        "required": [
+          "name",
+          "nominal",
+          "plus_tol",
+          "minus_tol"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -67,7 +83,11 @@
           },
           "distribution": {
             "type": "string",
-            "enum": ["normal", "uniform", "triangular"],
+            "enum": [
+              "normal",
+              "uniform",
+              "triangular"
+            ],
             "default": "normal",
             "description": "Statistical distribution for tolerance analysis"
           }
@@ -79,11 +99,29 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["symbol", "value"],
+        "required": [
+          "symbol",
+          "value"
+        ],
         "properties": {
           "symbol": {
             "type": "string",
-            "enum": ["position", "flatness", "perpendicularity", "parallelism", "concentricity", "runout", "total_runout", "profile_surface", "profile_line", "circularity", "cylindricity", "straightness", "angularity", "symmetry"],
+            "enum": [
+              "position",
+              "flatness",
+              "perpendicularity",
+              "parallelism",
+              "concentricity",
+              "runout",
+              "total_runout",
+              "profile_surface",
+              "profile_line",
+              "circularity",
+              "cylindricity",
+              "straightness",
+              "angularity",
+              "symmetry"
+            ],
             "description": "GD&T symbol"
           },
           "value": {
@@ -98,12 +136,18 @@
           },
           "datum_refs": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "description": "Datum references (e.g., A, B, C)"
           },
           "material_condition": {
             "type": "string",
-            "enum": ["mmc", "lmc", "rfs"],
+            "enum": [
+              "mmc",
+              "lmc",
+              "rfs"
+            ],
             "default": "rfs",
             "description": "Material condition modifier"
           }
@@ -113,7 +157,15 @@
     },
     "geometry_class": {
       "type": "string",
-      "enum": ["plane", "cylinder", "sphere", "cone", "point", "line", "complex"],
+      "enum": [
+        "plane",
+        "cylinder",
+        "sphere",
+        "cone",
+        "point",
+        "line",
+        "complex"
+      ],
       "description": "Geometry class for 3D tolerance analysis (SDT invariance class)"
     },
     "datum_label": {
@@ -126,14 +178,18 @@
       "properties": {
         "origin": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 3,
           "maxItems": 3,
           "description": "Origin point [x, y, z] in component coordinate system"
         },
         "axis": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 3,
           "maxItems": 3,
           "description": "Axis direction [dx, dy, dz] - unit vector for feature orientation"
@@ -143,11 +199,17 @@
           "description": "Optional length for axial features (cylinders, cones)"
         },
         "length_ref": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Reference to another feature's dimension for length (format: FEAT@1:dimension_name)"
         }
       },
-      "required": ["origin", "axis"],
+      "required": [
+        "origin",
+        "axis"
+      ],
       "description": "3D geometry definition for kinematic chain analysis"
     },
     "torsor_bounds": {
@@ -155,42 +217,54 @@
       "properties": {
         "u": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 2,
           "maxItems": 2,
           "description": "Translation along local X [min, max]"
         },
         "v": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 2,
           "maxItems": 2,
           "description": "Translation along local Y [min, max]"
         },
         "w": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 2,
           "maxItems": 2,
           "description": "Translation along local Z [min, max]"
         },
         "alpha": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 2,
           "maxItems": 2,
           "description": "Rotation about local X [min, max] in radians"
         },
         "beta": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 2,
           "maxItems": 2,
           "description": "Rotation about local Y [min, max] in radians"
         },
         "gamma": {
           "type": "array",
-          "items": {"type": "number"},
+          "items": {
+            "type": "number"
+          },
           "minItems": 2,
           "maxItems": 2,
           "description": "Rotation about local Z [min, max] in radians"
@@ -218,12 +292,20 @@
     },
     "tags": {
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering and organization"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -232,22 +314,78 @@
       "properties": {
         "used_in_mates": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Mate IDs using this feature"
         },
         "used_in_stackups": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Stackup IDs using this feature"
         },
         "allocated_from": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Requirement IDs allocated to this feature"
         },
         "risks": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Risk IDs affecting this feature"
         }
       }

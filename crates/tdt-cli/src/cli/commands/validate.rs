@@ -9,7 +9,9 @@ use walkdir::WalkDir;
 
 use tdt_core::core::cache::{EntityCache, EntityFilter};
 use tdt_core::core::entity::Status;
-use tdt_core::core::links::{add_explicit_link, get_field_reference_rules};
+use tdt_core::core::links::{
+    add_explicit_link, check_link_titles, get_field_reference_rules, stamp_link_titles,
+};
 use tdt_core::core::loader;
 use tdt_core::core::project::Project;
 use tdt_core::core::suspect::get_suspect_links;
@@ -76,6 +78,8 @@ struct ValidationStats {
     missing_reciprocal_links: usize,
     reciprocal_links_fixed: usize,
     maturity_mismatches: usize,
+    stale_link_titles: usize,
+    link_titles_fixed: usize,
 }
 
 /// Loader for full Feature entities needed for validation calculations
@@ -455,6 +459,21 @@ pub fn run(args: ValidateArgs) -> Result<()> {
         }
     }
 
+    // === Link Title Check ===
+    // Check that all link entries have up-to-date entity titles.
+    // Missing or stale titles are fixed with --fix.
+    if !args.fail_fast || !had_error {
+        if let Some(ref cache) = cache {
+            check_link_title_consistency(
+                cache,
+                &files_to_validate,
+                args.fix,
+                args.summary,
+                &mut stats,
+            );
+        }
+    }
+
     // === Maturity Mismatch Check ===
     if !args.fail_fast || !had_error {
         if let Some(ref cache) = cache {
@@ -520,6 +539,21 @@ pub fn run(args: ValidateArgs) -> Result<()> {
             "  Maturity gaps:  {} (approved/released entities with less-mature dependencies)",
             style(stats.maturity_mismatches).yellow(),
         );
+    }
+
+    if stats.stale_link_titles > 0 {
+        if stats.link_titles_fixed > 0 {
+            println!(
+                "  Link titles:    {} missing/stale, {} fixed",
+                style(stats.stale_link_titles).yellow(),
+                style(stats.link_titles_fixed).green()
+            );
+        } else {
+            println!(
+                "  Link titles:    {} missing/stale (run with --fix to update)",
+                style(stats.stale_link_titles).yellow(),
+            );
+        }
     }
 
     println!();
@@ -1303,6 +1337,8 @@ fn check_maturity_mismatches(
 struct MissingLink {
     /// Source entity ID (the one with the field reference)
     source_id: String,
+    /// Source entity title (for writing into the link entry)
+    source_title: String,
     /// The field on the source entity
     field_name: String,
     /// Target entity ID (the one missing the reciprocal)
@@ -1366,11 +1402,16 @@ fn check_link_consistency(
             Err(_) => continue,
         };
 
-        // Extract source entity ID
+        // Extract source entity ID and title
         let source_id = match value.get("id").and_then(|v| v.as_str()) {
             Some(id) => id.to_string(),
             None => continue,
         };
+        let source_title = value
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         // Check each field reference rule
         for rule in &rules {
@@ -1405,6 +1446,7 @@ fn check_link_consistency(
             if !has_reciprocal && target_path.is_some() {
                 missing_links.push(MissingLink {
                     source_id: source_id.clone(),
+                    source_title: source_title.clone(),
                     field_name: rule.field_name.to_string(),
                     target_id: target_id.clone(),
                     reciprocal_link_type: rule.reciprocal_link_type.to_string(),
@@ -1449,7 +1491,17 @@ fn check_link_consistency(
 
         if fix {
             if let Some(ref target_path) = ml.target_path {
-                match add_explicit_link(target_path, &ml.reciprocal_link_type, &ml.source_id) {
+                let title = if ml.source_title.is_empty() {
+                    None
+                } else {
+                    Some(ml.source_title.as_str())
+                };
+                match add_explicit_link(
+                    target_path,
+                    &ml.reciprocal_link_type,
+                    &ml.source_id,
+                    title,
+                ) {
                     Ok(()) => {
                         stats.reciprocal_links_fixed += 1;
                     }
@@ -1474,7 +1526,8 @@ fn check_link_consistency(
     missing_links
 }
 
-/// Check if an entity file has a specific link to a given target ID
+/// Check if an entity file has a specific link to a given target ID.
+/// Handles both `{id, title}` mappings and bare string entries.
 fn check_has_link(path: &std::path::Path, link_type: &str, target_id: &str) -> bool {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
@@ -1494,10 +1547,114 @@ fn check_has_link(path: &std::path::Path, link_type: &str, target_id: &str) -> b
     match links.get(link_type) {
         Some(serde_yml::Value::Sequence(arr)) => arr
             .iter()
-            .any(|v| v.as_str().map_or(false, |s| s == target_id)),
-        Some(serde_yml::Value::String(s)) => s == target_id,
+            .any(|v| tdt_core::core::links::extract_link_id(v) == Some(target_id)),
+        Some(v) => tdt_core::core::links::extract_link_id(v) == Some(target_id),
         _ => false,
     }
+}
+
+/// Check that all link entries across project files have correct, up-to-date titles.
+///
+/// Missing or stale titles are reported as warnings. With `--fix`, titles are
+/// updated in-place using `stamp_link_titles`.
+fn check_link_title_consistency(
+    cache: &EntityCache,
+    files: &[PathBuf],
+    fix: bool,
+    summary_only: bool,
+    stats: &mut ValidationStats,
+) {
+    // Build a title map from all cached entities
+    let all_entities = cache.list_entities(&EntityFilter::default());
+    let titles: HashMap<String, String> = all_entities
+        .iter()
+        .map(|e| (e.id.clone(), e.title.clone()))
+        .collect();
+
+    let mut total_issues = 0;
+    let mut total_fixed = 0;
+
+    for path in files {
+        if !path.to_string_lossy().ends_with(".tdt.yaml") {
+            continue;
+        }
+
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let issues = check_link_titles(&content, &titles);
+        if issues.is_empty() {
+            continue;
+        }
+
+        total_issues += issues.len();
+
+        if !summary_only && !fix {
+            for (id, current, actual) in &issues {
+                let truncated = if id.len() > 16 {
+                    format!("{}...", &id[..13])
+                } else {
+                    id.clone()
+                };
+                match current {
+                    Some(old) => println!(
+                        "  {} Link to {} has stale title \"{}\" (actual: \"{}\")",
+                        style("!").yellow(),
+                        truncated,
+                        old,
+                        actual,
+                    ),
+                    None => println!(
+                        "  {} Link to {} missing title (should be \"{}\")",
+                        style("!").yellow(),
+                        truncated,
+                        actual,
+                    ),
+                }
+            }
+        }
+
+        if fix {
+            match stamp_link_titles(&content, &titles) {
+                Ok(updated) => {
+                    if updated != content {
+                        if let Ok(()) = fs::write(path, &updated) {
+                            total_fixed += issues.len();
+                        }
+                    }
+                }
+                Err(e) => {
+                    if !summary_only {
+                        println!(
+                            "  {} Failed to fix link titles in {}: {}",
+                            style("✗").red(),
+                            path.display(),
+                            e
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if total_issues > 0 && !summary_only && !fix {
+        println!();
+        println!(
+            "{} Link Titles: {} missing or stale title(s)",
+            style("!").yellow(),
+            total_issues
+        );
+        println!(
+            "    {} Run 'tdt validate --fix' to update link titles",
+            style("→").dim()
+        );
+    }
+
+    stats.stale_link_titles = total_issues;
+    stats.link_titles_fixed = total_fixed;
+    stats.total_warnings += total_issues;
 }
 
 #[cfg(test)]

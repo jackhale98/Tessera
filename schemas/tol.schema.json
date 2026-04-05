@@ -4,7 +4,14 @@
   "title": "Stackup",
   "description": "A tolerance chain analysis with multiple contributors",
   "type": "object",
-  "required": ["id", "title", "target", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "target",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -23,7 +30,12 @@
     },
     "target": {
       "type": "object",
-      "required": ["name", "nominal", "upper_limit", "lower_limit"],
+      "required": [
+        "name",
+        "nominal",
+        "upper_limit",
+        "lower_limit"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -57,7 +69,12 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "nominal", "plus_tol", "minus_tol"],
+        "required": [
+          "name",
+          "nominal",
+          "plus_tol",
+          "minus_tol"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -69,7 +86,10 @@
           },
           "direction": {
             "type": "string",
-            "enum": ["positive", "negative"],
+            "enum": [
+              "positive",
+              "negative"
+            ],
             "default": "positive",
             "description": "Direction of contribution"
           },
@@ -89,7 +109,11 @@
           },
           "distribution": {
             "type": "string",
-            "enum": ["normal", "uniform", "triangular"],
+            "enum": [
+              "normal",
+              "uniform",
+              "triangular"
+            ],
             "default": "normal",
             "description": "Statistical distribution"
           },
@@ -121,7 +145,9 @@
                 "description": "Effective position tolerance (position_tolerance + bonus)"
               }
             },
-            "required": ["position_tolerance"]
+            "required": [
+              "position_tolerance"
+            ]
           }
         }
       },
@@ -132,7 +158,7 @@
       "minimum": 1,
       "maximum": 12,
       "default": 6.0,
-      "description": "Sigma level for statistical analysis (tolerance = sigma_level × σ). Default 6.0 means tolerance band spans ±3σ."
+      "description": "Sigma level for statistical analysis (tolerance = sigma_level \u00d7 \u03c3). Default 6.0 means tolerance band spans \u00b13\u03c3."
     },
     "mean_shift_k": {
       "type": "number",
@@ -147,7 +173,9 @@
     },
     "functional_direction": {
       "type": "array",
-      "items": {"type": "number"},
+      "items": {
+        "type": "number"
+      },
       "minItems": 3,
       "maxItems": 3,
       "description": "Functional measurement direction [dx, dy, dz] for 3D analysis"
@@ -162,7 +190,10 @@
         },
         "method": {
           "type": "string",
-          "enum": ["jacobian_torsor", "monte_carlo_3d"],
+          "enum": [
+            "jacobian_torsor",
+            "monte_carlo_3d"
+          ],
           "default": "jacobian_torsor",
           "description": "3D analysis method"
         },
@@ -180,12 +211,24 @@
         "result_torsor": {
           "type": "object",
           "properties": {
-            "u": {"$ref": "#/$defs/torsor_stats"},
-            "v": {"$ref": "#/$defs/torsor_stats"},
-            "w": {"$ref": "#/$defs/torsor_stats"},
-            "alpha": {"$ref": "#/$defs/torsor_stats"},
-            "beta": {"$ref": "#/$defs/torsor_stats"},
-            "gamma": {"$ref": "#/$defs/torsor_stats"}
+            "u": {
+              "$ref": "#/$defs/torsor_stats"
+            },
+            "v": {
+              "$ref": "#/$defs/torsor_stats"
+            },
+            "w": {
+              "$ref": "#/$defs/torsor_stats"
+            },
+            "alpha": {
+              "$ref": "#/$defs/torsor_stats"
+            },
+            "beta": {
+              "$ref": "#/$defs/torsor_stats"
+            },
+            "gamma": {
+              "$ref": "#/$defs/torsor_stats"
+            }
           },
           "description": "Result torsor with 6-DOF statistics"
         },
@@ -194,14 +237,20 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": {"type": "string"},
-              "feature_id": {"type": "string"},
+              "name": {
+                "type": "string"
+              },
+              "feature_id": {
+                "type": "string"
+              },
               "contribution_pct": {
                 "type": "array",
-                "items": {"type": "number"},
+                "items": {
+                  "type": "number"
+                },
                 "minItems": 6,
                 "maxItems": 6,
-                "description": "Variance contribution per DOF [u, v, w, α, β, γ] as percentages"
+                "description": "Variance contribution per DOF [u, v, w, \u03b1, \u03b2, \u03b3] as percentages"
               }
             }
           },
@@ -210,11 +259,17 @@
         "jacobian_summary": {
           "type": "object",
           "properties": {
-            "chain_length": {"type": "integer"},
-            "total_constrained_dof": {"type": "integer"},
+            "chain_length": {
+              "type": "integer"
+            },
+            "total_constrained_dof": {
+              "type": "integer"
+            },
             "result_free_dof": {
               "type": "array",
-              "items": {"type": "string"}
+              "items": {
+                "type": "string"
+              }
             }
           },
           "description": "Jacobian chain summary"
@@ -233,24 +288,57 @@
         "worst_case": {
           "type": "object",
           "properties": {
-            "min": {"type": "number"},
-            "max": {"type": "number"},
-            "margin": {"type": "number"},
-            "result": {"type": "string", "enum": ["pass", "marginal", "fail"]}
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "margin": {
+              "type": "number"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "pass",
+                "marginal",
+                "fail"
+              ]
+            }
           }
         },
         "rss": {
           "type": "object",
           "properties": {
-            "mean": {"type": "number", "description": "Mean (expected) value"},
-            "sigma_3": {"type": "number", "description": "3-sigma spread (±3σ)"},
-            "margin": {"type": "number", "description": "Margin to specification limits at 3σ"},
-            "cp": {"type": "number", "description": "Process capability index (Cp) - ignores centering. Cp = (USL - LSL) / (6σ)"},
-            "cpk": {"type": "number", "description": "Process capability index (Cpk) - accounts for centering. Cpk = min(USL-μ, μ-LSL) / (3σ)"},
-            "yield_percent": {"type": "number", "description": "Estimated yield percentage"},
+            "mean": {
+              "type": "number",
+              "description": "Mean (expected) value"
+            },
+            "sigma_3": {
+              "type": "number",
+              "description": "3-sigma spread (\u00b13\u03c3)"
+            },
+            "margin": {
+              "type": "number",
+              "description": "Margin to specification limits at 3\u03c3"
+            },
+            "cp": {
+              "type": "number",
+              "description": "Process capability index (Cp) - ignores centering. Cp = (USL - LSL) / (6\u03c3)"
+            },
+            "cpk": {
+              "type": "number",
+              "description": "Process capability index (Cpk) - accounts for centering. Cpk = min(USL-\u03bc, \u03bc-LSL) / (3\u03c3)"
+            },
+            "yield_percent": {
+              "type": "number",
+              "description": "Estimated yield percentage"
+            },
             "sensitivity": {
               "type": "array",
-              "items": {"type": "number"},
+              "items": {
+                "type": "number"
+              },
               "description": "Variance contribution percentage for each contributor (sum = 100%)"
             },
             "shifted_mean": {
@@ -262,16 +350,38 @@
         "monte_carlo": {
           "type": "object",
           "properties": {
-            "iterations": {"type": "integer"},
-            "mean": {"type": "number"},
-            "std_dev": {"type": "number"},
-            "min": {"type": "number"},
-            "max": {"type": "number"},
-            "yield_percent": {"type": "number"},
-            "percentile_2_5": {"type": "number"},
-            "percentile_97_5": {"type": "number"},
-            "pp": {"type": "number", "description": "Process performance index (Pp) - uses sample std_dev. Pp = (USL - LSL) / (6s)"},
-            "ppk": {"type": "number", "description": "Process performance index (Ppk) - uses sample std_dev, accounts for centering. Ppk = min(USL-μ, μ-LSL) / (3s)"}
+            "iterations": {
+              "type": "integer"
+            },
+            "mean": {
+              "type": "number"
+            },
+            "std_dev": {
+              "type": "number"
+            },
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "yield_percent": {
+              "type": "number"
+            },
+            "percentile_2_5": {
+              "type": "number"
+            },
+            "percentile_97_5": {
+              "type": "number"
+            },
+            "pp": {
+              "type": "number",
+              "description": "Process performance index (Pp) - uses sample std_dev. Pp = (USL - LSL) / (6s)"
+            },
+            "ppk": {
+              "type": "number",
+              "description": "Process performance index (Ppk) - uses sample std_dev, accounts for centering. Ppk = min(USL-\u03bc, \u03bc-LSL) / (3s)"
+            }
           }
         }
       },
@@ -279,18 +389,30 @@
     },
     "disposition": {
       "type": "string",
-      "enum": ["under_review", "approved", "rejected"],
+      "enum": [
+        "under_review",
+        "approved",
+        "rejected"
+      ],
       "default": "under_review",
       "description": "Review disposition"
     },
     "tags": {
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -299,12 +421,40 @@
       "properties": {
         "verifies": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Requirements verified by this stackup"
         },
         "mates_used": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Mates used in this stackup"
         }
       }
@@ -329,12 +479,30 @@
     "torsor_stats": {
       "type": "object",
       "properties": {
-        "wc_min": {"type": "number", "description": "Worst-case minimum value"},
-        "wc_max": {"type": "number", "description": "Worst-case maximum value"},
-        "rss_mean": {"type": "number", "description": "Statistical mean"},
-        "rss_3sigma": {"type": "number", "description": "Statistical 3-sigma spread"},
-        "mc_mean": {"type": "number", "description": "Monte Carlo mean"},
-        "mc_std_dev": {"type": "number", "description": "Monte Carlo standard deviation"}
+        "wc_min": {
+          "type": "number",
+          "description": "Worst-case minimum value"
+        },
+        "wc_max": {
+          "type": "number",
+          "description": "Worst-case maximum value"
+        },
+        "rss_mean": {
+          "type": "number",
+          "description": "Statistical mean"
+        },
+        "rss_3sigma": {
+          "type": "number",
+          "description": "Statistical 3-sigma spread"
+        },
+        "mc_mean": {
+          "type": "number",
+          "description": "Monte Carlo mean"
+        },
+        "mc_std_dev": {
+          "type": "number",
+          "description": "Monte Carlo standard deviation"
+        }
       },
       "description": "Statistics for a single DOF in 3D analysis"
     }

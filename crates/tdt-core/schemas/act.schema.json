@@ -4,7 +4,13 @@
   "title": "Action",
   "description": "An action item",
   "type": "object",
-  "required": ["id", "title", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -22,41 +28,99 @@
       "description": "Action description"
     },
     "owner": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Person responsible"
     },
     "due_date": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date",
       "description": "Due date"
     },
     "completed_date": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date",
       "description": "Completion date"
     },
     "action_status": {
       "type": "string",
-      "enum": ["open", "in_progress", "completed", "verified", "cancelled"],
+      "enum": [
+        "open",
+        "in_progress",
+        "completed",
+        "verified",
+        "cancelled"
+      ],
       "description": "Action status"
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "description": "Current status"
     },
     "links": {
       "type": "object",
       "properties": {
-        "capa": { "type": ["string", "null"] },
+        "capa": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "related_to": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          }
         }
       }
     },

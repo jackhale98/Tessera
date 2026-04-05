@@ -616,6 +616,7 @@ pub fn process_link_flags(
                 source_prefix,
                 &resolved_target,
                 target_entity_id.prefix(),
+                None,
             ) {
                 Ok(link_type) => {
                     added_links.push((link_type, resolved_target.clone()));
@@ -647,5 +648,6 @@ pub fn add_inferred_link_to_file(
     target_prefix: EntityPrefix,
 ) -> std::result::Result<String, String> {
     use tdt_core::core::links::add_inferred_link;
-    add_inferred_link(file_path, source_prefix, target_id, target_prefix).map_err(|e| e.to_string())
+    add_inferred_link(file_path, source_prefix, target_id, target_prefix, None)
+        .map_err(|e| e.to_string())
 }

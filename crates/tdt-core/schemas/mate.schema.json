@@ -4,7 +4,16 @@
   "title": "Mate",
   "description": "A 1:1 contact between two features with fit calculation",
   "type": "object",
-  "required": ["id", "title", "feature_a", "feature_b", "mate_type", "status", "created", "author"],
+  "required": [
+    "id",
+    "title",
+    "feature_a",
+    "feature_b",
+    "mate_type",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -29,7 +38,9 @@
         },
         {
           "type": "object",
-          "required": ["id"],
+          "required": [
+            "id"
+          ],
           "properties": {
             "id": {
               "type": "string",
@@ -62,7 +73,9 @@
         },
         {
           "type": "object",
-          "required": ["id"],
+          "required": [
+            "id"
+          ],
           "properties": {
             "id": {
               "type": "string",
@@ -89,7 +102,11 @@
     },
     "mate_type": {
       "type": "string",
-      "enum": ["clearance", "transition", "interference"],
+      "enum": [
+        "clearance",
+        "transition",
+        "interference"
+      ],
       "description": "Mate type classification"
     },
     "fit_analysis": {
@@ -105,7 +122,11 @@
         },
         "fit_result": {
           "type": "string",
-          "enum": ["clearance", "interference", "transition"],
+          "enum": [
+            "clearance",
+            "interference",
+            "transition"
+          ],
           "description": "Fit classification result"
         },
         "statistical": {
@@ -118,15 +139,15 @@
             },
             "sigma_clearance": {
               "type": "number",
-              "description": "Standard deviation of clearance (RSS of hole and shaft σ)"
+              "description": "Standard deviation of clearance (RSS of hole and shaft \u03c3)"
             },
             "clearance_3sigma_min": {
               "type": "number",
-              "description": "Minimum clearance at 3σ (mean - 3σ)"
+              "description": "Minimum clearance at 3\u03c3 (mean - 3\u03c3)"
             },
             "clearance_3sigma_max": {
               "type": "number",
-              "description": "Maximum clearance at 3σ (mean + 3σ)"
+              "description": "Maximum clearance at 3\u03c3 (mean + 3\u03c3)"
             },
             "probability_interference": {
               "type": "number",
@@ -136,8 +157,12 @@
             },
             "fit_result_3sigma": {
               "type": "string",
-              "enum": ["clearance", "interference", "transition"],
-              "description": "Fit classification at 3σ limits"
+              "enum": [
+                "clearance",
+                "interference",
+                "transition"
+              ],
+              "description": "Fit classification at 3\u03c3 limits"
             }
           }
         }
@@ -150,12 +175,20 @@
     },
     "tags": {
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string"
+      },
       "description": "Tags for filtering and organization"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
@@ -164,12 +197,40 @@
       "properties": {
         "used_in_stackups": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Stackup IDs using this mate"
         },
         "verifies": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "description": "Requirement IDs verified by this mate"
         }
       }

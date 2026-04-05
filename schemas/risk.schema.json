@@ -4,7 +4,15 @@
   "title": "Risk",
   "description": "A risk or FMEA (Failure Mode and Effects Analysis) item",
   "type": "object",
-  "required": ["id", "type", "title", "description", "status", "created", "author"],
+  "required": [
+    "id",
+    "type",
+    "title",
+    "description",
+    "status",
+    "created",
+    "author"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -13,7 +21,12 @@
     },
     "type": {
       "type": "string",
-      "enum": ["design", "process", "use", "software"],
+      "enum": [
+        "design",
+        "process",
+        "use",
+        "software"
+      ],
       "description": "Risk category - design, process, use, or software risk"
     },
     "title": {
@@ -111,12 +124,20 @@
           },
           "type": {
             "type": "string",
-            "enum": ["prevention", "detection"],
+            "enum": [
+              "prevention",
+              "detection"
+            ],
             "description": "Whether this prevents occurrence or improves detection"
           },
           "status": {
             "type": "string",
-            "enum": ["proposed", "in_progress", "completed", "verified"],
+            "enum": [
+              "proposed",
+              "in_progress",
+              "completed",
+              "verified"
+            ],
             "description": "Implementation status of the mitigation"
           },
           "owner": {
@@ -129,19 +150,32 @@
             "description": "Target completion date"
           }
         },
-        "required": ["action"]
+        "required": [
+          "action"
+        ]
       },
       "description": "List of risk mitigation actions"
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "review", "approved", "released", "obsolete"],
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "released",
+        "obsolete"
+      ],
       "default": "draft",
       "description": "Current status"
     },
     "risk_level": {
       "type": "string",
-      "enum": ["low", "medium", "high", "critical"],
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
       "description": "Overall risk level assessment"
     },
     "links": {
@@ -150,28 +184,76 @@
         "mitigated_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of design outputs that mitigate this risk"
         },
         "verified_by": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of tests that verify risk mitigation"
         },
         "affects": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of entities affected by this risk (REQ, CMP, ASM, FEAT, PROC, etc.)"
         },
         "related_to": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "description": "IDs of related entities"
         }

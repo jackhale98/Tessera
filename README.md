@@ -6,7 +6,7 @@ A CLI and desktop application for managing requirements, risks, tests, BOMs, tol
 
 🌐 **Website:** [tessera-engineering.com](https://tessera-engineering.com)
 
-![Tessera Quick Start Demo](demos/quickstart.gif)
+![Tessera Quick Start Demo](docs/quickstart.gif)
 
 ---
 
@@ -49,6 +49,7 @@ A CLI and desktop application for managing requirements, risks, tests, BOMs, tol
   - [Version Control](#version-control-git-wrappers)
   - [Baselines](#baselines-git-tags)
   - [Bulk Operations](#bulk-operations)
+  - [CSV Import](#csv-import)
   - [SysML v2 Interchange](#sysml-v2-interchange)
 - [Example Workflows](#example-workflows)
 - [Manufacturing Quality Loop](#manufacturing-quality-loop)
@@ -120,8 +121,8 @@ This installs the `tdt` binary. Note: compilation takes a few minutes due to dep
 
 ```bash
 git clone https://github.com/jackhale98/Tessera.git
-cd Tessera/pdt
-cargo build --release
+cd Tessera
+cargo build -p tessera-design-toolkit --release
 # Binary will be at target/release/tdt
 ```
 
@@ -853,6 +854,39 @@ tdt req list -o short-id | tdt trace from -
 ```
 
 The `--linked-to` flag accepts comma-separated IDs, short IDs, or `-` for stdin. The optional `--via` flag filters by a specific link type (e.g., `verified_by`, `satisfied_by`, `mitigated_by`).
+
+### CSV Import
+
+Bulk-import entities from CSV files. Supports all major entity types with flexible headers, default values, and dry-run previews.
+
+```bash
+# Generate a CSV template for any entity type
+tdt import --template req > requirements.csv
+tdt import --template cmp > components.csv
+tdt import --template risk > risks.csv
+
+# Import entities from CSV
+tdt import req requirements.csv              # Import requirements
+tdt import cmp components.csv                # Import components
+tdt import risk risks.csv                    # Import risks/FMEA items
+
+# Preview without creating files
+tdt import req requirements.csv --dry-run
+
+# Continue past errors instead of stopping on first failure
+tdt import req requirements.csv --skip-errors
+
+# Set default parent references for child entities
+tdt import feat features.csv --component CMP@1    # Features for a component
+tdt import ctrl controls.csv --process PROC@1      # Controls for a process
+tdt import rslt results.csv --test TEST@1          # Results for a test
+tdt import quote quotes.csv --supplier SUP@1       # Quotes from a supplier
+tdt import cmp components.csv --assembly ASM@1     # Components in an assembly
+```
+
+**Supported entity types:** `req`, `risk`, `cmp`, `asm`, `sup`, `quote`, `test`, `rslt`, `proc`, `ctrl`, `ncr`, `capa`, `feat`
+
+CSV headers are case-insensitive and flexible. Required fields vary by entity type (typically just `title`). Use `--template` to see all available columns for a given type.
 
 ### SysML v2 Interchange
 
