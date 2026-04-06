@@ -1500,12 +1500,8 @@ fn check_link_consistency(
                 } else {
                     Some(ml.source_title.as_str())
                 };
-                match add_explicit_link(
-                    target_path,
-                    &ml.reciprocal_link_type,
-                    &ml.source_id,
-                    title,
-                ) {
+                match add_explicit_link(target_path, &ml.reciprocal_link_type, &ml.source_id, title)
+                {
                     Ok(()) => {
                         stats.reciprocal_links_fixed += 1;
                     }

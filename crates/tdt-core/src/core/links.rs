@@ -524,9 +524,7 @@ fn add_link_to_yaml(
     // Handle both array links and single-value links
     if let Some(arr) = link_value.as_sequence_mut() {
         // Array link - add to array if not already present
-        let already_present = arr
-            .iter()
-            .any(|v| extract_link_id(v) == Some(target_id));
+        let already_present = arr.iter().any(|v| extract_link_id(v) == Some(target_id));
         if !already_present {
             arr.push(make_link_entry(target_id, target_title));
         }
